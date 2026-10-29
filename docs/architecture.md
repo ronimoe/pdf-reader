@@ -324,6 +324,8 @@ The same type is stored as the reading position (A2) and used for history entrie
   4. Otherwise a new record starts.
 
   A fresh bookmark is recorded on every open, which replaces a stale one.
+- **Comparing paths.** Paths are compared in their canonical form. Inside the sandbox, `resolvingSymlinksInPath` leaves `/tmp` as it is, while a resolved bookmark gives `/private/tmp`.
+- **A file moved while it is open.** The identity is refreshed from the new URL that file coordination reports. `NSDocument` may not have updated `fileURL` yet.
 - **First open.** A document with a table of contents opens the sidebar on that section.
 
 **Crash journal (A1)**
