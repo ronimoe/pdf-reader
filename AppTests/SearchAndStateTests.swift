@@ -216,6 +216,15 @@ private func waitForSearch(_ harness: NavigationHarness) {
         #expect(harness.controller.sidebar.visibleSection == .outline)
     }
 
+    @Test func documentsTestsOpenNeverReachTheRealContainer() throws {
+        // Tests that open files through NSDocumentController use the shared
+        // store; while hosting tests it lives in a throwaway folder.
+        #expect(AppEnvironment.isHostingTests)
+        let directory = try #require(AppEnvironment.stateStore?.directory)
+        #expect(!directory.path.contains("Application Support"))
+        #expect(directory.lastPathComponent.hasPrefix("LecternTestState-"))
+    }
+
     @Test func inMemoryDocumentsStoreNothing() throws {
         let harness = try NavigationHarness(FixturePDF.prose(pages: 2))
         defer { harness.close() }
