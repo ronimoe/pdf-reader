@@ -1,6 +1,6 @@
 # Product Decisions
 
-Answers to the open items in [spec-review.md](spec-review.md). Each one amends or clarifies [product-spec.md](product-spec.md) v1.0, and they will be folded into spec v1.1.
+Answers to the open items in [spec-review.md](spec-review.md). Each one amends or clarifies [product-spec.md](product-spec.md) v1.0, and they will be folded into spec v1.1. [architecture.md](architecture.md) shows where each decision is implemented.
 
 | ID | Topic | Decided |
 |----|-------|---------|
