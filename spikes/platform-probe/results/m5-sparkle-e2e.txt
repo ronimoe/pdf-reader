@@ -1,0 +1,201 @@
+== Sparkle end-to-end, 2026-10-29 23:12:12 +0700, 26.6.2 (25G83)
+fixtures: /var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T//lectern-sparkle-e2e.Lyp29R
+== throwaway keys (files, no Keychain)
+trusted public key (v1's SUPublicEDKey): aJu0Xk8Ji0EOthaWa0Nfz+UdrWK/nx0LGJGBaqYe/u4=
+untrusted public key: lp3zxLM7BfDLr+0tPixequNXg5H7393a0BtUpX3es/Q=
+== build v1 and v2 with App/Lectern.entitlements
+-- /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a045d7dde77f65a10/spikes/platform-probe/build/v1/PlatformProbeSparkle.app
+Identifier=io.github.ronimoe.PlatformProbeSparkle
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=711 flags=0x10002(adhoc,runtime) hashes=11+7 location=embedded
+CDHash=c1784c3bc6a81e81d1955a67d5f5af18163a21eb
+Signature=adhoc
+Info.plist entries=28
+TeamIdentifier=not set
+Runtime Version=27.0.0
+Designated requirement: # designated => cdhash H"c1784c3bc6a81e81d1955a67d5f5af18163a21eb"
+{"com.apple.security.network.client":true,"com.apple.security.cs.disable-library-validation":true,"com.apple.security.files.bookmarks.app-scope":true,"com.apple.security.files.user-selected.read-write":true,"com.apple.security.print":true,"com.apple.security.app-sandbox":true,"com.apple.security.temporary-exception.mach-lookup.global-name":["io.github.ronimoe.PlatformProbeSparkle-spks","io.github.ronimoe.PlatformProbeSparkle-spki"]}
+/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a045d7dde77f65a10/spikes/platform-probe/build/v1/PlatformProbeSparkle.app: satisfies its Designated Requirement
+-- /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a045d7dde77f65a10/spikes/platform-probe/build/v2/PlatformProbeSparkle.app
+Identifier=io.github.ronimoe.PlatformProbeSparkle
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=711 flags=0x10002(adhoc,runtime) hashes=11+7 location=embedded
+CDHash=524e7f38ea92027fb2397d1e4bde242ed8230218
+Signature=adhoc
+Info.plist entries=28
+TeamIdentifier=not set
+Runtime Version=27.0.0
+Designated requirement: # designated => cdhash H"524e7f38ea92027fb2397d1e4bde242ed8230218"
+{"com.apple.security.network.client":true,"com.apple.security.cs.disable-library-validation":true,"com.apple.security.files.bookmarks.app-scope":true,"com.apple.security.files.user-selected.read-write":true,"com.apple.security.print":true,"com.apple.security.app-sandbox":true,"com.apple.security.temporary-exception.mach-lookup.global-name":["io.github.ronimoe.PlatformProbeSparkle-spks","io.github.ronimoe.PlatformProbeSparkle-spki"]}
+/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a045d7dde77f65a10/spikes/platform-probe/build/v2/PlatformProbeSparkle.app: satisfies its Designated Requirement
+PASS v1 and v2 have different ad-hoc designated requirements
+PASS v1 has no get-task-allow
+PASS v1 carries disable-library-validation
+== negative control: v2 signed with the untrusted key
+sign_update (key-b): sparkle:edSignature="qWbXeK57W/8/OYzQecyKprxCGS8EPjv379pw+MAmy3nOedJIyx391SrL2NPiOe557RmzhhnaSA5rJoLrBJyODQ==" length="1040179"
+== launch e2e-1-wrong-key: Applications PlatformProbeSparkle.app  --mode sparkle-update
+after run: no dialog windows on screen (32 on-screen windows checked);
+{
+  "runID": "e2e-1-wrong-key",
+  "mode": "sparkle-update",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/lectern-sparkle-e2e.Lyp29R/Applications/PlatformProbeSparkle.app/Contents/MacOS/PlatformProbeSparkle",
+        "--run-id",
+        "e2e-1-wrong-key",
+        "--mode",
+        "sparkle-update"
+      ],
+      "step": "launched"
+    },
+    {
+      "feed": "http://127.0.0.1:59925/appcast.xml",
+      "installerLauncherService": true,
+      "publicKeyPresent": true,
+      "step": "sparkle-config"
+    },
+    {
+      "ok": true,
+      "step": "updater-start"
+    },
+    {
+      "step": "check-for-updates-called"
+    },
+    {
+      "step": "driver-userInitiatedCheck"
+    },
+    {
+      "displayVersion": "0.1.0 (2)",
+      "stage": 0,
+      "step": "driver-updateFound",
+      "version": "2"
+    },
+    {
+      "step": "driver-downloadInitiated"
+    },
+    {
+      "bytes": 1040179,
+      "step": "driver-expectedContentLength"
+    },
+    {
+      "step": "driver-extracting"
+    },
+    {
+      "error": {
+        "code": 4005,
+        "description": "The update is improperly signed and could not be validated. Please try again later or contact the app developer.",
+        "domain": "SUSparkleErrorDomain"
+      },
+      "reason": "",
+      "step": "driver-updaterError",
+      "underlying": {
+        "code": 10,
+        "description": "Update validation was a failure",
+        "domain": "SUSparkleErrorDomain"
+      }
+    }
+  ]
+}
+PASS the wrongly signed update was refused (driver reported an error)
+PASS v1 is still installed
+PASS no dialog window on screen
+== the update: v2 signed with v1's key
+sign_update (key-a): sparkle:edSignature="w8Pmvwt7C8WoANKzCOgROCk5V2mj1IinnF0mBoAIAvziWgG5jWnOR55axoxpxw2G2bQFLKN2wPH5/VJi5NYPDw==" length="1040179"
+== launch e2e-2-update: Applications PlatformProbeSparkle.app  --mode sparkle-update
+after run: no dialog windows on screen (36 on-screen windows checked);
+{
+  "runID": "e2e-2-update",
+  "mode": "sparkle-update",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/lectern-sparkle-e2e.Lyp29R/Applications/PlatformProbeSparkle.app/Contents/MacOS/PlatformProbeSparkle",
+        "--run-id",
+        "e2e-2-update",
+        "--mode",
+        "sparkle-update"
+      ],
+      "step": "launched"
+    },
+    {
+      "feed": "http://127.0.0.1:59925/appcast.xml",
+      "installerLauncherService": true,
+      "publicKeyPresent": true,
+      "step": "sparkle-config"
+    },
+    {
+      "ok": true,
+      "step": "updater-start"
+    },
+    {
+      "step": "check-for-updates-called"
+    },
+    {
+      "step": "driver-userInitiatedCheck"
+    },
+    {
+      "displayVersion": "0.1.0 (2)",
+      "stage": 0,
+      "step": "driver-updateFound",
+      "version": "2"
+    },
+    {
+      "step": "driver-downloadInitiated"
+    },
+    {
+      "bytes": 1040179,
+      "step": "driver-expectedContentLength"
+    },
+    {
+      "step": "driver-extracting"
+    },
+    {
+      "step": "driver-readyToInstallAndRelaunch"
+    },
+    {
+      "step": "driver-willInstallUpdate",
+      "version": "2"
+    },
+    {
+      "step": "driver-willRelaunchApplication"
+    },
+    {
+      "applicationTerminated": false,
+      "step": "driver-installing"
+    }
+  ]
+}
+{
+  "runID": "launch-1793290368-5456",
+  "buildTag": "v2",
+  "codeVariant": "v2: rebuilt with a code change",
+  "bundleVersion": "2",
+  "bundlePath": "/private/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/lectern-sparkle-e2e.Lyp29R/Applications/PlatformProbeSparkle.app",
+  "sandboxed": true
+}
+PASS Sparkle relaunched the app as v2, still sandboxed
+== on disk after the update
+installed CDHash 524e7f38ea92027fb2397d1e4bde242ed8230218 (v1 c1784c3bc6a81e81d1955a67d5f5af18163a21eb, v2 524e7f38ea92027fb2397d1e4bde242ed8230218)
+PASS CFBundleVersion is 2
+PASS the installed code is v2's (CDHash)
+PASS the installed signature is valid
+PASS no quarantine attribute
+PASS no dialog window on screen
+http requests served:
+  127.0.0.1 - - [29/Oct/2026 23:12:41] "GET /appcast.xml HTTP/1.1" 200 -
+  127.0.0.1 - - [29/Oct/2026 23:12:41] "GET /PlatformProbeSparkle-2.zip HTTP/1.1" 200 -
+  127.0.0.1 - - [29/Oct/2026 23:12:47] "GET /appcast.xml HTTP/1.1" 200 -
+  127.0.0.1 - - [29/Oct/2026 23:12:47] "GET /PlatformProbeSparkle-2.zip HTTP/1.1" 200 -
+== PASSED: Sparkle updates between ad-hoc signed builds, authenticated by EdDSA alone
+report: /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a045d7dde77f65a10/spikes/platform-probe/build/sparkle-e2e.txt

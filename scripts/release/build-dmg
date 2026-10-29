@@ -2,6 +2,8 @@
 # Builds a Release Lectern.app, checks its signature, and packages it as
 #   build/release/Lectern-<version>.dmg        (Lectern.app, an Applications link, "Read Me First.txt")
 #   build/release/Lectern-<version>.dmg.sha256 (shasum -a 256 format; `shasum -c` from build/release)
+#   build/release/Lectern-<version>.zip        the Sparkle update archive (sign it with
+#                                              scripts/release/sign-update, which writes appcast.xml)
 #
 # The app is signed ad-hoc (no Developer ID) with the hardened runtime on and without
 # get-task-allow (project.yml, docs/architecture.md §8). The version is MARKETING_VERSION.
@@ -41,7 +43,8 @@ DMG=$OUT/Lectern-$VERSION.dmg
 SHA_FILE=$DMG.sha256
 say "version $VERSION"
 # A failed run must not leave the previous DMG looking like this build's.
-rm -rf $DMG $SHA_FILE $PARTIAL $STAGING
+ZIP=$OUT/Lectern-$VERSION.zip
+rm -rf $DMG $SHA_FILE $ZIP $PARTIAL $STAGING
 
 say "archive the Release configuration, clean (log: $LOG)"
 rm -rf $ARCHIVE $DERIVED
@@ -77,9 +80,16 @@ if entitlement com.apple.security.get-task-allow >/dev/null; then
 fi
 sandbox=$(entitlement com.apple.security.app-sandbox) || die "the app-sandbox entitlement is missing"
 [[ $sandbox == true ]] || die "app-sandbox is '$sandbox', expected true"
+# Sparkle (A4, architecture §6): its installer's mach-lookup names, and library validation off
+# while the app is ad-hoc signed (otherwise the embedded framework is rejected at launch).
+bundle_id=$(plutil -extract CFBundleIdentifier raw -o - $APP/Contents/Info.plist)
+lookups=$(entitlement com.apple.security.temporary-exception.mach-lookup.global-name) || die "Sparkle's mach-lookup exception is missing"
+[[ $lookups == *"$bundle_id-spks"* && $lookups == *"$bundle_id-spki"* ]] || die "mach-lookup names are '$lookups', expected $bundle_id-spks and -spki"
+[[ $(entitlement com.apple.security.cs.disable-library-validation) == true ]] || die "disable-library-validation is missing (the ad-hoc app couldn't load Sparkle)"
+[[ -d $APP/Contents/Frameworks/Sparkle.framework ]] || die "Sparkle.framework isn't embedded"
 codesign --verify --deep --strict --verbose=2 $APP >>$SIGNATURE_REPORT 2>&1 \
   || { cat $SIGNATURE_REPORT >&2; die "codesign --verify --deep --strict failed"; }
-print -r -- "flags: $flags; app-sandbox: true; get-task-allow: absent; verify --deep --strict: ok"
+print -r -- "flags: $flags; app-sandbox: true; get-task-allow: absent; Sparkle entitlements: present; verify --deep --strict: ok"
 
 say "assemble the disk image"
 mkdir -p $STAGING $PARTIAL
@@ -112,11 +122,16 @@ hdiutil verify -quiet $PARTIAL/${DMG:t}
 rm -rf $STAGING
 (cd $PARTIAL && shasum -a 256 ${DMG:t} >${SHA_FILE:t} && shasum -a 256 -c -s ${SHA_FILE:t})
 
+# The Sparkle update archive: the same app, zipped with its resource forks and signatures intact.
+ditto -c -k --sequesterRsrc --keepParent $APP $PARTIAL/${ZIP:t}
+
 # Publish: the DMG first, then its checksum. update-cask refuses a DMG without one.
 mv $PARTIAL/${DMG:t} $DMG
 mv $PARTIAL/${SHA_FILE:t} $SHA_FILE
+mv $PARTIAL/${ZIP:t} $ZIP
 rmdir $PARTIAL
 size=$(stat -f %z $DMG)
 say "done"
 print -r -- "$DMG ($size bytes, $(( (size + 524288) / 1048576 )) MB)"
 cat $SHA_FILE
+print -r -- "$ZIP (update archive; sign it with scripts/release/sign-update)"

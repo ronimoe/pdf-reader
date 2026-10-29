@@ -12,5 +12,17 @@
 	<true/>
 	<key>com.apple.security.print</key>
 	<true/>
+	<!-- Sparkle 2 in a sandboxed app (A4; docs/architecture.md §6): its installer service runs
+	     outside the sandbox and is reached through these two names. -->
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+	</array>
+	<!-- Only because the app is signed ad-hoc: with the hardened runtime, library validation
+	     rejects the embedded ad-hoc Sparkle.framework ("different Team IDs") and the app dies in
+	     dyld (docs/spikes/m0c-platform.md, experiment 4). Remove it once there's a Developer ID. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
 </dict>
 </plist>

@@ -22,6 +22,12 @@ settings:
 packages:
   LecternKit:
     path: Packages/LecternKit
+  # Opt-in updates (A4, docs/architecture.md §7). MIT. Pinned to the version
+  # M0c and M5 tested end to end with ad-hoc signed builds. The only dynamic
+  # framework in the app; it needs disable-library-validation (§6).
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 targets:
   Lectern:
     type: application
@@ -39,6 +45,8 @@ targets:
         product: ReaderKit
       - package: LecternKit
         product: ReaderUI
+      - package: Sparkle
+        product: Sparkle
     settings:
       base:
         PRODUCT_NAME: Lectern

@@ -18,6 +18,11 @@ enum AppEnvironment {
     /// test host is the app, and its standard defaults are the user's.
     static var preferences: ReaderPreferences = isHostingTests ? .ephemeral() : ReaderPreferences(defaults: .standard)
 
+    /// Opt-in updates (A4). While hosting tests, Sparkle is never created and nothing is asked.
+    static let updates: UpdateController = isHostingTests
+        ? UpdateController(preferences: preferences, question: RecordingUpdateQuestion(), makeUpdater: { RecordingUpdater() })
+        : UpdateController(preferences: preferences, question: AlertUpdateQuestion(), makeUpdater: { SparkleUpdater() })
+
     /// True when the app is hosting the unit tests.
     static var isHostingTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -82,6 +87,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
         emptyState.show()
         return true
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !AppEnvironment.isHostingTests else { return }
+        // After the launch's own windows: the first-launch question (A4), or scheduled checks.
+        DispatchQueue.main.async { AppEnvironment.updates.start() }
+    }
+
+    /// Lectern ▸ Check for Updates…
+    @objc func checkForUpdates(_ sender: Any?) {
+        AppEnvironment.updates.checkNow()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
