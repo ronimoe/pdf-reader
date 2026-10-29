@@ -267,3 +267,45 @@ It couldn't reproduce either intermittent hang. To prevent them anyway:
 - The full suite passed three runs in a row with no hangs.
 
 **Not verified:** real cursor hover, physical Force Click, VoiceOver itself, and macOS window restoration. Only reopening a document is tested.
+
+## M4b: Annotations and saving (branch `m4b-annotations`, PR #12)
+
+**Landed**
+- **Annotations:**
+  - Highlight, underline and strike-through, plus sticky notes and comments on markup (B4). There are six named colours, and the last one used is remembered.
+  - Every user action is tracked as an `AnnotationChange` list. Annotations already in the file are matched with `AnnotationMatcher`; a match that is ambiguous or missing is refused with an explanation.
+  - Undo and redo work across saves.
+  - A grouped annotation list in the sidebar, plus Go ▸ Next/Previous Annotation.
+  - Both panes refresh after every change.
+- **Saving (A1):**
+  - ⌘S goes only through PDFSave, using `NSDocument`'s safe save, and the written file is checked before it replaces the original.
+  - Signed, certified and read-only files go to Save As, suggesting "<name> (annotated).pdf". Encrypted files get an explanation instead.
+  - Save As and Save To onto the document's own file are refused unless an in-place save is allowed and the bytes are unchanged. The file is compared by identity, with symlinks resolved, and checked again just before the write.
+  - `/T` comes only from `annotationAuthor`, and PDFKit's automatic `/T` and `/M` are cleared.
+- **Crash journal (§6):**
+  - Restore or Discard, acting only on the offered file.
+  - A journal is set aside, not deleted, when a reload or Save As happens before the check.
+  - Restore deletes the offered file only after the replayed changes are confirmed written.
+- **File changed with unsaved annotations (B7):** Reload or Save a Copy. A file whose modification date changed but whose bytes didn't saves normally.
+- **Forms (A5):** clicks never reach a form field, Tab never moves into one, and an info line explains this. Widgets without AcroForm `/Fields` count as form fields.
+- **No UI in tests:** a UI tripwire in the test bundle fails any test that tries to show an alert, sheet, save panel or error. It was added after a test put a real alert on the user's screen.
+
+**Review:** three code-reviewer rounds.
+- Round 1 found two blockers: a journal applied to the wrong bytes after a reload, and Save As overwriting a signed original. It also found three majors and four minors.
+- Round 2 found one blocker, a journal deleted by a reload before the check, plus two majors (symlinks, and the Restore order) and six minors.
+- Round 3 found no blockers. Its two majors were Save As before the check, and Restore when the write fails.
+- All were fixed. Each fix has a test, and the bug was put back to confirm the test fails without it.
+
+**Verified**
+- Package: 221 tests.
+- App: 302 tests.
+- Every saved file passes `qpdf --check`, including the arXiv and NASA real-world files.
+
+**Not verified**
+- An in-place save, under the sandbox, of a file the user picked from their own folders.
+- The Tab guard with a real keyboard (§4.3 [verify]).
+- `canClose` end to end.
+- Preview and Acrobat by hand, VoiceOver, and real drags over text.
+- The cost of building the annotation list on the main thread.
+- Tripwire gaps: UI that appears after the last test, and attribution across suites running in parallel.
+- The intermittent M3 5-minute hang is still unexplained, with none seen since the tripwire.
