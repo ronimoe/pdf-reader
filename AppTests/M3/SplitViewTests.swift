@@ -236,7 +236,10 @@ extension M3Tests {
                 expectKeptPlace(places.0, in: harness.view)
                 expectKeptPlace(places.1, in: secondary.view)
             }
-            SpikeLog.note("M3", "notifyAnnotationsChanged re-bind times (s): \(timings.map { String(format: "%.4f", $0) })")
+            let report = "notifyAnnotationsChanged re-bind times (s): \(timings.map { String(format: "%.4f", $0) })"
+            SpikeLog.note("M3", report)
+            // Also in the test host's temporary folder, as test stdout isn't always kept.
+            try? Data(report.utf8).write(to: FileManager.default.temporaryDirectory.appending(path: "m3-rebind-timings.txt"))
             #expect(timings.max() ?? 1 < 0.25)
         }
     }

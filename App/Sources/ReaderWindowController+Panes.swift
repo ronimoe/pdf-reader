@@ -69,7 +69,7 @@ extension ReaderWindowController {
         readingSplit.addSplitViewItem(item)
         var paneSettings = settings
         paneSettings.zoom = focusedPane.view.zoomMode
-        pane.view.document = document
+        pane.view.show(document)
         pane.view.apply(paneSettings, hints: layoutHints)
         equalizePanes()
         let start = anchor ?? focusedPane.view.currentAnchor
@@ -115,7 +115,7 @@ extension ReaderWindowController {
             readingSplit.removeSplitViewItem(item)
         }
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: secondary.view)
-        secondary.view.document = nil
+        secondary.view.show(nil)
         secondaryPane = nil
         paneContainers[.secondary] = nil
         focusedPaneID = .primary

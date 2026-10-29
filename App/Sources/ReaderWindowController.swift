@@ -258,7 +258,7 @@ final class ReaderWindowController: NSWindowController {
         else { return }
         let stored = openStoredState(for: readerDocument, pdf: pdf)
         readerDocument.applyViewRotation(settings.rotation)
-        primaryPane.view.document = pdf
+        primaryPane.view.show(pdf)
         primaryPane.view.apply(settings, hints: readerDocument.layoutHints)
         if let anchor = stored?.anchor {
             // Restore once the view has its real size; the anchor then holds
@@ -612,7 +612,7 @@ final class ReaderWindowController: NSWindowController {
         guard let pdf = readerDocument.pdfDocument, !readerDocument.isPasswordLocked else {
             // The new file needs a password the old one didn't.
             if isSplit { closePane(.secondary) }
-            primaryPane.view.document = nil
+            primaryPane.view.show(nil)
             didCheckPasswords = false
             checkPasswordsIfNeeded()
             return
@@ -622,7 +622,7 @@ final class ReaderWindowController: NSWindowController {
             pane.setHistory(pane.history.clamped(toPageCount: pdf.pageCount))
             var paneSettings = settings
             paneSettings.zoom = pane.view.zoomMode
-            pane.view.document = pdf
+            pane.view.show(pdf)
             pane.view.apply(paneSettings, hints: readerDocument.layoutHints)
             if let anchor { pane.view.restore(anchor.clamped(toPageCount: pdf.pageCount)) }
         }

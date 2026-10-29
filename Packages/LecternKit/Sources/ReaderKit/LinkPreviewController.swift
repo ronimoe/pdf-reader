@@ -93,7 +93,7 @@ public final class LinkPreviewController: NSViewController {
         self.linkText = linkText
         self.trigger = trigger
         super.init(nibName: nil, bundle: nil)
-        previewView.document = document
+        previewView.show(document)
     }
 
     @available(*, unavailable)

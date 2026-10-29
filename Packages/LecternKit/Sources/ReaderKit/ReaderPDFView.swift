@@ -95,6 +95,7 @@ public final class ReaderPDFView: PDFView {
 
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        Self.disableAutomaticAnalysis(of: self)
         autoScales = false
         displayMode = .singlePageContinuous
         displaysPageBreaks = true
@@ -105,9 +106,6 @@ public final class ReaderPDFView: PDFView {
         registerForDraggedTypes([.fileURL])
         NotificationCenter.default.addObserver(
             self, selector: #selector(scaleDidChange(_:)), name: .PDFViewScaleChanged, object: self
-        )
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(documentDidChange(_:)), name: .PDFViewDocumentChanged, object: self
         )
         observeClipView()
         inputMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.userInputEvents) { [weak self] event in
@@ -130,12 +128,14 @@ public final class ReaderPDFView: PDFView {
         if let inputMonitor { NSEvent.removeMonitor(inputMonitor) }
     }
 
-    /// Resets the view's own state for a new document. Driven by
-    /// `PDFViewDocumentChanged` rather than an override of `document`:
-    /// PDFKit reads `document` from a background queue (its page analyzer,
-    /// on `visiblePagesChanged`, seen on macOS 26), and a Swift override of
-    /// the property is main-actor isolated and traps there.
-    @objc private func documentDidChange(_ notification: Notification) {
+    /// Shows `document` and resets per-document view state. Always use this
+    /// rather than assigning `document`.
+    ///
+    /// `document` is deliberately not overridden: PDFKit reads it from its own
+    /// background queues, and a main-actor override traps there (seen in the
+    /// field from PDFKit's form-detection queue).
+    public func show(_ document: PDFDocument?) {
+        self.document = document
         keptAnchor = nil
         fitReferencePageIndex = 0
         endLinkFocus()
@@ -144,6 +144,23 @@ public final class ReaderPDFView: PDFView {
         targetMarker = nil
         applyZoom()
         observeClipView()
+    }
+
+    /// Keys of PDFKit's private, undocumented automatic page analysis: Vision
+    /// based form-field detection, OCR and table detection. They run on a
+    /// background queue as pages scroll into view and add annotations to the
+    /// document on their own. Lectern ships no AI or analysis features and never
+    /// changes a document behind the reader's back, so both are switched off.
+    /// Each key is only touched if this PDFKit version has it.
+    static let automaticAnalysisKeys = ["formDetectionEnabled", "documentAnalysisEnabled"]
+
+    static func disableAutomaticAnalysis(of view: PDFView) {
+        for key in automaticAnalysisKeys {
+            let setter = NSSelectorFromString("set" + key.prefix(1).uppercased() + key.dropFirst() + ":")
+            if view.responds(to: setter) {
+                view.setValue(false, forKey: key)
+            }
+        }
     }
 
     // MARK: Layout (B1)
@@ -396,8 +413,9 @@ public final class ReaderPDFView: PDFView {
     public func rebindDocument() {
         guard let document else { return }
         let anchor = currentAnchor
-        self.document = nil
-        self.document = document
+        // show(_:) keeps the zoom mode and re-applies it.
+        show(nil)
+        show(document)
         layoutDocumentView()
         if let anchor { restore(anchor) }
     }
