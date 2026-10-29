@@ -106,6 +106,13 @@ These three add 21.5 MB.
   > warranties; see the file.)
 - **`annals-surgery-1886-anthrax-scan.pdf`**: "Malignant Anthrax", *Annals of Surgery*, July 1886
   (DOI 10.1097/00000658-188607000-00026), from the Internet Archive's scholarly-papers collection.
+  **Licence evidence**, from the item's metadata (`https://archive.org/metadata/paper-doi-10_1097_00000658-188607000-00026`,
+  read 2026-10-30): `licenseurl` is `https://creativecommons.org/publicdomain/mark/1.0/`, `date` is
+  `1886-07`, `creator` is `A. Bois`, and the collections are `paper_doi_mirrored_texts` and `journals`. There is no
+  `rights` field. The `publisher` field names the DOI's present registrant, Ovid Technologies
+  (Wolters Kluwer Health). The public-domain status rests on the publication date: a work published in 1886 is
+  out of copyright in the United States (published before 1931), and the Public Domain Mark records
+  the Archive's own assessment.
   An Acrobat 4 image import: every page is a scanned image and no page has text (`RegressionSuiteTests`
   checks all 46).
 

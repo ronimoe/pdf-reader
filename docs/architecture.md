@@ -366,7 +366,11 @@ The same type is stored as the reading position (A2) and used for history entrie
   - Excerpts are built when a row is shown.
   - The results list shows the first 5,000 matches; the count covers them all.
   - Page highlights are replaced at most twice a second while results stream in, and once more at the end *(Amended 2026-10-29, M2 review)*.
-  - *(Amended 2026-10-30, M6)* **The 100 ms coalescing is a run-loop timer** in the common modes, not `DispatchQueue.main.asyncAfter`. PDFKit posts a notification per match and per page; on a long document they flood the main queue faster than it drains, so an update queued behind them ran only when the search ended. On the 3,270-page manual the list stayed empty for 7.5 s although the first match was found after 0.4 s. A timer fires between queue drains. Results now appear after 0.15–0.46 s ([performance.md](performance.md)).
+  - *(Amended 2026-10-30, M6)* **The 100 ms coalescing is a run-loop timer** in the common modes, not `DispatchQueue.main.asyncAfter`.
+    - PDFKit posts its find notifications on the main thread itself (the M6 review counted 234 on the main thread and none off it).
+    - A block queued with `asyncAfter` can't run while the main thread is already inside a main-queue block. So when the run loop is spun from within one, the list stayed empty until the search ended. That happens in a modal session, a tracking loop, or a `@MainActor` test spinning the run loop: the M6 performance test saw 7.5 s on the 3,270-page manual.
+    - Under the app's top-level event loop, `asyncAfter` showed the first results after 0.21 s, with 43 updates. So the empty list was most likely a test-harness effect, not something users saw.
+    - The timer fires in any run loop. It's kept because it's more robust, and `ReleaseTests.resultsReachTheListWhileALongSearchRuns` holds it to that.
 
 **Main-thread cost of opening** *(Amended 2026-10-29, M2 review)*
 - **What is kept off the main thread.**
@@ -562,14 +566,14 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 *(Amended 2026-10-30, M6)* **As released.**
 - **Version.** `MARKETING_VERSION` 1.0.0 and `CURRENT_PROJECT_VERSION` 1 in `project.yml`. The build number is what Sparkle compares, so it goes up by one with every release. `CHANGELOG.md` records each release.
 - **Licences in the app and on the DMG.** The app bundles `LICENSE` (GPL-3.0), `Acknowledgements.txt` (Sparkle 2.10.1's MIT licence verbatim, with the notices for the code it bundles) and `known-limitations.md`, shown under Help ▸ Licence, Acknowledgements and Known Limitations. The About panel shows the version and build, the copyright, the source repository and the no-telemetry line. `build-dmg` adds `License.txt` and `Acknowledgements.txt` to the image. Sparkle is the only bundled third-party component: `Contents/Frameworks` holds only `Sparkle.framework`, and LecternKit is linked statically.
-- **No UI when checking a build.** `verify-dmg` no longer opens the app with a window. It runs the copied app's executable directly with `-LecternSelfCheck` (`SelfCheck`, App). `main.swift` handles that argument before `NSApplication` exists, so no window, Dock icon, alert or menu bar can appear, and no state is read or written. The check covers:
+- **No UI when checking a build.** `verify-dmg` no longer opens the app with a window. It runs the copied app's executable directly with `-LecternSelfCheck` (`SelfCheck`, App). `main.swift` handles that argument before `NSApplication` exists, so no window, Dock icon, alert or menu bar can appear. It runs inside the user's real sandbox container (*(Amended after the M6 review)*: earlier wording here said no state is read or written). It opens no document, and never touches `Session.json`, the crash journal, recent documents, the Keychain or Sparkle, which it never creates. The check covers:
   - the bundle and Info.plist promises,
   - Sparkle's version and that it's the only framework,
   - the entitlements of the running process (`SecTaskCopyValueForEntitlement`), and that it has no `get-task-allow`,
   - that the kernel reports the process sandboxed, inside its container,
   - PDFKit and the incremental writer on a PDF made in memory.
 
-  The script requires exit 0 within 30 s, no window owned by the process (polled every 0.1 s while it runs, which is under a second), and no crash report.
+  The script requires exit 0 within 30 s, no window owned by the process (polled every 0.1 s while it runs, which is under a second), and no crash report. The window counter must first see the Dock's windows, and an error from it fails the run rather than counting as none.
   - **Unexplained:** a probe that the sandbox refuses to read a file outside the container was tried and dropped. Started directly from a shell, the self-check read a file in `$TMPDIR` and one in the home folder, although the kernel reported the process sandboxed and it ran in its container. The xcodebuild-hosted test host can't read the repository, so the direct launch is the likely difference, but that is inferred, not shown. A normally launched copy still has to be checked by hand ([release-checklist.md](release-checklist.md) §5).
 - **Publishing is manual** ([release-checklist.md](release-checklist.md)): tag `v1.0.0`, upload the DMG, its `.sha256`, the zip and `appcast.xml` to a full (not draft, not pre-release) GitHub Release, and push the cask to `ronimoe/homebrew-lectern`. Nothing in the scripts publishes.
 

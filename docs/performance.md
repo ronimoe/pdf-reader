@@ -25,7 +25,7 @@ Spec §9.1 asks that "exact numeric performance thresholds should be established
 
 ## Results and thresholds
 
-The M3 Pro column is from the run of 2026-10-30. The threshold is what fails the test. The aim is the reason for each threshold.
+The M3 Pro figures are from the last run of 2026-10-30, after the M6 review fixes (`build/perf/summary.txt` from that run). Memory figures vary between runs, because the test host's footprint carries over from earlier tests, so they're given as the range over the last four runs. The threshold is what fails the test. The aim is the reason for each threshold.
 
 ### Opening: from open to page 1 drawn
 
@@ -34,8 +34,8 @@ This covers reading and parsing the file, building the window, panes and sidebar
 | Document | M3 Pro | Threshold | Aim |
 |---|---:|---:|---|
 | Book (475 pages) | 0.06 s | ≤ 1.0 s | Opening feels immediate |
-| Manual (3,270 pages) | 0.40 s | ≤ 1.0 s | |
-| Image report | 0.11 s | ≤ 1.0 s | |
+| Manual (3,270 pages) | 0.43 s | ≤ 1.0 s | |
+| Image report | 0.12 s | ≤ 1.0 s | |
 | Scan | 0.09 s | ≤ 1.0 s | |
 
 The manual's time is almost all PDFKit laying out 3,270 pages. M2 had already cut Lectern's own share for 2,000 pages to about 50 ms (architecture §4.6).
@@ -46,10 +46,10 @@ The view is scrolled one page height per step, as a scroll wheel would, through 
 
 | Document | Step p95 | Threshold | Footprint growth | Threshold |
 |---|---:|---:|---:|---:|
-| Book | 0.1 ms | ≤ 16 ms | 60 MB | ≤ 1,000 MB |
-| Manual | 0.8 ms (max 11 ms) | ≤ 16 ms | 467–635 MB | ≤ 1,000 MB |
-| Image report | 0.1 ms | ≤ 16 ms | 30 MB | ≤ 1,000 MB |
-| Scan | 0.1 ms | ≤ 16 ms | 30 MB | ≤ 1,000 MB |
+| Book | 0.1 ms | ≤ 16 ms | 60–70 MB | ≤ 1,000 MB |
+| Manual | 0.8 ms (max 2.7–11 ms) | ≤ 16 ms | 467–635 MB | ≤ 1,000 MB |
+| Image report | 0.1 ms | ≤ 16 ms | 30–49 MB | ≤ 1,000 MB |
+| Scan | 0.1 ms | ≤ 16 ms | 25–30 MB | ≤ 1,000 MB |
 
 The step threshold is one frame at 60 Hz.
 
@@ -59,10 +59,10 @@ Each page is drawn as scrolling brings it into view, at the pane's fit-width sca
 
 | Document | Draw p50 | Draw p95 | Threshold (p95) | Footprint growth | Threshold |
 |---|---:|---:|---:|---:|---:|
-| Book | 1.0 ms | 5.7 ms | ≤ 250 ms | 296 MB | ≤ 600 MB |
-| Manual | 1.9 ms | 3.4 ms | ≤ 250 ms | 3,098 MB | ≤ 8,000 MB |
-| Image report | 29 ms | 98 ms (max 268 ms) | ≤ 250 ms | 94 MB | ≤ 1,200 MB |
-| Scan | 43 ms | 44 ms | ≤ 250 ms | 74 MB | ≤ 200 MB |
+| Book | 1.0 ms | 5.8 ms | ≤ 250 ms | 265–398 MB | ≤ 800 MB |
+| Manual | 1.9 ms | 3.4 ms | ≤ 250 ms | 3,060–3,170 MB | ≤ 8,000 MB |
+| Image report | 29 ms | 98 ms (max 267 ms) | ≤ 250 ms | 64–94 MB | ≤ 1,200 MB |
+| Scan | 43 ms | 44 ms | ≤ 250 ms | 74–90 MB | ≤ 200 MB |
 
 PDFKit draws on background threads, so a slow page appears late; it doesn't freeze scrolling. 250 ms is about the longest a page can stay blank as it comes into view without the wait being noticeable.
 
@@ -70,7 +70,9 @@ PDFKit draws on background threads, so a slow page appears late; it doesn't free
 - drawing every page of the manual on a bare `PDFDocument` grew the footprint by about 1.1 GB, and none of it was released;
 - scrolling without drawing grew it by about 30 MB.
 
-Whether `PDFView`'s own on-screen drawing keeps as much, and whether macOS reclaims it under memory pressure on an 8 GB machine, can't be measured headlessly. Reading the whole 3,270-page manual in one sitting on the baseline M1 needs checking in Activity Monitor ([known-limitations.md](known-limitations.md)). The thresholds here only guard against regressions.
+Whether `PDFView`'s own on-screen drawing keeps as much, and whether macOS reclaims it under memory pressure on an 8 GB machine, can't be measured headlessly. Reading the whole 3,270-page manual in one sitting on the baseline M1 needs checking in Activity Monitor ([known-limitations.md](known-limitations.md)).
+
+**These memory thresholds only guard against regressions on this 18 GB machine.** The manual's 8,000 MB limit in particular says nothing about whether an 8 GB Mac copes. It can't judge the baseline, and the baseline run must set real limits.
 
 ### Search
 
@@ -81,18 +83,21 @@ The search runs through the window controller, as when typing in the toolbar fie
 
 | Search | First result | Threshold | Complete | Threshold | Gap | Threshold |
 |---|---:|---:|---:|---:|---:|---:|
-| Book, "the" (Whole Word) | 0.15 s | ≤ 1.0 s | 3.0 s | ≤ 6 s | 49 ms | ≤ 100 ms |
+| Book, "the" (Whole Word) | 0.15 s | ≤ 1.0 s | 3.0 s | ≤ 6 s | 55 ms | ≤ 100 ms |
 | Book, "steamships" (p. 466) | — | | 2.3 s | ≤ 6 s | 51 ms | ≤ 100 ms |
-| Manual, "table" | 0.46 s | ≤ 1.0 s | 9.9 s | ≤ 20 s | 57 ms | ≤ 100 ms |
-| Manual, "retryable" (p. 3,263) | — | | 7.6 s | ≤ 20 s | 40 ms | ≤ 100 ms |
+| Manual, "table" | 0.46 s | ≤ 1.0 s | 9.9 s | ≤ 20 s | 40–57 ms | ≤ 100 ms |
+| Manual, "retryable" (p. 3,263) | — | | 7.6 s | ≤ 20 s | 24–40 ms | ≤ 100 ms |
 
 For a rare word, the first result *is* the completion, so only the completion is timed.
 
-**Fixed in M6: results now appear while the search runs.**
-- Before the fix, the list stayed empty until the search ended: 7.5 s on the manual, although the first match was found after 0.4 s.
-- PDFKit posts a notification for every match and every page. The coalesced update was queued on the main dispatch queue behind thousands of them.
-- It's now a run-loop timer. `ReleaseTests.resultsReachTheListWhileALongSearchRuns` fails without the fix.
-- A common word now finishes a little later: 9.9 s against 7.7 s, because the list and the page highlights really do update during the search.
+**Changed in M6: search updates are coalesced with a run-loop timer.**
+- The first run of this suite showed the list empty until the search ended: 7.5 s on the manual, although the first match was found after 0.4 s.
+- The cause was the test harness, not the app.
+  - The coalesced update was a `DispatchQueue.main.asyncAfter` block. PDFKit posts its find notifications on the main thread.
+  - A queued main-queue block can't run while the main thread is inside another one, and a `@MainActor` test that spins the run loop is exactly that.
+  - Under the app's own event loop, the M6 review measured the first results after 0.21 s, with 43 updates.
+- The update is now a run-loop timer, which fires in nested run loops too (modal sessions, tracking loops). It's kept for that robustness. `ReleaseTests.resultsReachTheListWhileALongSearchRuns` fails with the old coalescing.
+- A common word on the manual now completes in 9.9 s here, against 7.7 s in that first run. In the first run the list and page highlights never updated during the search; now they do, as they already did in the app. So 9.9 s is the realistic figure, not a slowdown the change caused.
 
 ### Thumbnails
 
@@ -100,8 +105,8 @@ These come from the sidebar's renderer, which runs on its own actor with its own
 
 | Document | M3 Pro | Threshold |
 |---|---:|---:|
-| Book | 1,425 pages/s | ≥ 20 pages/s |
-| Manual | 308 pages/s | ≥ 20 pages/s |
+| Book | 1,358 pages/s | ≥ 20 pages/s |
+| Manual | 306 pages/s | ≥ 20 pages/s |
 | Image report | 168 pages/s | ≥ 20 pages/s |
 | Scan | 41 pages/s | ≥ 20 pages/s |
 
@@ -113,7 +118,7 @@ These come from the sidebar's renderer, which runs on its own actor with its own
 |---|---:|---:|
 | Building the annotation list, nothing listed | 1.5 ms | ≤ 50 ms |
 | Building it with one highlight on page 2,001 | 2.7 ms | ≤ 50 ms |
-| ⌘S of that highlight (main thread, `NSDocument` safe save with read-back check) | 0.73 s | ≤ 1.5 s |
+| ⌘S of that highlight (main thread, `NSDocument` safe save with read-back check) | 0.73–0.75 s | ≤ 1.5 s |
 
 **Fixed in M6: the annotation list.** M4b had flagged its cost on the main thread as unmeasured.
 - It read every page's annotations: 0.53 s for the manual's 18,553 links, every time the list was rebuilt.
@@ -130,7 +135,7 @@ These come from the sidebar's renderer, which runs on its own actor with its own
 
 ### Background work (informational, no threshold)
 
-- **The save-readiness check of the manual,** off the main thread when it opens: 0.95 s. That covers `Saveability`, every annotation's descriptor, and the SHA-256. Annotation actions wait for it.
+- **The save-readiness check of the manual,** off the main thread when it opens: about 0.95 s. That covers `Saveability`, every annotation's descriptor, and the SHA-256. Annotation actions wait for it.
 - **Main-thread cost of opening a generated 2,000-page file,** beyond PDFKit's own work: about 50–59 ms. This is from M2; `OpeningPerformanceTests` runs in `scripts/test.sh`.
 - **One highlight on a generated 1,000-page file, writer only:** 0.17 s in the debug `swift test` build. M4a measured 0.015 s in release. `PDFSaveTests.PerformanceTests` runs in `scripts/test.sh`, with a threshold of 1 s.
 

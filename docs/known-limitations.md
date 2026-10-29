@@ -32,7 +32,7 @@ Lectern 1.0 is a reader first, with highlights and notes. This page lists what i
 - **What you can create:** highlight, underline, strike-through, sticky notes, and comments on markup, in six colours.
 - **What you can edit:** the colour and text of those, including ones made by other apps. Other apps' annotations of other kinds (shapes, ink, stamps, free text, file attachments) are shown and listed but can't be edited, recoloured or recreated after a deleted one is saved.
 - **Some files can only be saved as a copy:** digitally signed files, certified files, Adobe Reader-extended forms, and files in a read-only location. ⌘S opens Save As with the reason, and the original is never changed. Many government PDFs (GovInfo, IRS forms) are signed or Reader-extended.
-- **Encrypted (password-protected) PDFs can't be annotated at all.** Lectern explains why when you try. Files that forbid annotation in their permissions are refused too, unless you enter the owner password.
+- **Encrypted PDFs can't be annotated.** That includes files that open without a password but carry permission restrictions, since those are encrypted too. Lectern can't save annotations into an encrypted file yet, and explains why when you try. Entering the owner password lifts the document's other restrictions, such as copying and printing, for the session, but not this one.
 - **An annotation Lectern can't identify in the file** (for example, two identical annotations on top of each other from another app) can't be edited or deleted; Lectern explains instead of guessing.
 - **Annotations are stored in the PDF; reader bookmarks aren't.** Bookmarks, reading positions and history stay on this Mac. Bookmarks can be exported as JSON (File ▸ Export Bookmarks…).
 

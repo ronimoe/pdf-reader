@@ -252,7 +252,8 @@ def check_signature(case):
         if not cert.exists():
             # A real-world signed file (GovInfo's): its certificate chain isn't ours to trust and
             # its signing certificate has since expired, so trust isn't evaluated. The criterion is
-            # that the signature is untouched: intact, covering its whole revision, as before.
+            # that the signature is untouched: intact, cryptographically valid, and covering its
+            # whole revision.
             if "/realworld/" not in case["input"]:
                 return f"fail: signed but trust root {cert.name} missing"
             vc = ValidationContext(allow_fetching=False)
@@ -260,9 +261,9 @@ def check_signature(case):
             ok = True
             for sig in sigs:
                 st = validate_pdf_signature(sig, vc)
-                details.append(f"{sig.field_name}: intact={st.intact} coverage={st.coverage.name} "
+                details.append(f"{sig.field_name}: intact={st.intact} valid={st.valid} coverage={st.coverage.name} "
                                f"modification={st.modification_level.name} (trust not evaluated)")
-                ok &= bool(st.intact and st.coverage.name == "ENTIRE_REVISION")
+                ok &= bool(st.intact and st.valid and st.coverage.name == "ENTIRE_REVISION")
             return ("pass: " if ok else "fail: ") + "; ".join(details)
         vc = ValidationContext(trust_roots=[load_cert_from_pemder(str(cert))], allow_fetching=False)
         details = []

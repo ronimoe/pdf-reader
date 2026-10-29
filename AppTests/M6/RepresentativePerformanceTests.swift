@@ -41,28 +41,31 @@ nonisolated enum PerfCorpus {
 /// The thresholds (docs/performance.md explains each). Provisional: set on an M3 Pro with about 2×
 /// headroom over what it measured (more where a single frame or an interaction is the natural
 /// bound), to be checked on the A6 baseline, a base M1 with 8 GB, before they count as release
-/// criteria.
+/// criteria. The M3 Pro figures in the comments are the worst over the last runs recorded in
+/// docs/performance.md; keep the two in step.
 nonisolated enum PerfLimit {
-    static let openToFirstPage = 1.0           // s, open a document and draw page 1 (M3 Pro: ≤ 0.44)
+    static let openToFirstPage = 1.0           // s, open a document and draw page 1 (M3 Pro: ≤ 0.44, the manual)
     static let scrollStepMainThread = 0.016    // s, p95 main-thread cost of one page of scrolling: one 60 Hz frame
-    static let pageDraw95 = 0.25               // s, p95 time to draw a page coming into view (M3 Pro: ≤ 0.08)
-    static let searchFirstResult = 1.0         // s, until the first result reaches the list (M3 Pro: ≤ 0.47)
-    static let searchMainThreadGap = 0.10      // s, longest the main thread is busy during a search (M3 Pro: ≤ 0.05)
+    static let pageDraw95 = 0.25               // s, p95 time to draw a page coming into view (M3 Pro: ≤ 0.10, images)
+    static let searchFirstResult = 1.0         // s, until the first result reaches the list (M3 Pro: ≤ 0.46)
+    static let searchMainThreadGap = 0.10      // s, longest the main thread is busy during a search (M3 Pro: ≤ 0.057)
     static let thumbnailsPerSecond = 20.0      // pages/s, sidebar thumbnails on the background actor (M3 Pro: ≥ 41)
-    static let annotationList = 0.05           // s, building the annotation list of the 3,270-page manual
-    static let saveOneHighlight = 1.5          // s, ⌘S of one highlight on the 3,270-page manual (M3 Pro: 0.72)
-    static let scrollMemoryGrowth = 1_000.0    // MB, footprint growth while scrolling a whole document (M3 Pro: ≤ 467)
+    static let annotationList = 0.05           // s, building the annotation list of the 3,270-page manual (M3 Pro: ≤ 0.003)
+    static let saveOneHighlight = 1.5          // s, ⌘S of one highlight on the 3,270-page manual (M3 Pro: 0.73–0.75)
+    static let scrollMemoryGrowth = 1_000.0    // MB, footprint growth while scrolling a whole document (M3 Pro: ≤ 635, the manual)
 
-    /// A whole-document search, by file (M3 Pro: book 2.4 s, manual 7.6 s).
+    /// A whole-document search, by file (M3 Pro: book ≤ 3.0 s, manual ≤ 9.9 s).
     static func searchComplete(_ file: String) -> Double { file == PerfCorpus.manual ? 20 : 6 }
 
     /// Footprint growth once every page has been drawn: PDFKit keeps each drawn page's cache while
-    /// the document is open (M3 Pro: book 261 MB, manual 4,736 MB, images 572 MB, scan 24 MB).
+    /// the document is open (M3 Pro: book 265–398 MB, manual 3,060–3,170 MB, images 64–94 MB,
+    /// scan 74–90 MB). These guard against regressions on this machine only: none of them says
+    /// whether an 8 GB Mac copes, and the baseline run has to set real limits.
     static func drawnPagesMemoryGrowth(_ file: String) -> Double {
         switch file {
         case PerfCorpus.manual: 8_000
         case PerfCorpus.images: 1_200
-        case PerfCorpus.book: 600
+        case PerfCorpus.book: 800
         default: 200
         }
     }

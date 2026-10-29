@@ -68,11 +68,13 @@ public final class DocumentSearch {
     public var coalescingInterval: TimeInterval = 0.1
 
     private var pageTexts: [Int: NSString] = [:]
-    /// The pending coalesced update. A run-loop timer, not `DispatchQueue.main.asyncAfter`: PDFKit
-    /// posts a notification per match and per page, and on a long document those flood the main
-    /// queue faster than it drains, so a block queued behind them ran only when the search ended
-    /// (7.5 s on the 3,270-page manual, with the first match found after 0.4 s; M6). A timer fires
-    /// between queue drains.
+    /// The pending coalesced update: a run-loop timer in the common modes. Until M6 this was
+    /// `DispatchQueue.main.asyncAfter`. PDFKit posts its find notifications on the main thread
+    /// itself, and a main-queue block can't run while the main thread is already inside one. So
+    /// when the run loop is spun from within a main-queue block (a modal session, a tracking loop,
+    /// or a `@MainActor` test spinning `RunLoop`), queued updates waited until the search ended.
+    /// Under the app's own event loop they ran fine (first results after 0.21 s on the 3,270-page
+    /// manual). A timer fires in any of those run loops, so it is kept for robustness.
     private var changeTimer: Timer?
     private var observers: [NSObjectProtocol] = []
 

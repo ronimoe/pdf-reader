@@ -1,5 +1,5 @@
 cask "lectern" do
-  # Placeholders: scripts/release/update-cask fills both from a built DMG.
+  # scripts/release/update-cask writes both from the DMG built by scripts/release/build-dmg.
   version "1.0.0"
   sha256 "c1bd056238041bd20d97f646e31d055dd317f88aeb696bb5f0c2ac24ff6aa723"
 

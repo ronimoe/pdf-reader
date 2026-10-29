@@ -41,7 +41,7 @@ enum AboutPanel {
             .paragraphStyle: paragraph,
         ]
         let text = NSMutableAttributedString(string: "A free, open-source PDF reader for the Mac.\n", attributes: base)
-        text.append(NSAttributedString(string: "No telemetry, no accounts, no ads and no AI. Lectern works offline and goes online only to check for updates, and only if you turn that on.\n", attributes: base))
+        text.append(NSAttributedString(string: "No telemetry, no accounts, no ads and no AI. Lectern works offline and goes online only to check for updates: if you turn that on, or choose Check for Updates.\n", attributes: base))
         var link = base
         link[.link] = AppResources.sourceRepository
         text.append(NSAttributedString(string: "Source code: ", attributes: base))

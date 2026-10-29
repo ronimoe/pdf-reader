@@ -6,7 +6,7 @@ The names here are fixed by what's already built: the cask downloads `https://gi
 
 ## 0. What's already built (local only)
 
-In `build/release/` (git-ignored), from `scripts/release/build-dmg` at the commit that set version 1.0.0:
+In `build/release/` (git-ignored) of the worktree where M6 was built, from `scripts/release/build-dmg`. These are local test outputs, not the files to publish:
 
 | File | What it is |
 |---|---|
@@ -17,7 +17,12 @@ In `build/release/` (git-ignored), from `scripts/release/build-dmg` at the commi
 | `verify-1.0.0.txt` | `verify-dmg`'s report |
 | `signature.txt` | The app's signature and entitlements |
 
-`packaging/homebrew/Casks/lectern.rb` already has version 1.0.0 and the DMG's sha256. If you rebuild, the DMG's checksum changes: run `scripts/release/update-cask`, `scripts/release/check-cask` and `scripts/release/sign-update build/release/Lectern-1.0.0.zip` again and commit the cask.
+**Rebuild from the final merged commit before publishing.** The cask's sha256 in `packaging/homebrew/Casks/lectern.rb` refers to that local DMG, which exists only on the build machine and is git-ignored, and every build has a different checksum. So on the commit you release:
+
+1. `scripts/release/build-dmg` and `scripts/release/verify-dmg`;
+2. `scripts/release/update-cask`, then `scripts/release/check-cask`;
+3. `scripts/release/sign-update build/release/Lectern-1.0.0.zip`, which rewrites `appcast.xml`;
+4. commit the cask (that commit changes no app code, so the DMG still matches it), and publish exactly those files.
 
 Before publishing, re-run the gates on the commit you're releasing:
 

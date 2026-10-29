@@ -11,9 +11,13 @@
 #  4. That copy runs its headless self-check: its executable is started directly with
 #     -LecternSelfCheck, which checks the bundle, the frameworks, the entitlements the process
 #     really has, the sandbox and the PDF engine, prints the result and exits before NSApplication
-#     exists (App/Sources/SelfCheck.swift). It must exit 0 within 30 s, own no window at any
-#     point, and leave no crash report. Nothing is opened, so no state, recent document or
-#     preference is written.
+#     exists (App/Sources/SelfCheck.swift). It must exit 0 within 30 s and leave no crash
+#     report, and no window owned by it may be seen while polling every 0.1 s (it lives well under
+#     a second, so this is a sample, not proof; the proof is that it never creates NSApplication).
+#     The window counter must itself work: it has to see the Dock's windows first, and any error
+#     from it fails the run instead of counting as "no windows". No document is opened, and
+#     Session.json, the crash journal, recent documents, the Keychain and Sparkle are never
+#     touched; it does run inside the user's real sandbox container.
 #  5. A simulated browser download: com.apple.quarantine (as Safari sets it) on a copy of the
 #     DMG and on a second copy of the app. `spctl --assess -vv` output is recorded for both, and
 #     for the clean copy. Neither quarantined copy is ever opened or run.
@@ -120,11 +124,18 @@ if xattr -p com.apple.quarantine $APP >/dev/null 2>&1 \
 fi
 cat >$TMP/windows.swift <<'EOF'
 import CoreGraphics
-let pid = Int32(CommandLine.arguments[1])!
-let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+import Foundation
+guard CommandLine.arguments.count == 2, let pid = Int32(CommandLine.arguments[1]) else { exit(64) }
+// No list at all (no window server session) is an error, never "no windows".
+guard let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else { exit(2) }
 print(windows.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }.count)
 EOF
 swiftc -O -o $TMP/windows $TMP/windows.swift 2>/dev/null || die "could not compile the window counter"
+# Positive control, launching nothing: the Dock always owns windows in a logged-in session.
+dock=$(pgrep -x Dock | head -1) || die "no Dock process to check the window counter against"
+dock_windows=$($TMP/windows $dock) || die "the window counter failed on the Dock"
+(( dock_windows >= 1 )) || die "the window counter sees no Dock windows; it can't be trusted to see Lectern's"
+print -r -- "  window counter: sees $dock_windows Dock window(s)"
 
 pgrep -x Lectern >/dev/null && die "a Lectern started while this script was running; quit it first"
 touch $TMP/launch-marker
@@ -133,7 +144,7 @@ APP_PID=$!
 most_windows=0
 for _ in {1..300}; do
   kill -0 $APP_PID 2>/dev/null || break
-  count=$($TMP/windows $APP_PID 2>/dev/null || print 0)
+  count=$($TMP/windows $APP_PID) || { kill -KILL $APP_PID 2>/dev/null || true; die "the window counter failed"; }
   (( count > most_windows )) && most_windows=$count
   sleep 0.1
 done
@@ -149,7 +160,7 @@ sed 's/^/  /' $TMP/selfcheck.txt
 (( selfcheck_status == 0 )) || die "the self-check exited with $selfcheck_status"
 grep -q '^selfcheck: PASS' $TMP/selfcheck.txt || die "the self-check didn't report PASS"
 (( most_windows == 0 )) || die "the self-check owned $most_windows window(s); it must show none"
-print -r -- "  exit 0, windows owned: 0"
+print -r -- "  exit 0; no window of its own seen while polling every 0.1 s"
 crashes=$(find $HOME/Library/Logs/DiagnosticReports -maxdepth 1 -name 'Lectern*' -newer $TMP/launch-marker 2>/dev/null || true)
 [[ -z $crashes ]] || die "crash report(s) written: $crashes"
 print -r -- "  no crash report"

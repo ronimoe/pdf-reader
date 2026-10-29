@@ -97,10 +97,12 @@ struct ReleaseTests {
 
     // MARK: Search on a long document
 
-    /// PDFKit posts a notification per match and per page; on a long document they flood the main
-    /// queue, and an update queued behind them with `asyncAfter` arrived only when the search ended
-    /// (found by the M6 performance tests: 7.5 s of an empty list on the 3,270-page manual). The
-    /// list must show results while the search is still running.
+    /// The list must show results while a long search is still running, even when the run loop is
+    /// spun from inside a main-queue block, as this `@MainActor` test body does (and as a modal
+    /// session or tracking loop would). With the old `asyncAfter` coalescing, updates queued there
+    /// waited until the search ended; the M6 performance tests saw 7.5 s of an empty list on the
+    /// 3,270-page manual that way. Under the app's own event loop `asyncAfter` worked, so this
+    /// guards the robustness of the timer, not a bug users saw.
     @Test func resultsReachTheListWhileALongSearchRuns() throws {
         let harness = try NavigationHarness(FixturePDF.prose(pages: 1500))
         defer { harness.close() }
