@@ -63,55 +63,151 @@ extension UnsupportedReason {
 }
 
 extension PDFSaveDocument {
-    /// The structural check behind `Saveability.evaluate`. Throws for a file whose pages or
-    /// annotations don't resolve.
+    /// The structural check behind `Saveability.evaluate`. Throws for a file whose pages,
+    /// annotations, signature fields or `/Perms` don't resolve.
     public func saveability(readOnlyLocation: Bool = false) throws(PDFSaveError) -> Saveability {
         for page in 0..<pageCount { _ = try annotations(onPage: page) }
-        var reasons = copyOnlyReasons
+        var reasons = try copyOnlyReasons()
         if readOnlyLocation { reasons.append(.readOnlyLocation) }
         return reasons.isEmpty ? .inPlace : .copyOnly(reasons.sorted())
     }
 
     /// The document-level reasons to save only as a copy (everything except the location).
-    public var copyOnlyReasons: [CopyOnlyReason] {
-        var reasons: [CopyOnlyReason] = []
-        if isCertified { reasons.append(.certified) }
-        if isReaderExtended { reasons.append(.readerExtended) }
-        if isSigned { reasons.append(.signed) }
-        return reasons
-    }
-
-    var catalog: PDFDictionary? {
-        guard let rootRef = trailer["Root"]?.referenceValue else { return nil }
-        return try? dictionary(rootRef)
-    }
-
-    private var perms: PDFDictionary? {
-        guard let p = catalog?["Perms"] else { return nil }
-        return (try? resolve(p))?.dictionaryValue
-    }
-
-    /// `/Perms /DocMDP`: a certification signature.
-    public var isCertified: Bool { perms?["DocMDP"] != nil }
-
-    /// `/Perms /UR3` (or the older `/UR`): Reader-extended usage rights.
-    public var isReaderExtended: Bool { perms?["UR3"] != nil || perms?["UR"] != nil }
-
-    /// True when a signature field in the AcroForm has a value. `/FT` is inheritable, so it is
-    /// tracked down the `/Kids` tree. An empty signature field doesn't count.
-    public var isSigned: Bool {
-        guard let acroForm = catalog?["AcroForm"].flatMap({ try? resolve($0) })?.dictionaryValue,
-              let fields = (try? resolve(acroForm["Fields"] ?? .null))?.arrayValue else { return false }
-        var visited = Set<ObjectRef>()
-        func signed(_ item: PDFObject, inheritedType: PDFName?, depth: Int) -> Bool {
-            guard depth < 32 else { return false }
-            if let ref = item.referenceValue, !visited.insert(ref).inserted { return false }
-            guard let field = (try? resolve(item))?.dictionaryValue else { return false }
-            let type = field["FT"]?.nameValue ?? inheritedType
-            if type == "Sig", let v = field["V"], (try? resolve(v))?.dictionaryValue != nil { return true }
-            let kids = (try? resolve(field["Kids"] ?? .null))?.arrayValue ?? []
-            return kids.contains { signed($0, inheritedType: type, depth: depth + 1) }
+    ///
+    /// Anything that can't be read while deciding throws `.malformed`: a file whose signatures
+    /// or permissions can't be established is never treated as unsigned.
+    ///
+    /// - **certified:** `/Perms /DocMDP`, or a signature whose `/Reference` has a DocMDP transform.
+    /// - **readerExtended:** `/Perms /UR3` or `/UR`, or a signature with a UR3/UR transform.
+    /// - **signed:** a signature field with a value, found through the AcroForm `/Fields` tree
+    ///   or through any page's Widget annotations (following `/Parent` for an inherited `/FT` and
+    ///   `/V`). Also when `/SigFlags` has bit 1 (SignaturesExist) set, unless at least one signature
+    ///   field was found and every one is provably empty.
+    public func copyOnlyReasons() throws(PDFSaveError) -> [CopyOnlyReason] {
+        do throws(PDFSaveError) {
+            return try readCopyOnlyReasons()
+        } catch .malformed(let why) {
+            throw .malformed(why)
+        } catch {
+            throw .malformed("signature or permission check: \(error)")
         }
-        return fields.contains { signed($0, inheritedType: nil, depth: 0) }
+    }
+
+    private func readCopyOnlyReasons() throws(PDFSaveError) -> [CopyOnlyReason] {
+        var reasons = Set<CopyOnlyReason>()
+        guard let rootRef = trailer["Root"]?.referenceValue,
+              let catalog = try dictionary(rootRef) else { throw .malformed("catalog is not a dictionary") }
+
+        if let p = catalog["Perms"] {
+            switch try resolve(p) {
+            case .null: break
+            case .dictionary(let perms):
+                if perms["DocMDP"] != nil { reasons.insert(.certified) }
+                if perms["UR3"] != nil || perms["UR"] != nil { reasons.insert(.readerExtended) }
+            default: throw .malformed("/Perms is not a dictionary")
+            }
+        }
+
+        let signatures = try signatureFields(catalog: catalog)
+        for value in signatures.values {
+            switch try resolve(value) {
+            case .null: continue  // provably empty
+            case .dictionary(let sig):
+                reasons.insert(.signed)
+                for item in try resolve(sig["Reference"] ?? .null).arrayValue ?? [] {
+                    switch try resolve(item).dictionaryValue?["TransformMethod"]?.nameValue?.string {
+                    case "DocMDP"?: reasons.insert(.certified)
+                    case "UR3"?, "UR"?: reasons.insert(.readerExtended)
+                    default: break
+                    }
+                }
+            default:
+                reasons.insert(.signed)  // a value we can't read is not proof of an empty field
+            }
+        }
+        if signatures.flags & 1 != 0, !reasons.contains(.signed) {
+            // SignaturesExist, but no signed field: only "every field provably empty" clears it.
+            if signatures.fieldCount == 0 { reasons.insert(.signed) }
+        }
+        return reasons.sorted()
+    }
+
+    /// Every signature field's `/V` (`.null` when absent), from the AcroForm tree and from the
+    /// pages' Widgets, plus the AcroForm's `/SigFlags`.
+    private func signatureFields(catalog: PDFDictionary) throws(PDFSaveError) -> (values: [PDFObject], fieldCount: Int, flags: Int) {
+        var values: [PDFObject] = []
+        var seen = Set<ObjectRef>()
+        var flags = 0
+
+        func record(_ ref: ObjectRef?, _ value: PDFObject) {
+            if let ref, !seen.insert(ref).inserted { return }
+            values.append(value)
+        }
+
+        var acroForm: PDFDictionary?
+        if let a = catalog["AcroForm"] {
+            switch try resolve(a) {
+            case .null: break
+            case .dictionary(let d): acroForm = d
+            default: throw .malformed("/AcroForm is not a dictionary")
+            }
+        }
+        if let acroForm {
+            if let f = acroForm["SigFlags"] {
+                switch try resolve(f) {
+                case .null: break
+                case let v: guard let i = v.intValue else { throw .malformed("/SigFlags is not an integer") }; flags = i
+                }
+            }
+            let fields: [PDFObject]
+            switch try resolve(acroForm["Fields"] ?? .null) {
+            case .null: fields = []
+            case .array(let a): fields = a
+            default: throw .malformed("/Fields is not an array")
+            }
+            var visited = Set<ObjectRef>()
+            func walk(_ item: PDFObject, type: PDFName?, value: PDFObject?, depth: Int) throws(PDFSaveError) {
+                guard depth < 32 else { throw .malformed("field tree deeper than 32") }
+                if let ref = item.referenceValue, !visited.insert(ref).inserted { return }
+                let field: PDFDictionary
+                switch try resolve(item) {
+                case .null: return
+                case .dictionary(let d): field = d
+                default: throw .malformed("form field is not a dictionary")
+                }
+                let ft = field["FT"]?.nameValue ?? type
+                let v = field["V"] ?? value
+                let kids: [PDFObject]
+                switch try resolve(field["Kids"] ?? .null) {
+                case .null: kids = []
+                case .array(let a): kids = a
+                default: throw .malformed("field /Kids is not an array")
+                }
+                if ft == "Sig", kids.isEmpty || v != nil { record(item.referenceValue, v ?? .null) }
+                for kid in kids { try walk(kid, type: ft, value: v, depth: depth + 1) }
+            }
+            for field in fields { try walk(field, type: nil, value: nil, depth: 0) }
+        }
+
+        // Widgets on the pages, which a sloppy writer may have left out of /Fields.
+        for page in 0..<pageCount {
+            for item in try annots(ofPage: page).items {
+                guard let widget = try resolve(item).dictionaryValue, widget["Subtype"]?.nameValue == "Widget" else { continue }
+                var ft = widget["FT"]?.nameValue, v = widget["V"]
+                var parent = widget["Parent"]
+                var hops = 0
+                while ft == nil || v == nil, let p = parent, p != .null {
+                    hops += 1
+                    guard hops < 32 else { throw .malformed("/Parent chain longer than 32") }
+                    guard let d = try resolve(p).dictionaryValue else { throw .malformed("widget /Parent is not a dictionary") }
+                    ft = ft ?? d["FT"]?.nameValue
+                    v = v ?? d["V"]
+                    parent = d["Parent"]
+                }
+                if ft == "Sig" { record(item.referenceValue, v ?? .null) }
+            }
+        }
+        return (values, values.count, flags)
     }
 }
+

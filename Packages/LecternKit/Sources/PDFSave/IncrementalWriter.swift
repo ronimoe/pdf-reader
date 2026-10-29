@@ -48,9 +48,13 @@ public struct IncrementalWriter: Sendable {
     }
 
     /// Saves for writing to a new file (Save a Copy): the original bytes plus the appended
-    /// update, as for an in-place save. Accepts signed, certified and Reader-extended documents;
-    /// a signed revision stays byte-for-byte intact, so its signature still verifies for that
-    /// revision. Encrypted files are still refused (v1).
+    /// update, as for an in-place save. Accepts signed, certified and Reader-extended documents.
+    ///
+    /// Every signed revision stays byte-for-byte intact, so its signature bytes and byte range are
+    /// unchanged. That does not make the copy acceptable to a validator: the annotations are
+    /// changes made after signing, which validators report. For a certified document whose DocMDP
+    /// permissions (`/P 1` or `/P 2`) forbid annotations, they invalidate the certification, and
+    /// Reader-extended rights are dropped. Encrypted files are still refused (v1).
     public func saveCopy(original: Data, changes: [AnnotationChange]) throws(PDFSaveError) -> SaveResult {
         try save(original: original, changes: changes, inPlace: false)
     }
@@ -59,7 +63,8 @@ public struct IncrementalWriter: Sendable {
         let bytes = [UInt8](original)
         let doc = try PDFSaveDocument(bytes: bytes)
         if inPlace {
-            let reasons = doc.copyOnlyReasons
+            // Throws .malformed when signatures or /Perms can't be read: never "unsigned" by default.
+            let reasons = try doc.copyOnlyReasons()
             guard reasons.isEmpty else { throw .copyOnly(reasons) }
         }
         var session = Session(doc: doc, options: options)
@@ -167,21 +172,24 @@ private struct Session {
         edited.insert(ref)
     }
 
-    /// The quads of an existing markup annotation: `/QuadPoints` in groups of eight, or `/Rect`.
-    /// Writers disagree on the corner order, so each quad is rebuilt from its points: the two
-    /// lowest are the lower edge.
-    func quads(of d: PDFDictionary) throws(PDFSaveError) -> [Quad] {
-        let numbers = try doc.resolve(d["QuadPoints"] ?? .null).arrayValue?.compactMap(\.doubleValue) ?? []
-        if numbers.count >= 8, numbers.count % 8 == 0 {
-            return stride(from: 0, to: numbers.count, by: 8).map { i in
-                let pts = (0..<4).map { PDFPoint(x: numbers[i + 2 * $0], y: numbers[i + 2 * $0 + 1]) }
-                    .sorted { ($0.y, $0.x) < ($1.y, $1.x) }
-                let lower = pts[0..<2].sorted { $0.x < $1.x }, upper = pts[2..<4].sorted { $0.x < $1.x }
-                return Quad(upperLeft: upper[0], upperRight: upper[1], lowerLeft: lower[0], lowerRight: lower[1])
-            }
+    /// The quads of an existing markup annotation, from `/QuadPoints` in groups of eight (or
+    /// `/Rect` when there are none), keeping the file's orientation so rotated text stays rotated.
+    /// Nil when a quad's corner order isn't recognised (see `Quad(quadPoints:)`), so the caller
+    /// can drop the appearance rather than draw something wrong.
+    func quads(of d: PDFDictionary) throws(PDFSaveError) -> [Quad]? {
+        let raw = try doc.resolve(d["QuadPoints"] ?? .null).arrayValue ?? []
+        let numbers = raw.compactMap(\.doubleValue)
+        guard !raw.isEmpty else {
+            guard let rect = try self.rect(of: d) else { return nil }
+            return [Quad(rect: rect)]
         }
-        guard let rect = try self.rect(of: d) else { throw .unsupported("markup annotation without /QuadPoints or /Rect") }
-        return [Quad(rect: rect)]
+        guard numbers.count == raw.count, numbers.count % 8 == 0 else { return nil }
+        var result: [Quad] = []
+        for i in stride(from: 0, to: numbers.count, by: 8) {
+            guard let q = Quad(quadPoints: Array(numbers[i..<i + 8])) else { return nil }
+            result.append(q)
+        }
+        return result
     }
 
     func rect(of d: PDFDictionary) throws(PDFSaveError) -> PDFRect? {
@@ -251,12 +259,14 @@ private struct Session {
             // Readers draw /AP when there is one, so a colour change must reach the appearance.
             if d["AP"] != nil {
                 if let kind = MarkupKind(rawValue: subtype) {
-                    if options.appearanceStreams, let bbox = try rect(of: d) {
+                    if options.appearanceStreams, let bbox = try rect(of: d), let quads = try quads(of: d) {
                         let ap = try allocate()
-                        written[ap] = .stream(AppearanceStreams.markup(kind, quads: try quads(of: d), color: color, bbox: bbox))
+                        written[ap] = .stream(AppearanceStreams.markup(kind, quads: quads, color: color, bbox: bbox))
                         d["AP"] = .dictionary(["N": .reference(ap)])
                     } else {
-                        d["AP"] = nil  // every reader draws markup without /AP (M0a)
+                        // No usable geometry: drawing a guess would be worse than none, and every
+                        // reader draws markup without /AP (M0a).
+                        d["AP"] = nil
                     }
                 } else if subtype == "Text" {
                     let name = try doc.resolve(d["NM"] ?? .null).stringValue?.text
@@ -285,8 +295,14 @@ private struct Session {
                     if let r = info.ref, targets.insert(r).inserted { queue.append(r) }
                 }
             }
-            for info in infos where info.ref.map(targets.contains) ?? false {
-                if let popup = info.popup { targets.insert(popup) }
+            // A /Popup goes too, but only a real popup of this annotation: its /Subtype is /Popup and
+            // its /Parent points back. A /Popup key aimed at an unrelated annotation is left alone.
+            for info in infos {
+                guard let owner = info.ref, targets.contains(owner), let popup = info.popup else { continue }
+                if let p = try doc.resolve(.reference(popup)).dictionaryValue,
+                   p["Subtype"]?.nameValue == "Popup", p["Parent"]?.referenceValue?.number == owner.number {
+                    targets.insert(popup)
+                }
             }
             let before = try annots(page)
             let after = before.filter { item in item.referenceValue.map { !targets.contains($0) } ?? true }

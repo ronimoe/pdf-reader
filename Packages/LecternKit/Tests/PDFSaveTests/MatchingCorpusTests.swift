@@ -11,7 +11,7 @@ import Testing
         (0..<doc.pageCount).flatMap { index in
             doc.page(at: index)!.annotations.map { a in
                 AnnotationQuery(pageIndex: index, subtype: a.type ?? "", rect: PDFRect(cgRect: a.bounds),
-                                contents: a.contents, name: a.value(forAnnotationKey: .name) as? String)
+                                contentsAtOpen: a.contents, name: a.value(forAnnotationKey: .name) as? String)
             }
         }
     }
@@ -33,12 +33,22 @@ import Testing
         let descriptors = try PDFSaveDocument(data: data).annotations()
         let qs = queries(pk)
         let results = AnnotationMatcher().match(qs, in: descriptors)
+        // The independent answer: PDFKit lists a page's annotations in /Annots order, so the n-th
+        // PDFKit annotation on a page is the n-th descriptor on that page.
+        var expected: [ObjectRef?] = []
+        for page in 0..<pk.pageCount {
+            let onPage = descriptors.filter { $0.pageIndex == page }
+            let count = pk.page(at: page)!.annotations.count
+            try #require(onPage.count == count, "\(label) page \(page + 1): PDFKit lists \(count), /Annots has \(onPage.count)")
+            expected += onPage.map(\.ref)
+        }
         var tally = Tally()
-        for (q, r) in zip(qs, results) {
+        for (i, (q, r)) in zip(qs, results).enumerated() {
             switch r {
             case .matched(let ref, let method):
                 tally.byMethod[method, default: 0] += 1
                 let d = try #require(descriptors.first { $0.ref == ref })
+                #expect(ref == expected[i], "\(label): \(q) matched \(ref), but it is \(String(describing: expected[i])) in /Annots order")
                 #expect(d.pageIndex == q.pageIndex && d.subtype == q.subtype, "\(label): \(q) matched \(d)")
                 // How far PDFKit's bounds are from /Rect, to justify the tolerance (notes excepted).
                 if q.subtype != "Text", let r = d.rect {

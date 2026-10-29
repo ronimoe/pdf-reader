@@ -70,6 +70,37 @@ public struct Quad: Sendable, Equatable, Hashable, Codable {
                   lowerLeft: PDFPoint(x: rect.x, y: rect.y), lowerRight: PDFPoint(x: rect.maxX, y: rect.y))
     }
 
+    /// Reads eight `/QuadPoints` numbers, keeping the text's orientation. Two corner orders are
+    /// recognised; in both, the first two points run along the text:
+    /// - **Acrobat's "Z" order** (also MuPDF, pdf.js, PDFKit and this writer): upper-left,
+    ///   upper-right, lower-left, lower-right. The third point is on the right of 1→2.
+    /// - **ISO 32000's counter-clockwise order:** lower-left, lower-right, upper-right, upper-left.
+    ///   The third point is on the left of 1→2.
+    ///
+    /// Nil for anything else (not a parallelogram, zero area, or another order), so the caller
+    /// never guesses which side is up.
+    init?(quadPoints n: [Double]) {
+        guard n.count == 8 else { return nil }
+        let p = (0..<4).map { PDFPoint(x: n[2 * $0], y: n[2 * $0 + 1]) }
+        func cross(_ o: PDFPoint, _ a: PDFPoint, _ b: PDFPoint) -> Double {
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+        }
+        func same(_ a: (Double, Double), _ b: (Double, Double), _ tol: Double) -> Bool {
+            abs(a.0 - b.0) <= tol && abs(a.1 - b.1) <= tol
+        }
+        let size = p.flatMap { q in p.map { hypot(q.x - $0.x, q.y - $0.y) } }.max()!
+        let tol = max(0.05, size * 0.01)
+        let turn = cross(p[0], p[1], p[2])
+        guard abs(turn) > tol * size else { return nil }  // zero area
+        if turn < 0, same((p[0].x + p[3].x, p[0].y + p[3].y), (p[1].x + p[2].x, p[1].y + p[2].y), tol) {
+            self.init(upperLeft: p[0], upperRight: p[1], lowerLeft: p[2], lowerRight: p[3])
+        } else if turn > 0, same((p[0].x + p[2].x, p[0].y + p[2].y), (p[1].x + p[3].x, p[1].y + p[3].y), tol) {
+            self.init(upperLeft: p[3], upperRight: p[2], lowerLeft: p[0], lowerRight: p[1])
+        } else {
+            return nil
+        }
+    }
+
     var points: [PDFPoint] { [upperLeft, upperRight, lowerLeft, lowerRight] }
 
     /// The smallest rectangle containing every corner.

@@ -35,7 +35,7 @@ for index in 0..<pdfDocument.pageCount {
         queries.append(AnnotationQuery(
             pageIndex: index, subtype: a.type ?? "",
             rect: PDFRect(x: b.minX, y: b.minY, width: b.width, height: b.height),
-            contents: a.contents, name: a.value(forAnnotationKey: .name) as? String))
+            contentsAtOpen: a.contents, name: a.value(forAnnotationKey: .name) as? String))
     }
 }
 let matches = AnnotationMatcher().match(queries, in: descriptors)   // one result per query, same order
@@ -85,8 +85,12 @@ A pure function over two arrays. It never guesses: anything except `.matched` me
    - **Sticky notes.** PDFKit reports every `Text` annotation as 24×24, anchored at the top-left
      corner of its `/Rect` (a 20×20 MuPDF note at y 672…692 comes back at 668…692). For notes, only
      that corner is compared.
-   - **Ties.** Several candidates are narrowed by equal `/Contents`, with nil and "" treated alike
-     (`.geometryAndContents`). If that doesn't leave exactly one, the result is `.ambiguous`.
+   - **Ties.** Several candidates are narrowed by `/Contents` equal to the query's
+     `contentsAtOpen`, with nil and "" treated alike (`.geometryAndContents`). If that doesn't leave
+     exactly one, the result is `.ambiguous`.
+   - **`contentsAtOpen` must be the text at open time, not the user's edit.** Suppose two
+     highlights share a `/Rect`, with 5 = "todo" and 6 = none. If the user types "todo" into 6 and
+     the edited text were passed, the tie-break would pick 5. The same goes for `rect`.
 3. **One-to-one.** In a batch, if two queries resolve to the same object, both become `.ambiguous`.
 
 **Why 0.05 pt.** On every non-note annotation in the corpus (about 1,700, almost all links),
@@ -106,8 +110,8 @@ change is created.
 | `addMarkup` (highlight, underline, strike-out) | `/Type /Annot /Subtype /Rect /P /F 4 /C /NM /QuadPoints /AP`, plus `/Contents` and `/T` only when given. Appearance: highlight is the quads filled with blend mode Multiply. Underline and strike-out are one stroked line per quad, at 0.1 and 0.45 of the quad's height, 1/14 of the height wide (at least 0.5 pt). |
 | `addNote` | `/Subtype /Text /Name /Comment /Open false /F 28`, and a 20×20 icon `/AP` |
 | `editContents` | Sets or removes `/Contents` and drops `/RC`, because Acrobat shows the rich-text `/RC` instead of `/Contents`. A FreeText annotation also loses its stale `/AP`. |
-| `editColor` | Sets `/C`. When the annotation has an `/AP`: the appearance is regenerated for highlight, underline and strike-out, from `/QuadPoints`, whose corners are re-sorted because writers disagree on their order. Our own notes get a new icon. Someone else's note loses its `/AP`, so each viewer draws its own icon in the new colour. Any other subtype with an `/AP` throws `.unsupported`. Without an `/AP`, any subtype just gets the new `/C`. |
-| `delete` | Removes the annotation, its `/Popup` and every `/IRT` reply (transitively) from `/Annots`. |
+| `editColor` | Sets `/C`. When the annotation has an `/AP`: the appearance is regenerated for highlight, underline and strike-out, from `/QuadPoints` in the file's own orientation (rotated text stays rotated). Two corner orders are recognised: Acrobat's (upper-left, upper-right, lower-left, lower-right) and ISO 32000's counter-clockwise one. For any other order the `/AP` is dropped rather than guessed. Our own notes get a new icon. Someone else's note loses its `/AP`, so each viewer draws its own icon in the new colour. Any other subtype with an `/AP` throws `.unsupported`. Without an `/AP`, any subtype just gets the new `/C`. |
+| `delete` | Removes the annotation and every `/IRT` reply (transitively) from `/Annots`. It also removes each one's `/Popup`, but only a real popup: `/Subtype /Popup` with a `/Parent` pointing back. |
 
 - **Names.** Every new annotation gets a unique `/NM`. A name already in the file or already used in
   the same save throws `.duplicateName`.
@@ -124,11 +128,23 @@ change is created.
 
 - **`Saveability.evaluate(_:readOnlyLocation:)`** parses the cross-reference chain and the page
   tree, resolves every page's annotations, then reads `/Perms` and the signature fields.
-  - **`copyOnly` lists every reason that applies**, in a fixed order: `certified` (`/Perms
-    /DocMDP`), `readerExtended` (`/Perms /UR3` or `/UR`), `signed`, then `readOnlyLocation`. A
-    certified file is also signed, so it reports `[.certified, .signed]`.
-  - **Signed** means a signature field with a value. `/FT /Sig` is inherited down `/Kids`. An empty
-    signature field, or `/SigFlags` on its own, doesn't count.
+  - **`copyOnly` lists every reason that applies**, in a fixed order: `certified`, `readerExtended`,
+    `signed`, then `readOnlyLocation`. A certified file is also signed, so it reports
+    `[.certified, .signed]`.
+  - **Certified:** `/Perms /DocMDP`, or a signature whose `/Reference` has a DocMDP transform.
+  - **Reader-extended:** `/Perms /UR3` or `/UR`, or a signature with a UR3 transform.
+  - **Signed:** a signature field with a value.
+    - Signature fields are found through the AcroForm `/Fields` tree (with `/FT` and `/V` inherited
+      down `/Kids`), **and** through every page's Widget annotations (following `/Parent`). A
+      signed Widget left out of `/Fields` is still found.
+    - `/SigFlags` bit 1 (SignaturesExist) counts as signed unless at least one signature field was
+      found and every one is provably empty (no `/V`, or `/V null`). When it's unclear, the file is
+      copy-only.
+  - **Never "unsigned" by default.** These checks throw instead of swallowing errors. A catalog,
+    `/AcroForm`, `/Fields`, field, Widget `/Parent` or `/Perms` that doesn't resolve, or isn't the
+    right type, makes the file `.unsupported(.malformed)`, and `saveInPlace` throws `.malformed`.
+    Before this fix, a signed file whose `/AcroForm` cross-reference entry pointed at the wrong
+    object evaluated to `.inPlace`.
   - **`unsupported`** is `.encrypted`, `.malformed(reason)`, or `.unsupportedStructure(reason)`, the
     writer's deliberate refusals (data before `%PDF-`, non-Flate structural streams). It wins over
     `readOnlyLocation`.
@@ -136,8 +152,12 @@ change is created.
 - **`saveInPlace`** throws `.copyOnly(reasons)` for a signed, certified or Reader-extended document.
   It can't know about the location; that's the app's part of `Saveability`.
 - **`saveCopy`** is for Save a Copy: the original bytes plus the same appended update.
-  - It accepts copy-only documents. The signed revision stays byte-for-byte intact, and pyHanko
-    still reports the signature intact and valid with `ENTIRE_REVISION` coverage.
+  - It accepts copy-only documents. Every signed revision stays byte-for-byte intact, so the
+    signature bytes and byte range are unchanged. On the corpus, pyHanko reports the signature
+    intact and valid with `ENTIRE_REVISION` coverage.
+  - **That isn't the same as a clean validation.** Validators report the annotations as
+    modifications made after signing. In a certified document whose DocMDP `/P` is 1 or 2, they
+    invalidate the certification. Reader-extended rights are dropped.
   - **Encrypted files are refused by both calls.** In v1 they can't be saved with annotations at all
     (architecture §4.3).
 
@@ -235,7 +255,7 @@ once for the input and once for the output (`MatchingCorpusTests`).
   and 11 by `/NM` (the inputs of second saves).
 - **Outputs:** 1,793 annotations. 1,717 matched by geometry and 76 by `/NM`.
 - **No `.ambiguous`, `.notFound` or `.unaddressable` results.**
-- Every match had the right page and subtype, and every annotation the writer added was matched by
+- Every match is the object at the same position in the page's `/Annots` (PDFKit lists annotations in that order, which gives an independent expected answer), and every annotation the writer added was matched by
   `/NM` to the object it wrote.
 - **Two fixes came from this run.**
   - The sticky-note rule: the first run had 3 `.notFound` results, all MuPDF notes resized by PDFKit.
@@ -285,8 +305,8 @@ once for the input and once for the output (`MatchingCorpusTests`).
   - A colour edit on a Square, Circle, Ink, FreeText, Line or Polygon annotation that has an `/AP`
     is refused (`.unsupported`). The app should disable it for those subtypes.
   - Someone else's note loses its custom icon `/AP` on a colour edit.
-  - Regenerated markup appearances assume horizontal text: corners are re-sorted by `y`, so vertical
-    text gets a wrong underline.
+  - Markup whose `/QuadPoints` use neither of the two recognised corner orders loses its `/AP` on
+    a colour edit, and readers redraw it from `/C`.
 - **Carried over from M0a:**
   - Deleted objects stay in the file, unlinked.
   - New annotations get no `/StructParent` in tagged PDFs.
@@ -295,8 +315,8 @@ once for the input and once for the output (`MatchingCorpusTests`).
 **Matching**
 - **Twins stay ambiguous.** Identical annotations on the same page with the same subtype, `/Rect` and
   `/Contents` can't be told apart (`indexInAnnots` is exposed but not used).
-- **Match when the file is opened.** Queries must use the bounds PDFKit reported at that point, not
-  after the user moved something.
+- **Match when the file is opened.** Queries must use the bounds and contents PDFKit reported at that
+  point (`rect`, `contentsAtOpen`), not after the user changed something.
 - **The sticky-note rule comes from observation.** It is based on PDFKit's behaviour on macOS 26.6
   (24×24 bounds). If PDFKit changes it, `everyPDFKitAnnotationMatches` fails.
 

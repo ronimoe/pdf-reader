@@ -296,7 +296,7 @@ enum Corpus {
                         // The writer also drops the popup and replies; mirror that for expectations.
                         let target = all.filter { $0.ref == ref }
                         let replies = all.filter { $0.inReplyTo == ref }
-                        let popups = all.filter { info in (target + replies).contains { $0.popup != nil && $0.popup == info.ref } }
+                        let popups = all.filter { info in info.subtype == "Popup" && (target + replies).contains { $0.popup != nil && $0.popup == info.ref } }
                         removedInfo += target + replies + popups
                         outcome.pdfKitRemoved += (target + replies + popups).map { (page: $0.pageIndex, key: shown($0)) }
                     case .editContents(let ref, let text):

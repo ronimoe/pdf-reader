@@ -60,20 +60,28 @@ public struct AnnotationDescriptor: Sendable, Equatable, Hashable {
     public var isLectern: Bool { AnnotationName.isLectern(name) }
 }
 
-/// The app's side of a match: what PDFKit reports for one `PDFAnnotation`.
+/// The app's side of a match: what PDFKit reported for one `PDFAnnotation` **when the file was
+/// opened**. Every field describes the annotation as it is in the file, never as the user has
+/// since edited it: the app snapshots these at open time (or keeps the originals alongside
+/// its edits) and matches with the snapshot.
 public struct AnnotationQuery: Sendable, Equatable, Hashable {
     public var pageIndex: Int
     /// PDFKit's `type`, e.g. "Highlight" (a leading slash is ignored).
     public var subtype: String
-    /// PDFKit's `bounds`.
+    /// PDFKit's `bounds` at open time.
     public var rect: PDFRect
-    public var contents: String?
+    /// PDFKit's `contents` at open time, used only to break geometric ties.
+    ///
+    /// It must be the value the file had, not the user's edit. Two highlights can share a `/Rect`
+    /// with one saying "todo" and the other nothing; if the user types "todo" into the second and
+    /// the edited text were passed here, the tie-break would pick the first.
+    public var contentsAtOpen: String?
     /// The `/NM` value (`PDFAnnotationKey.name`), if the annotation has one.
     public var name: String?
 
-    public init(pageIndex: Int, subtype: String, rect: PDFRect, contents: String? = nil, name: String? = nil) {
+    public init(pageIndex: Int, subtype: String, rect: PDFRect, contentsAtOpen: String? = nil, name: String? = nil) {
         self.pageIndex = pageIndex; self.subtype = subtype; self.rect = rect
-        self.contents = contents; self.name = name
+        self.contentsAtOpen = contentsAtOpen; self.name = name
     }
 }
 
@@ -112,8 +120,8 @@ public enum AnnotationMatch: Sendable, Equatable, Hashable {
 ///    else's); if it's only on another page or subtype, `.ambiguous`.
 /// 2. **Geometry.** Otherwise: same page, same subtype, and every `/Rect` edge within `tolerance`
 ///    (for sticky notes only the top-left corner, because PDFKit resizes their bounds).
-///    Several candidates are narrowed by equal `/Contents`; if that doesn't leave exactly one, the
-///    result is `.ambiguous`.
+///    Several candidates are narrowed by `/Contents` equal to the query's `contentsAtOpen`; if that
+///    doesn't leave exactly one, the result is `.ambiguous`.
 /// 3. **One-to-one.** In a batch, a file annotation claimed by more than one query is ambiguous
 ///    for all of them.
 public struct AnnotationMatcher: Sendable {
@@ -166,7 +174,7 @@ public struct AnnotationMatcher: Sendable {
         case 0: return .notFound
         case 1: return resolved(candidates[0], .geometry)
         default:
-            let same = candidates.filter { Self.sameContents($0.contents, query.contents) }
+            let same = candidates.filter { Self.sameContents($0.contents, query.contentsAtOpen) }
             if same.count == 1 { return resolved(same[0], .geometryAndContents) }
             return .ambiguous(candidates.compactMap(\.ref))
         }
