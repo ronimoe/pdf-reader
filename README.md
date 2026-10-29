@@ -38,7 +38,7 @@ xcodebuild -project Lectern.xcodeproj -scheme Lectern -configuration Release -de
 
 The app is at `build/DerivedData/Build/Products/Release/Lectern.app`. You can also open `Lectern.xcodeproj` in Xcode. Library code lives in the local Swift package `Packages/LecternKit`.
 
-**Release packaging.** `scripts/release/build-dmg` builds and checks a signed Release DMG in `build/release/`, and `scripts/release/verify-dmg` checks that DMG.
+**Release packaging.** `scripts/release/build-dmg` builds an ad-hoc signed Release app, checks its signature and packages it as a DMG in `build/release/`, and `scripts/release/verify-dmg` checks that DMG.
 
 ## Testing
 

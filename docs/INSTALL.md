@@ -70,7 +70,7 @@ Removing the app leaves your reading data behind. Lectern is sandboxed, so all o
 | `~/Library/Containers/io.github.ronimoe.Lectern` | Everything Lectern stores: reading positions, reader bookmarks, history, view settings and preferences |
 | `~/Library/Application Scripts/io.github.ronimoe.Lectern` | An empty folder macOS creates for every sandboxed app |
 
-- **Removing the data.** Delete the `Data` folder inside the container, for example with `rm -rf ~/Library/Containers/io.github.ronimoe.Lectern/Data`. macOS protects the container folder itself, so Terminal can't delete it; what's left after removing `Data` holds no reading data.
+- **Removing the data.** Quit Lectern first. Your reading data is in the `Data` folder inside the container. macOS protects the container folder itself, so it may refuse to delete it, and it may ask whether Terminal or Finder can access another app's data.
 - **With Homebrew,** `brew uninstall --zap --cask ronimoe/lectern/lectern` tries to move both folders to the Trash.
 - **Saved PDF passwords.** These exist only if you ticked "Remember in Keychain". Open Keychain Access and delete the items named `io.github.ronimoe.Lectern.document-password`.
 - **Your PDFs** are never moved or copied into these folders. Annotations you save are written into the PDF file itself.
