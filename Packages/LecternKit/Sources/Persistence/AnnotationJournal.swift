@@ -88,7 +88,8 @@ public final class AnnotationJournal: Sendable {
         }
     }
 
-    /// Deletes the journal for `id`, cancelling any scheduled write.
+    /// Deletes the live journal for `id` (after a save, a reload, or Don't Save), cancelling any
+    /// scheduled write. Journals the user chose to keep are left alone.
     public func remove(_ id: UUID) {
         pending.withLock { state in
             let next = (state[id]?.generation ?? 0) + 1
@@ -99,14 +100,59 @@ public final class AnnotationJournal: Sendable {
         }
     }
 
-    /// What the journal holds for `id`, compared with the hash of the bytes that are open now.
+    /// Deletes every journal for `id`, live and kept: the user chose Discard.
+    public func discard(_ id: UUID) {
+        remove(id)
+        queue.sync {
+            for file in keptFiles(for: id) { try? FileManager.default.removeItem(at: file) }
+        }
+    }
+
+    /// The user chose to keep a journal that can't be applied now: it moves aside, out of the
+    /// way of the document's new changes, and is offered again the next time it opens. Nothing
+    /// written later replaces or deletes it.
+    public func setAside(_ id: UUID, now: Date = Date()) {
+        flush(id)
+        queue.sync {
+            let live = url(for: id)
+            guard FileManager.default.fileExists(atPath: live.path) else { return }
+            let stamp = Int(now.timeIntervalSince1970 * 1000)
+            let kept = directory.appending(path: "\(id.uuidString).kept-\(stamp).json")
+            try? FileManager.default.moveItem(at: live, to: kept)
+        }
+    }
+
+    /// Kept journals for `id`, oldest first.
+    func keptFiles(for id: UUID) -> [URL] {
+        let prefix = "\(id.uuidString).kept-"
+        let entries = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        return entries.filter { $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    /// What the journal holds for `id`, compared with the hash of the bytes that are open now:
+    /// the live journal if there is one, otherwise the oldest kept one.
     public func lookup(_ id: UUID, currentSHA256: String) -> JournalLookup {
-        let file = url(for: id)
-        guard FileManager.default.fileExists(atPath: file.path) else { return .none }
+        let live = url(for: id)
+        let file: URL
+        if FileManager.default.fileExists(atPath: live.path) {
+            file = live
+        } else if let kept = keptFiles(for: id).first {
+            file = kept
+        } else {
+            return .none
+        }
         guard let data = try? Data(contentsOf: file),
               let entry = try? JSONDecoder.journal.decode(JournalEntry.self, from: data)
         else { return .unreadable }
         return entry.originalSHA256 == currentSHA256 ? .matching(entry) : .mismatched(entry)
+    }
+
+    /// After a kept journal was restored: its changes are live again, so the kept copies go.
+    public func removeKept(_ id: UUID) {
+        queue.sync {
+            for file in keptFiles(for: id) { try? FileManager.default.removeItem(at: file) }
+        }
     }
 
     private func writeIfCurrent(_ id: UUID, generation: Int) {

@@ -96,6 +96,48 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: journal.url(for: id).path))
     }
 
+    @Test func aKeptJournalSurvivesLaterWritesAndRemovesUntilDiscarded() throws {
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let journal = journal(debounce: .seconds(60))
+        let id = UUID()
+        journal.record(JournalEntry(originalSHA256: "old", changes: changes), for: id)
+        journal.flush(id)
+        journal.setAside(id)
+        // The document's new changes, an undo back to nothing, a save: none touch the kept file.
+        journal.record(JournalEntry(originalSHA256: "new", changes: [changes[0]]), for: id)
+        journal.flush(id)
+        journal.record(JournalEntry(originalSHA256: "new", changes: []), for: id)
+        journal.flush(id)
+        journal.remove(id)
+        guard case .mismatched(let kept) = journal.lookup(id, currentSHA256: "new") else {
+            Issue.record("the kept journal must still be found")
+            return
+        }
+        #expect(kept.changes == changes)
+        #expect(journal.keptFiles(for: id).count == 1)
+        journal.discard(id)
+        #expect(journal.lookup(id, currentSHA256: "new") == .none)
+        #expect(journal.keptFiles(for: id).isEmpty)
+    }
+
+    @Test func theLiveJournalComesBeforeAKeptOne() throws {
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let journal = journal(debounce: .seconds(60))
+        let id = UUID()
+        journal.record(JournalEntry(originalSHA256: "old", changes: changes), for: id)
+        journal.setAside(id)
+        journal.record(JournalEntry(originalSHA256: "new", changes: [changes[1]]), for: id)
+        journal.flush(id)
+        #expect(journal.lookup(id, currentSHA256: "new") == .matching(try decoded(journal.url(for: id))))
+        journal.removeKept(id)
+        #expect(journal.keptFiles(for: id).isEmpty)
+        #expect(FileManager.default.fileExists(atPath: journal.url(for: id).path))
+    }
+
+    private func decoded(_ url: URL) throws -> JournalEntry {
+        try JSONDecoder.journal.decode(JournalEntry.self, from: Data(contentsOf: url))
+    }
+
     @Test func hashIsSHA256Hex() {
         #expect(JournalEntry.hash(of: Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }

@@ -195,6 +195,26 @@ extension M4Tests {
             #expect(final.annotations(named: recreated.name).count == 1)
         }
 
+        /// Edit ▸ Undo in the app: through the responder chain from the page, with undo groups
+        /// made per event.
+        @Test func undoThroughTheResponderChainWithEventGroups() async throws {
+            let harness = try await AnnotationHarness(corpus: "classic-xref")
+            defer { harness.close() }
+            harness.undo.groupsByEvent = true
+            harness.window.makeFirstResponder(harness.view)
+            #expect(harness.view.undoManager === harness.document.undoManager)
+            let highlight = try harness.highlight("quick brown fox")
+            Spin.runLoop(0.1)
+            #expect(harness.undo.canUndo)
+            #expect(NSApp.sendAction(Selector(("undo:")), to: nil, from: nil) || harness.window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
+            #expect(highlight.page == nil)
+            #expect(harness.editor.pending.isEmpty)
+            Spin.runLoop(0.1)
+            harness.view.undoManager?.redo()
+            #expect(highlight.page != nil)
+            #expect(harness.editor.pending.count == 1)
+        }
+
         @Test func undoOfAColourChangeAfterSaveIsANewChange() async throws {
             let harness = try await AnnotationHarness(corpus: "classic-xref")
             defer { harness.close() }
@@ -261,8 +281,13 @@ extension M4Tests {
             #expect(harness.editor.pending.isEmpty)
             #expect(harness.pdf.page(at: 0)?.annotations.isEmpty == true)
             #expect(AnnotationRefusal.cannotSave(.encrypted).message.contains("encrypted"))
-            // Nothing to save, and ⌘S writes nothing.
-            #expect(harness.document.saveRoute == .nothingToSave)
+            // ⌘S explains instead of doing nothing, and writes nothing.
+            #expect(harness.document.saveRoute == .refused(.cannotSave(.encrypted)))
+            let before = harness.fileBytes
+            harness.document.save(nil)
+            #expect(harness.presenter.refusals.last == .cannotSave(.encrypted))
+            #expect(harness.presenter.refusals.count == 2)
+            #expect(harness.fileBytes == before)
         }
 
         @Test func restrictedCommentingExplainsAndOffersTheOwnerPassword() async throws {

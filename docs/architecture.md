@@ -94,7 +94,7 @@ Copy-only files are saved with `saveCopy`, which is the original bytes plus the 
 *(Amended 2026-10-29, M4b.)* The open work above is done (M4a), except checking Preview and Acrobat Reader by hand. How the app uses the writer:
 - **What gets saved.** `ReaderDocument` keeps an ordered `PendingChanges` list (PDFSave). Every user action appends to it, or folds into the pending add of an annotation that was never saved, and makes the same change to the PDFKit model for display. The list is never derived by comparing PDFKit with the file.
 - **Matching.** Before anything on a page changes, all of that page's PDFKit annotations are matched in one `AnnotationMatcher` batch against the descriptors read at open (or at the last save). Annotations added since the last save are left out. Anything but `.matched` is refused with an explanation.
-- **Which writer.** ⌘S on an `inPlace` file runs `saveInPlace` through `NSDocument`'s safe save. Save As (and B7's Save a Copy) runs `saveCopy`. A `copyOnly` file, or one deleted since it opened, sends ⌘S to a Save As panel whose message gives the reason. An `unsupported` file refuses annotations when they're made, so it never has anything to save.
+- **Which writer.** ⌘S on an `inPlace` file runs `saveInPlace` through `NSDocument`'s safe save. Save As (and B7's Save a Copy) runs `saveCopy`. A `copyOnly` file, or one deleted since it opened, sends ⌘S to a Save As panel whose message gives the reason. An `unsupported` file refuses annotations when they're made, so it never has anything to save; ⌘S explains why instead of doing nothing.
 - **The check after writing.** `write(to:ofType:for:originalContentsURL:)` writes the bytes to NSDocument's temporary file, reads them back, and runs `SavedFileCheck`: the bytes are the writer's, the original is a prefix, and the annotation count is the original's plus the added ones minus the removed ones, with every added `/NM` on its object. A failure throws before the swap, so the original stays intact.
 - **After a save.** The written bytes become `originalData`. The list empties, descriptors and matching restart from the new bytes, and `Saveability` is re-checked in the background. The pages aren't reloaded and the reader's place stays.
 - **Never on changed bytes.** ⌘S compares the file on disk with `originalData` first and goes to the B7 choice if they differ; the write path checks again.
@@ -430,10 +430,11 @@ The same type is stored as the reading position (A2) and used for history entrie
 
 **As built in M4b** *(Amended 2026-10-29)*
 - `AnnotationJournal` (Persistence) lives in `Journal/`, beside `Documents/` and `index.json`. The `<uuid>` is the document's stored-state ID. Each file holds the SHA-256 of `originalData`, the change list, and when it was written. Writes are atomic, debounced by 0.5 s, on a private queue.
-- **Deleted** after a successful save, a B7 Reload or Save a Copy, any reload, and when the document closes with unsaved annotations (which only happens after Don't Save). A Save As gives the new file its own stored record, so its journal is never filed under the original's ID.
+- **The live journal is deleted** after a successful save, a B7 Reload or Save a Copy, any reload, and when the document closes with unsaved annotations (which only happens after Don't Save). A Save As gives the new file its own stored record, so its journal is never filed under the original's ID.
 - **On open,** once the background check has the hash:
   - The same hash offers **Restore** or **Discard**. Restore replays the changes onto the pages, all or nothing: if an edit or delete can't find its annotation, nothing is applied and the journal is kept.
   - A different hash, or a file that can't be read, explains that the annotations no longer fit and offers **Discard** or **Keep for Now**. It is never deleted silently.
+  - **Keep for Now**, and a restore that can't apply, move the journal aside to `Journal/<uuid>.kept-<time>.json`. The document's new changes, saves, reloads and closes only ever write or delete the live `<uuid>.json`, so a kept journal survives them and is offered again the next time the document opens. Only Discard deletes it.
 - Restoring isn't an undoable action.
 
 **Other storage**

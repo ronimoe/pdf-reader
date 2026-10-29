@@ -84,6 +84,32 @@ extension M4Tests {
             #expect(discard.journal.lookup(id, currentSHA256: "any") == .none)
         }
 
+        @Test func aKeptJournalSurvivesNewChangesUndoAndClose() async throws {
+            let folder = try TemporaryFolder()
+            let crashed = try await crashedSession(folder)
+            let changed = try IncrementalWriter().saveInPlace(original: try Data(contentsOf: crashed.url), changes: [
+                .addNote(NewNote(pageIndex: 1, origin: PDFPoint(x: 100, y: 100), contents: "elsewhere")),
+            ]).data
+            try changed.write(to: crashed.url)
+            let keep = try await AnnotationHarness(file: crashed.url, folder: folder, store: crashed.store, journal: crashed.journal, staleJournalChoice: .keep)
+            let id = try #require(keep.controller.storedDocumentID)
+            try keep.highlight("quick brown fox")
+            keep.journal.flush(id)
+            keep.undo.undo()
+            keep.journal.flush(id)
+            keep.close()
+            guard case .mismatched(let kept) = keep.journal.lookup(id, currentSHA256: JournalEntry.hash(of: changed)) else {
+                Issue.record("the kept journal must survive")
+                return
+            }
+            #expect(kept.changes == crashed.changes)
+            // Reopened, it is explained again; Discard removes it for good.
+            let again = try await AnnotationHarness(file: crashed.url, folder: folder, store: crashed.store, journal: crashed.journal, staleJournalChoice: .discard)
+            defer { again.close() }
+            #expect(again.presenter.staleJournalExplanations == [false])
+            #expect(again.journal.lookup(id, currentSHA256: "any") == .none)
+        }
+
         @Test func dontSaveOnCloseDeletesTheJournal() async throws {
             let harness = try await AnnotationHarness(corpus: "classic-xref")
             try harness.highlight("quick brown fox")

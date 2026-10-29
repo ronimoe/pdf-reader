@@ -300,6 +300,9 @@ extension M4Tests {
         @Test(arguments: [
             ("arxiv-2208.04284v5", "Generalization Bounds"),
             ("arxiv-2310.12457v2", "MuseGNN"),
+            ("arxiv-2402.16746v1", "Karlsruhe Institute of Technology"),
+            ("arxiv-2502.20639v1", "Heterogeneous"),
+            ("arxiv-2503.00201v1", "Truth Discovery"),
             ("nasa-tm-20180002207", "Marshall Space Flight Center"),
             ("nasa-tm-2020-220520", "Integrated Radio"),
         ])

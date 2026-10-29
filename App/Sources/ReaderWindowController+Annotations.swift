@@ -328,8 +328,8 @@ extension ReaderWindowController {
     func documentDidSaveCopy(to url: URL) {}
 
     func documentWillClose(discardingAnnotations: Bool) {
-        // Closing with unsaved annotations only happens after Don't Save.
-        if let storedDocumentID { journal?.remove(storedDocumentID) }
+        // Closing with unsaved annotations only happens after Don't Save. A kept journal stays.
+        if discardingAnnotations, let storedDocumentID { journal?.remove(storedDocumentID) }
     }
 
     // MARK: Crash journal (A1)
@@ -353,24 +353,29 @@ extension ReaderWindowController {
             presenter.offerJournalRestore(name: name, changeCount: entry.changes.count, on: window) { [weak self] choice in
                 guard let self else { return }
                 switch choice {
-                case .restore: restoreJournal(entry)
-                case .discard: journal.remove(storedDocumentID)
-                case .keep: break
+                case .restore: restoreJournal(entry, id: storedDocumentID)
+                case .discard: journal.discard(storedDocumentID)
+                case .keep: journal.setAside(storedDocumentID)
                 }
             }
         case .mismatched, .unreadable:
             let unreadable = journal.lookup(storedDocumentID, currentSHA256: hash) == .unreadable
             presenter.explainStaleJournal(name: name, unreadable: unreadable, on: window) { choice in
-                if choice == .discard { journal.remove(storedDocumentID) }
+                // Kept journals move aside, where the document's new changes never touch them.
+                if choice == .discard { journal.discard(storedDocumentID) } else { journal.setAside(storedDocumentID) }
             }
         }
     }
 
-    func restoreJournal(_ entry: JournalEntry) {
+    func restoreJournal(_ entry: JournalEntry, id: UUID) {
         guard let editor = annotations, editor.pending.isEmpty else { return }
         do throws(AnnotationRefusal) {
             try editor.replay(entry.changes)
+            // The changes are live again and journaled as such; a kept copy isn't needed.
+            journal?.removeKept(id)
         } catch {
+            // Nothing was applied: keep the journal, out of the way of new changes.
+            journal?.setAside(id)
             explainAnnotationRefusal(error)
         }
     }

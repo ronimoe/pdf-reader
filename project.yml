@@ -64,6 +64,12 @@ targets:
       # M4b: saving annotations end to end, on generated and real-world files.
       - path: Tests/Corpus/public/realworld/arxiv-2208.04284v5.pdf
         buildPhase: resources
+      - path: Tests/Corpus/public/realworld/arxiv-2402.16746v1.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/realworld/arxiv-2502.20639v1.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/realworld/arxiv-2503.00201v1.pdf
+        buildPhase: resources
       - path: Tests/Corpus/public/realworld/nasa-tm-20180002207.pdf
         buildPhase: resources
       - path: Tests/Corpus/public/realworld/nasa-tm-2020-220520.pdf

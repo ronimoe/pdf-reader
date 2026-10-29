@@ -83,6 +83,8 @@ extension ReaderDocument {
 
     var saveRoute: SaveRoute {
         guard let editor = annotations else { return .nothingToSave }
+        // A document that can't hold annotations says so when the user tries to save (B6, Rule 7).
+        if case .unsupported(let reason)? = editor.saveability { return .refused(.cannotSave(reason)) }
         if fileWasRemoved {
             return editor.hasUnsavedChanges ? .copy(explanation: "The original file was deleted or moved to the Trash. Choose where to save the document with your annotations.") : .nothingToSave
         }
