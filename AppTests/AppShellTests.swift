@@ -60,11 +60,14 @@ import Testing
         }
     }
 
-    @Test func fileMenuHasPrintAndOpenRecentButNoSave() throws {
+    @Test func fileMenuHasSavePrintAndOpenRecent() throws {
         let file = try #require(menu.items.first { $0.title == "File" }?.submenu)
         #expect(file.items.contains { $0.action == #selector(NSDocument.printDocument(_:)) })
         #expect(file.items.contains { $0.submenu?.items.contains { $0.action == #selector(NSDocumentController.clearRecentDocuments(_:)) } == true })
-        #expect(!file.items.contains { $0.action == #selector(NSDocument.save(_:)) })
+        let save = try #require(file.items.first { $0.action == #selector(NSDocument.save(_:)) })
+        #expect(save.keyEquivalent == "s" && save.keyEquivalentModifierMask == .command)
+        let saveAs = try #require(file.items.first { $0.action == #selector(NSDocument.saveAs(_:)) })
+        #expect(saveAs.keyEquivalent == "s" && saveAs.keyEquivalentModifierMask == [.command, .shift])
     }
 
     private func allItems(_ menu: NSMenu) -> [NSMenuItem] {

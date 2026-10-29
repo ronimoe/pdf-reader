@@ -146,6 +146,62 @@ final class RecordingPresenter: ReaderPresenting {
     func explainBlockedLink(_ link: BlockedLink, on window: NSWindow) {
         blockedLinks.append(link)
     }
+
+    // MARK: Annotations and saving: scripted answers, recorded questions
+
+    private(set) var refusals: [AnnotationRefusal] = []
+    private(set) var ownerPasswordOffers = 0
+    var changedFileChoice: ChangedFileChoice?
+    private(set) var changedFileQuestions = 0
+    var confirmsDiscard = true
+    private(set) var discardConfirmations = 0
+    var copyDestination: URL?
+    private(set) var copyDestinationRequests: [String] = []
+    var journalChoice: JournalChoice = .restore
+    private(set) var journalOffers: [Int] = []
+    var staleJournalChoice: JournalChoice = .discard
+    private(set) var staleJournalExplanations: [Bool] = []
+    /// The text "typed" into the next annotation popover; nil cancels it.
+    var annotationText: String?
+    private(set) var textEdits: [(heading: String, text: String)] = []
+
+    func explainAnnotationRefusal(_ refusal: AnnotationRefusal, on window: NSWindow, enterOwnerPassword: (() -> Void)?) {
+        refusals.append(refusal)
+        if let enterOwnerPassword {
+            ownerPasswordOffers += 1
+            self.enterOwnerPassword = enterOwnerPassword
+        }
+    }
+
+    func askAboutChangedFile(name: String, on window: NSWindow, choice: @escaping (ChangedFileChoice) -> Void) {
+        changedFileQuestions += 1
+        if let changedFileChoice { choice(changedFileChoice) }
+    }
+
+    func confirmDiscardingAnnotations(name: String, on window: NSWindow, confirmed: @escaping (Bool) -> Void) {
+        discardConfirmations += 1
+        confirmed(confirmsDiscard)
+    }
+
+    func chooseCopyDestination(suggestedName: String, on window: NSWindow, chosen: @escaping (URL?) -> Void) {
+        copyDestinationRequests.append(suggestedName)
+        chosen(copyDestination)
+    }
+
+    func offerJournalRestore(name: String, changeCount: Int, on window: NSWindow, choice: @escaping (JournalChoice) -> Void) {
+        journalOffers.append(changeCount)
+        choice(journalChoice)
+    }
+
+    func explainStaleJournal(name: String, unreadable: Bool, on window: NSWindow, choice: @escaping (JournalChoice) -> Void) {
+        staleJournalExplanations.append(unreadable)
+        choice(staleJournalChoice)
+    }
+
+    func editAnnotationText(heading: String, text: String, relativeTo rect: NSRect, of view: NSView, finished: @escaping (String?) -> Void) {
+        textEdits.append((heading, text))
+        finished(annotationText)
+    }
 }
 
 extension ReaderDocument {
