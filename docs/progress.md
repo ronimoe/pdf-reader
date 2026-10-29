@@ -171,3 +171,26 @@ The automated security review flagged the same parser problems. Fixes include a 
 - 96 PDFSave tests pass.
 
 **Not verified:** Acrobat Reader and Preview by hand.
+
+## M2: Navigation (branch `m2-navigation`, PR #8)
+
+**Landed**
+- **Sidebar:** outline, plus thumbnails drawn lazily on a background actor.
+- **Go to Page,** using the document's page labels.
+- **Keeping your place (A3):** the `ReadingAnchor` is kept across zoom, resize, layout, rotation and reload.
+- **History (B2):** per pane, jumps only, with one entry per search session.
+- **Stored state (A2):** per-document JSON state, matched by bookmark first and then `/ID`, and pruned after 180 days or beyond 500 documents. Clear Recent Documents also clears stored state.
+- **Search (B8):** progressive results with options, excerpts and the no-text messages.
+- **Changed files (B7):** a clean document reloads silently; deleted, trashed and moved files are handled.
+
+**Review:** the code-reviewer found two blockers, both data loss in the state store: a corrupt index lost every record, and a failed write threw its changes away. It also found six should-fixes: trash on other volumes, a stale text check, main-thread cost at open, search callback threading, unbounded retention of stored state, and tests that couldn't fail. All are fixed.
+
+**Verified**
+- Package: 79 ReaderCore, 21 Persistence and 96 PDFSave tests. App: 189 tests.
+- Opening a 2,000-page file costs about 50–59 ms on the main thread on top of PDFKit's own parse, down from about 400 ms.
+
+**Cleanup:** the stray state files earlier test runs left in the real app container were moved to the Trash.
+
+**Not verified**
+- On-screen look and VoiceOver.
+- Real mouse, trackpad and keyboard input.
