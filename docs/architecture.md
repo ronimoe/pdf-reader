@@ -91,6 +91,14 @@ Copy-only files are saved with `saveCopy`, which is the original bytes plus the 
 - Fuzz the parser.
 - Test the writer on real-world files: linearized, certified (DocMDP) and Reader-extended (`/Perms /UR3`).
 
+*(Amended 2026-10-29, M4b.)* The open work above is done (M4a), except checking Preview and Acrobat Reader by hand. How the app uses the writer:
+- **What gets saved.** `ReaderDocument` keeps an ordered `PendingChanges` list (PDFSave). Every user action appends to it, or folds into the pending add of an annotation that was never saved, and makes the same change to the PDFKit model for display. The list is never derived by comparing PDFKit with the file.
+- **Matching.** Before anything on a page changes, all of that page's PDFKit annotations are matched in one `AnnotationMatcher` batch against the descriptors read at open (or at the last save). Annotations added since the last save are left out. Anything but `.matched` is refused with an explanation.
+- **Which writer.** ⌘S on an `inPlace` file runs `saveInPlace` through `NSDocument`'s safe save. Save As (and B7's Save a Copy) runs `saveCopy`. A `copyOnly` file, or one deleted since it opened, sends ⌘S to a Save As panel whose message gives the reason. An `unsupported` file refuses annotations when they're made, so it never has anything to save.
+- **The check after writing.** `write(to:ofType:for:originalContentsURL:)` writes the bytes to NSDocument's temporary file, reads them back, and runs `SavedFileCheck`: the bytes are the writer's, the original is a prefix, and the annotation count is the original's plus the added ones minus the removed ones, with every added `/NM` on its object. A failure throws before the swap, so the original stays intact.
+- **After a save.** The written bytes become `originalData`. The list empties, descriptors and matching restart from the new bytes, and `Saveability` is re-checked in the background. The pages aren't reloaded and the reader's place stays.
+- **Never on changed bytes.** ⌘S compares the file on disk with `originalData` first and goes to the B7 choice if they differ; the write path checks again.
+
 The candidate table and pass criteria below are kept as the record of how the decision was made.
 
 The save path must:
@@ -133,6 +141,7 @@ App (AppKit shell)
 ```
 
 - **ReaderCore** and **PDFSave** have no UI. Most unit tests live there.
+- *(Amended 2026-10-29, M4b)* **Persistence** depends on **PDFSave** as well as ReaderCore: the crash journal stores `AnnotationChange` values. PDFSave is still a leaf (Foundation and Compression only).
 - **ReaderKit** is the only module that touches `PDFView`.
 
 ### 4.2 How a document is organised at runtime
@@ -168,6 +177,15 @@ App (AppKit shell)
   - **Moved or renamed.** `NSDocument` updates `fileURL`, and the stored identity is refreshed.
 - **Not done until M4:** the unsaved-annotations question.
 
+**Unsaved annotations when the file changes** *(Amended 2026-10-29, M4b)*
+- `reloadFromDiskIfChanged()` doesn't reload a document with unsaved annotations. It asks, once at a time: **Reload** or **Save a Copy**.
+- **Reload** asks for confirmation, then reloads the file and drops the unsaved annotations, the journal and the undo history.
+- **Save a Copy** asks where, writes `saveCopy(originalData, changes)` (the version loaded here plus the annotations) through `NSDocument`'s Save To, and opens the copy. This window then reloads to the file's new version, since the annotations now live in the copy. The changed file is never written.
+- ⌘S on a file whose bytes on disk differ from `originalData` asks the same question instead of saving.
+- A clean document still reloads silently, as in M2. Any reload clears the undo history, which refers to the old model.
+
+**Annotation changes in both panes** *(Amended 2026-10-29, M4b)*. After every change, including undo, redo and a journal restore, the window calls `notifyAnnotationsChanged(from:)` with the focused pane. A pane's selected annotation survives the re-bind.
+
 **How M3 builds the split** *(Amended 2026-10-29, M3)*
 - **Layout.** The reading area holds a nested, vertical `NSSplitViewController` with one `PaneContainerView` per pane. A container holds the `ReaderPDFView`, a 3 pt focus bar along the top of the focused pane's safe area (shape as well as colour), a close button, and the link status line. A second pane is created at equal width.
 - **Focus.** The focused pane follows the window's first responder (KVO). Outline, thumbnails, Go to Page, search, zoom and Back/Forward act on it. A search keeps acting on the pane it started in until it ends.
@@ -191,9 +209,11 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
   - The view rotation is applied as `original + ViewSettings.rotation` on every page.
   - Printing uses the on-screen model, so a rotated view prints rotated, as in Preview.
 - **Form fields (A5)** stay non-editable because `ReaderPDFView` catches mouse and keyboard events aimed at them. Their `isReadOnly` flag is never set. Prototype check [verify]: whether keyboard focus can still reach a field.
+  - *(Amended 2026-10-29, M4b)* A mouse-down on a Widget is swallowed after the link check. While the document has form fields (a non-empty AcroForm `/Fields`), Tab and Shift-Tab move through the window's key view loop instead of reaching PDFKit. A dismissible line says "This document has form fields. Filling in forms isn't supported yet." VoiceOver activation of widgets is still unchecked (M5).
 - **The author (B4)** is set only on new annotations, from Settings, where the default is empty.
   - PDFKit fills in `/T` (the Mac account's full name) and `/M` (a date) on every new annotation, including its popup, on its own *(Amended 2026-10-29, M0b Q5)*.
   - Clear both explicitly, and set them only from Settings. The incremental writer serialises only what we give it, so it is the final guard.
+  - *(Amended 2026-10-29, M4b)* Every `PDFAnnotation` the app creates gets `/NM` set to its change's name, `userName` set to the author or nil, and `modificationDate` set to nil, on its popup too. The author comes from the `annotationAuthor` user default, empty by default; Settings arrives in M5.
 
 **What gets written**
 - The **incremental writer** writes only the objects the app chose to create or change: annotation objects, plus the annotation lists of the pages involved. Changed rotation therefore can't reach the file.
@@ -348,6 +368,8 @@ The same type is stored as the reading position (A2) and used for history entrie
 **Saving**
 - Serialising and verifying run off the main thread, from a snapshot of the annotation state.
 - The swap into place happens on the main thread through `NSDocument`'s safe-save.
+- *(Amended 2026-10-29, M4b)* **As built, the write runs on the main thread.** `canAsynchronouslyWrite` is false, so `NSDocument` calls `write(to:…)` on the main thread, and the serialising and the read-back check run there. M4a measured one highlight on a 1,000-page file at about 0.015 s in a release build, including the writer's own verification. Moving it off the main thread is left for when a measured case needs it.
+  - What does run in the background is the check when a document opens or is saved: `Saveability`, every annotation's descriptor and the SHA-256, in one detached task. Annotation actions wait for it, and say so if the user is quicker.
 
 ## 5. Internal data structures
 
@@ -366,6 +388,11 @@ The same type is stored as the reading position (A2) and used for history entrie
 | `DocumentPasswordStore` | Persistence | Protocol for remembered passwords, keyed by `DocumentKey`. `KeychainPasswordStore` in the app, `InMemoryPasswordStore` in tests *(Added 2026-10-29, M1)* |
 | `DocumentState` | Persistence | Identity, last anchor, per-pane history, reader bookmarks, view settings. Written to disk as JSON |
 | `AnnotationChange` | PDFSave | Add, edit or delete of one annotation, with its full properties. Feeds the crash journal and the writer |
+| `PendingChanges` | PDFSave | The ordered list of unsaved `AnnotationChange`s. Edits and deletes of an annotation added since the last save fold into its add; a colour or contents edit that returns to the file's value is withdrawn *(Added 2026-10-29, M4b)* |
+| `SavedFileCheck` | PDFSave | The read-back after a save: the bytes, the original as a prefix, the annotation count and every added `/NM` *(Added 2026-10-29, M4b)* |
+| `AnnotationJournal`, `JournalEntry` | Persistence | The crash journal (§6) *(Added 2026-10-29, M4b)* |
+| `AnnotationColorPreset`, `AnnotationKindName` | ReaderCore | The six named colours (B4), names for other apps' colours, and which kinds are listed and can be recoloured *(Added 2026-10-29, M4b)* |
+| `AnnotationEditor` | App | One per `PDFDocument`. Applies each user action to `PendingChanges` and to PDFKit, matches file annotations page by page, and registers the inverse action for undo. So undo works across a save: undoing a saved add appends a delete, and undoing a saved delete recreates the annotation under a new `/NM` (markup and notes only) *(Added 2026-10-29, M4b)* |
 | `LinkTarget` | ReaderKit | A link's destination or action, classified for routing (§4.4) |
 
 ## 6. Storage
@@ -400,6 +427,14 @@ The same type is stored as the reading position (A2) and used for history entrie
 - `Journal/<uuid>.json` holds the unsaved `AnnotationChange` list.
 - It's rewritten after every change (debounced), and deleted after a successful save or an explicit discard.
 - When the document next opens, the app offers to restore it.
+
+**As built in M4b** *(Amended 2026-10-29)*
+- `AnnotationJournal` (Persistence) lives in `Journal/`, beside `Documents/` and `index.json`. The `<uuid>` is the document's stored-state ID. Each file holds the SHA-256 of `originalData`, the change list, and when it was written. Writes are atomic, debounced by 0.5 s, on a private queue.
+- **Deleted** after a successful save, a B7 Reload or Save a Copy, any reload, and when the document closes with unsaved annotations (which only happens after Don't Save). A Save As gives the new file its own stored record, so its journal is never filed under the original's ID.
+- **On open,** once the background check has the hash:
+  - The same hash offers **Restore** or **Discard**. Restore replays the changes onto the pages, all or nothing: if an edit or delete can't find its annotation, nothing is applied and the journal is kept.
+  - A different hash, or a file that can't be read, explains that the annotations no longer fit and offers **Discard** or **Keep for Now**. It is never deleted silently.
+- Restoring isn't an undoable action.
 
 **Other storage**
 - **Recent documents:** the system recents list kept by `NSDocumentController`.
@@ -502,6 +537,8 @@ GPL-3.0. See [LICENSE](../LICENSE). Distribution is direct only (B5), so no App 
 | **M4: Annotations and saving** | Highlight, underline, strike-through, notes, colours, author, undo (B4); the annotation list; the writer from M0; Save a Copy rules (A1); the crash journal; reload with unsaved annotations (B7); read-only forms (A5) | Journey C, including step 6 in other readers |
 | **M5: Completion** | Reader bookmarks and JSON export (A2), session restore, Settings, opt-in updates (A4), accessibility pass, keyboard shortcut map, distraction-free mode | Every acceptance criterion in spec §11 except release logistics |
 | **M6: Release** | Complete test PDF collection, performance thresholds set and met, signing and notarisation, DMG and cask, installation docs and known limitations | Spec §11 fully met |
+
+*(Amended 2026-10-29, M4b.)* M4 was delivered in two parts: M4a, the save engine (PDFSave), and M4b, everything in the app. Journey C step 6 is checked automatically in PDFKit, MuPDF, Poppler and pdf.js (M4a), and by `qpdf --check` on every file the app tests save. Preview and Acrobat Reader by hand are still open. The author setting's UI moves to M5 with Settings; the `annotationAuthor` user default already works.
 
 Staffing and calendar dates aren't covered here.
 
