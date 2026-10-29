@@ -367,3 +367,49 @@ It couldn't reproduce either intermittent hang. To prevent them anyway:
 - A cancelled quit through AppKit's real prompt.
 
 **For you:** back up `~/.config/lectern/sparkle_ed25519_private.key` offline.
+
+## M6: Release readiness (branch `m6-release`, PR #14)
+
+**Landed**
+- **Representative documents (A6):**
+  - Four real-world PDFs: the GPO Style Manual (475 pages, signed and certified by GovInfo), the PostgreSQL 17 manual (3,270 pages), an 1886 scan with no text layer, and NASA's *Earth at Night*. NASA's 40.8 MB image report is fetched by `scripts/corpus/bootstrap` and checked by SHA-256.
+  - Licences and checksums are in `Tests/Corpus/README.md`.
+  - `RegressionSuiteTests` fails on any corpus file without an entry.
+- **Performance:**
+  - `scripts/perf.sh` runs 37 measurements against the provisional thresholds in `docs/performance.md`: open, scroll, draw, memory, search, thumbnails, the annotation list and save.
+  - The annotation list now reads only the pages that can hold a listed annotation. On the 3,270-page manual it went from 0.53 s on the main thread to about 2 ms.
+  - Search results are coalesced on a common-modes timer, so the list fills while a search runs even inside nested run loops.
+  - The annotation matcher indexes by page and name. The package tests went from 192 s to 84 s.
+- **Version 1.0.0:**
+  - `CHANGELOG.md`.
+  - Help ▸ Licence, Acknowledgements and Known Limitations.
+  - The About panel, with version, copyright, the source link and the no-telemetry line.
+  - The DMG carries `License.txt` and `Acknowledgements.txt`.
+- **Headless self-check:**
+  - `-LecternSelfCheck` checks the app and exits before any window exists. It reads `CommandLine.arguments` only.
+  - `verify-dmg` uses it instead of launching the app, with a window counter that fails closed and has a positive control.
+- **Release artifacts:** the DMG, cask, signed update archive and appcast are built and checked locally. Nothing is published.
+- **Docs:** `INSTALL.md`, `README.md`, `known-limitations.md`, `release-checklist.md`, `performance.md`, `acceptance.md`, and amendments to architecture §4.6, §8, §9 and §11.
+
+**Review:** one code-reviewer round found no blockers.
+- **Major (3), all fixed:**
+  - **Annotation-list filter:** it could drop an annotation whose `/Subtype` is an indirect object. The parser now resolves it, and the filter reads every page if the page counts disagree.
+  - **Search explanation:** the docs blamed the wrong cause for the empty list. PDFKit posts find notifications on the main thread, and the stall happens only under a nested run loop such as the test harness's. The timer is kept, and the explanation now says that.
+  - **Matcher batch path:** it had no `/NM` tests. There are three now, and the first fails under the reviewer's mutant.
+- **Minor (5), all fixed:**
+  - the window check failed open,
+  - the signature check didn't require `valid`,
+  - the self-check wording overstated what it checks,
+  - performance numbers disagreed between the code, docs and results,
+  - doc accuracy: encrypted files, the About panel's network line, the rebuild step, the stale cask comment, and the evidence for the 1886 scan's Public Domain Mark.
+
+**Verified (coordinator's run on `dbd6751`):** `./scripts/test.sh` passed with 93 + 35 + 112 package tests and 401 app tests. `scripts/perf.sh` was within threshold on 37 of 37 measurements. The agent also passed `./scripts/test.sh` twice in a row after the review fixes, and `verify-dmg` (13 of 13 self-check items) and `check-cask` on the rebuilt DMG.
+
+**Acceptance (spec §11):** of 21 criteria, 8 are met, 12 are met with caveats (the hand checks and the baseline-Mac performance), and 1 needs the maintainer (making the project public). See `docs/acceptance.md`.
+
+**Not verified**
+- Performance on a base M1 with 8 GB. Every threshold is provisional, and the memory limits only guard against regressions on this machine.
+- Memory while reading a long document on screen. Drawing every page of the 3,270-page manual headlessly grew memory by about 3 GB through PDFKit's page cache.
+- The 0.73 s main-thread save on the 3,270-page manual. It is documented and wasn't moved off the main thread.
+- The sandbox read probe. It was dropped from the self-check and is now a manual check.
+- Every manual check in `docs/release-checklist.md` §5.
