@@ -105,6 +105,10 @@ enum EncryptionDictionary {
 struct PDFTokenScanner {
     private let bytes: [UInt8]
     private var index = 0
+    /// Current array/dictionary nesting. Hostile files can nest deeply to
+    /// exhaust the stack; a real encryption dictionary never nests far.
+    private var depth = 0
+    static let maxDepth = 32
 
     init(_ data: Data) {
         bytes = Array(data)
@@ -155,7 +159,9 @@ struct PDFTokenScanner {
     /// Parses the dictionary at the current position, returning its entries
     /// whose values are strings (decoded to bytes).
     mutating func dictionaryStrings() -> [String: Data]? {
-        guard peekDictionaryStart() else { return nil }
+        guard peekDictionaryStart(), depth < Self.maxDepth else { return nil }
+        depth += 1
+        defer { depth -= 1 }
         index += 2
         var result: [String: Data] = [:]
         while true {
@@ -194,6 +200,9 @@ struct PDFTokenScanner {
         case UInt8(ascii: "<"):
             return hexString().map(Value.string) ?? .invalid
         case UInt8(ascii: "["):
+            guard depth < Self.maxDepth else { return .invalid }
+            depth += 1
+            defer { depth -= 1 }
             index += 1
             while true {
                 skipWhitespaceAndComments()

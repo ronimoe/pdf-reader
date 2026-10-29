@@ -253,3 +253,25 @@ import Testing
         #expect(strings("<< /O (x)") == nil)
     }
 }
+
+@Suite struct PDFTokenScannerDepthTests {
+    @Test func deeplyNestedArraysAreRejectedWithoutRecursingForever() {
+        let hostile = "<< /O " + String(repeating: "[", count: 200_000) + " >>"
+        var scanner = PDFTokenScanner(Data(hostile.utf8))
+        #expect(scanner.dictionaryStrings() == nil)
+    }
+
+    @Test func deeplyNestedDictionariesAreRejected() {
+        let hostile = String(repeating: "<< /K ", count: 200_000)
+        var scanner = PDFTokenScanner(Data(hostile.utf8))
+        #expect(scanner.dictionaryStrings() == nil)
+    }
+
+    @Test func modestNestingStillParses() {
+        let ok = "<< /Filter /Standard /CF << /StdCF << /CFM /AESV3 >> >> /Recipients [[1 2] [3]] /O (owner) /U <0a0b> >>"
+        var scanner = PDFTokenScanner(Data(ok.utf8))
+        let entries = scanner.dictionaryStrings()
+        #expect(entries?["O"] == Data("owner".utf8))
+        #expect(entries?["U"] == Data([0x0a, 0x0b]))
+    }
+}
