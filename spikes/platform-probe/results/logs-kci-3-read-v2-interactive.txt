@@ -1,0 +1,49 @@
+# containermanagerd (lines naming the probe, writes, errors)
+# TCC services requested (all processes)
+   2 service=kTCCServiceAccessibility
+   6 service=kTCCServiceAddressBook
+   4 service=kTCCServiceAppleEvents
+   2 service=kTCCServiceCalendar
+   2 service=kTCCServiceDeveloperTool
+  24 service=kTCCServiceListenEvent
+   2 service=kTCCServiceReminders
+   4 service=kTCCServiceScreenCapture
+   4 service=kTCCServiceSystemPolicyAllFiles
+# TCC lines naming the probe
+2026-10-29 15:25:15.344 I  tccd[428:337188] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68862, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/bu
+2026-10-29 15:25:15.344 I  tccd[428:337188] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68862, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/bu
+2026-10-29 15:25:15.353 I  tccd[428:337188] [com.apple.TCC:access] BUNDLE_ATTRIBUTION: /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe is main executable for candidateBundle(/Users/roni
+2026-10-29 15:25:15.353 I  tccd[428:337188] [com.apple.TCC:access] BUNDLE_ATTRIBUTION: executable path file:///Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe resolves to attributed bund
+2026-10-29 15:25:15.354 Df tccd[428:337188] [com.apple.TCC:access] -[TCCDAccessIdentity staticCode]: static code for: identifier io.github.ronimoe.PlatformProbe, type: 0: 0x740f9c300 at /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-idd
+2026-10-29 15:25:15.354 I  tccd[428:337188] [com.apple.TCC:access] /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe (offset 0) linked against SDK version 0x1b0000, platform: 1
+2026-10-29 15:25:15.354 I  tccd[428:337188] [com.apple.TCC:access] -[TCCDAccessIdentity matchesCodeRequirement:]: SecStaticCodeCheckValidity() static code (0x740f9c300) from io.github.ronimoe.PlatformProbe : anchor apple; status: -67050
+2026-10-29 15:25:15.354 I  tccd[428:337188] [com.apple.TCC:access] For io.github.ronimoe.PlatformProbe: matches platform requirements: No
+2026-10-29 15:25:15.354 E  tccd[428:337188] [com.apple.TCC:access] Prompting policy for hardened runtime; service: kTCCServiceAppleEvents requires entitlement com.apple.security.automation.apple-events but it is missing for accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=6886
+2026-10-29 15:25:15.355 I  tccd[428:337188] [com.apple.TCC:access] Derived team id of (null) for TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68862, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/b
+# SecurityAgent / securityd / secd / syspolicyd lines naming the probe, and SecurityAgent activity
+2026-10-29 15:25:15.733 Df SecurityAgent[68866:3374e6] [com.apple.xpc:connection] [0xa4b03af80] activating connection: mach=false listener=false peer=false name=(anonymous)
+2026-10-29 15:25:15.734 Df SecurityAgent[68866:3374e6] [com.apple.xpc:connection] [0xa4b03b480] activating connection: mach=false listener=false peer=false name=com.apple.ViewBridgeAuxiliary
+2026-10-29 15:25:15.734 Df SecurityAgent[68866:3374e6] [com.apple.xpc:connection] [0xa4b03b5c0] activating connection: mach=false listener=false peer=false name=(anonymous)
+2026-10-29 15:25:15.734 Df SecurityAgent[68866:3374e6] [com.apple.xpc:connection] [0xa4b03b480] invalidated after the last release of the connection object
+2026-10-29 15:25:15.735 Df SecurityAgent[68866:3374e6] [com.apple.xpc:connection] [0xa4b03b480] activating connection: mach=false listener=false peer=false name=(anonymous)
+2026-10-29 15:25:15.739 A  SecurityAgent[68866:3374e6] (TCC) TCCAccessRequest() IPC
+2026-10-29 15:25:15.739 Df SecurityAgent[68866:3374e6] [com.apple.xpc:connection] [0xa4b03b700] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+2026-10-29 15:25:15.739 I  SecurityAgent[68866:3374e6] [com.apple.TCC:access] SEND: 0/7 synchronous to com.apple.tccd.system: request: msgID=68866.2, function=TCCAccessRequest, service=kTCCServiceAccessibility, target_token={pid:743, auid:501, euid:501},
+2026-10-29 15:25:15.754 I  SecurityAgent[68866:3374e6] [com.apple.TCC:access] RECV: synchronous reply <dictionary: 0xa4ac78c00> { count = 5, transaction: 0, voucher = 0x0, contents =
+2026-10-29 15:25:15.754 Df SecurityAgent[68866:3374e6] [com.apple.xpc:connection] [0xa4b03b700] invalidated after the last release of the connection object
+2026-10-29 15:25:15.756 Df SecurityAgent[68866:3374e6] [com.apple.AppKit:AutomaticTermination] void _NSDisableAutomaticTerminationAndLog(NSString *) NSAccessibility Request Received
+2026-10-29 15:25:15.757 Df SecurityAgent[68866:3374e6] [com.apple.TextInputUI:CursorUI] -[TUINSCursorUIController activate:]_block_invoke: Create CursorUIViewService: TUINSRemoteViewController
+2026-10-29 15:25:15.758 I  SecurityAgent[68866:3374e6] [com.apple.AppKit:Window] window <TUINSWindow: 0xa4b54f200> windowNumber=197d finishing close
+2026-10-29 15:25:15.758 I  SecurityAgent[68866:3374e6] [com.apple.AppKit:Window] order window: 197d op: 0 relative: 0 related: 0
+2026-10-29 15:25:15.910 I  SecurityAgent[68866:3374e9] [com.apple.AppKit:WindowTab] Indexing 1 items
+2026-10-29 15:25:15.910 A  SecurityAgent[68866:3374e9] (CoreSpotlight) end-index-batch
+2026-10-29 15:25:15.910 Df SecurityAgent[68866:3374e9] [com.apple.corespotlight:index] *warn* MailCS ======%%% _setMailMessageAttributes skip:1
+2026-10-29 15:25:15.910 A  SecurityAgent[68866:3374e9] (CoreSpotlight) index-items
+2026-10-29 15:25:15.911 Df SecurityAgent[68866:3374e7] [com.apple.corespotlight:index] CSInlineDonation:<private>: Skipping donation (feature flag disabled)
+2026-10-29 15:25:17.580 Df SecurityAgent[68866:3374e7] [com.apple.launchservices:db] NotifyToken::RegisterDispatch(user.uid.501.com.apple.LaunchServices.database) fired for session key <private>
+2026-10-29 15:25:20.198 I  SecurityAgent[68866:3374e6] [com.apple.HIToolbox:MBDisplays] <private>
+2026-10-29 15:25:20.198 I  SecurityAgent[68866:3374e6] [com.apple.HIToolbox:MBDisplays] <private>
+2026-10-29 15:25:20.507 Df SecurityAgent[68866:3374e6] [com.apple.AppKit:AutomaticTermination] void _updateToReflectAutomaticTerminationState(void) Setting _kLSApplicationWouldBeTerminatedByTALKey=0
+2026-10-29 15:25:38.808 I  SecurityAgent[68866:3374e6] [com.apple.launchservices:cas] Removing cached information for app [ 0x0-0x405405]  "Claude", as its seed is different from that in shared memory ( 704 vs 705)
+2026-10-29 15:25:38.808 I  SecurityAgent[68866:3374e6] [com.apple.launchservices:cas] Removing cached information for app [ 0x0-0x623623]  "SecurityAgent", as its seed is different from that in shared memory ( 524 vs 531)
+# sandbox denials for the probe

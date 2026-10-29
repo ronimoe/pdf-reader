@@ -1,0 +1,77 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:24:03Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "keychain-read",
+  "pid" : 68092,
+  "runID" : "kc-2-read-v1",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:24:03Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "kc-2-read-v1",
+        "--mode",
+        "keychain-read",
+        "--interactive",
+        "yes"
+      ],
+      "at" : "2026-10-29T08:24:03Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:24:03Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "legacy-attributes"
+    },
+    {
+      "at" : "2026-10-29T08:24:03Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "legacy-data-noninteractive",
+      "valueMatches" : true
+    },
+    {
+      "at" : "2026-10-29T08:24:03Z",
+      "step" : "legacy-data-interactive-begin"
+    },
+    {
+      "at" : "2026-10-29T08:24:03Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "legacy-data-interactive",
+      "valueMatches" : true
+    },
+    {
+      "at" : "2026-10-29T08:24:03Z",
+      "message" : "The specified item could not be found in the keychain.",
+      "status" : -25300,
+      "step" : "dataProtection-attributes"
+    },
+    {
+      "at" : "2026-10-29T08:24:03Z",
+      "message" : "The specified item could not be found in the keychain.",
+      "status" : -25300,
+      "step" : "dataProtection-data-noninteractive",
+      "valueMatches" : false
+    },
+    {
+      "at" : "2026-10-29T08:24:03Z",
+      "step" : "dataProtection-data-interactive-begin"
+    },
+    {
+      "at" : "2026-10-29T08:24:03Z",
+      "message" : "The specified item could not be found in the keychain.",
+      "status" : -25300,
+      "step" : "dataProtection-data-interactive",
+      "valueMatches" : false
+    }
+  ]
+}

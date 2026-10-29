@@ -1,0 +1,47 @@
+{
+  "buildTag" : "v2",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2-iddr\/PlatformProbe.app",
+  "bundleVersion" : "2",
+  "codeVariant" : "v2: rebuilt with a code change",
+  "complete" : false,
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "keychain-read",
+  "pid" : 68862,
+  "runID" : "kci-3-read-v2-interactive",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:25:15Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2-iddr\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "kci-3-read-v2-interactive",
+        "--mode",
+        "keychain-read",
+        "--variant",
+        "legacy",
+        "--interactive",
+        "yes"
+      ],
+      "at" : "2026-10-29T08:25:15Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:25:15Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "legacy-attributes"
+    },
+    {
+      "at" : "2026-10-29T08:25:15Z",
+      "message" : "The user name or passphrase you entered is not correct.",
+      "status" : -25293,
+      "step" : "legacy-data-noninteractive",
+      "valueMatches" : false
+    },
+    {
+      "at" : "2026-10-29T08:25:15Z",
+      "step" : "legacy-data-interactive-begin"
+    }
+  ]
+}

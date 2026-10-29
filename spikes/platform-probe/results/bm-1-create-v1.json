@@ -1,0 +1,48 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:54:48Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "bookmark-create",
+  "pid" : 89139,
+  "runID" : "bm-1-create-v1",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:54:48Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "bm-1-create-v1",
+        "--mode",
+        "bookmark-create"
+      ],
+      "at" : "2026-10-29T08:54:48Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:54:48Z",
+      "ok" : true,
+      "path" : "\/Users\/ronimoe\/PlatformProbeFixtures\/bookmark-test.pdf",
+      "step" : "open-event"
+    },
+    {
+      "at" : "2026-10-29T08:54:48Z",
+      "bytes" : 346,
+      "checksum" : 22572,
+      "ok" : true,
+      "startsWithPDF" : true,
+      "step" : "read-via-open-event"
+    },
+    {
+      "at" : "2026-10-29T08:54:48Z",
+      "bytes" : 804,
+      "ok" : true,
+      "step" : "create-bookmark",
+      "storedAt" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data\/Library\/Application Support\/PlatformProbe\/test.bookmark"
+    }
+  ]
+}

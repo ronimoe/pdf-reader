@@ -1,0 +1,348 @@
+== 1. build the DMG
+DMG quarantine: 0083;6ae30910;Safari;327F126B-D9CF-424C-AC0B-0C2378530CCC
+spctl on the DMG (open, primary signature):
+  /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/PlatformProbe.dmg: rejected
+  source=no usable signature
+== 2. mount, copy the app out
+inside the mounted image: no quarantine
+xattr: com.apple.provenance com.apple.quarantine 
+quarantine: 0283;00000000;;327F126B-D9CF-424C-AC0B-0C2378530CCC
+spctl --assess -vv:
+  /Users/ronimoe/PlatformProbeFixtures/gatekeeper/PlatformProbe.app: rejected
+syspolicy_check distribution:
+  App has failed one or more pre-distribution checks.
+  ---------------------------------------------------------------
+  Adhoc Signed App
+      Severity: Warning 
+      Full Error: This app is adhoc signed. While it may run locally, adhoc 
+          signed apps are not suitable for distribution. 
+      Type: Distribution Error 
+      Suggested Fix: Sign the app with a valid Developer ID certificate for 
+          distribution. 
+      Documentation: 
+          https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution 
+  
+  Notary Ticket Missing
+      File: PlatformProbe.app 
+      Severity: Fatal 
+      Full Error: A Notarization ticket is not stapled to this application. 
+      Type: Distribution Error 
+      Suggested Fix: If this application has already been uploaded to the Apple 
+          notary service, please make sure to attach the ticket with the `stapler 
+          staple` command. If not, please upload to the Apple notary service 
+== 3. route 0: launch the quarantined copy (expect a block)
+== launch gk-0-quarantined: gatekeeper PlatformProbe.app  --mode info
+TIMEOUT after 15s: no complete result for gk-0-quarantined
+on-screen dialog windows: no dialog windows on screen (44 on-screen windows checked);
+probe processes: 
+after run: no dialog windows on screen (44 on-screen windows checked);
+no result file at /Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbe/Data/Library/Application Support/PlatformProbe/results/gk-0-quarantined.json
+(system log excerpt: results/logs-gk-0-quarantined.txt)
+(syspolicyd excerpt: results/logs-gk-0-syspolicyd.txt)
+quarantined copy is gone: someone chose Move to Trash in the Gatekeeper alert
+== 4a. route b on a fresh copy: xattr -dr com.apple.quarantine, then launch
+before: 0283;00000000;;327F126B-D9CF-424C-AC0B-0C2378530CCC
+xattr: com.apple.provenance 
+quarantine: none
+spctl --assess -vv:
+  /Users/ronimoe/PlatformProbeFixtures/gatekeeper/fresh/PlatformProbe.app: rejected
+syspolicy_check distribution:
+  App has failed one or more pre-distribution checks.
+  ---------------------------------------------------------------
+  Adhoc Signed App
+      Severity: Warning 
+      Full Error: This app is adhoc signed. While it may run locally, adhoc 
+          signed apps are not suitable for distribution. 
+      Type: Distribution Error 
+      Suggested Fix: Sign the app with a valid Developer ID certificate for 
+          distribution. 
+      Documentation: 
+          https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution 
+  
+  Notary Ticket Missing
+      File: PlatformProbe.app 
+      Severity: Fatal 
+      Full Error: A Notarization ticket is not stapled to this application. 
+      Type: Distribution Error 
+      Suggested Fix: If this application has already been uploaded to the Apple 
+          notary service, please make sure to attach the ticket with the `stapler 
+          staple` command. If not, please upload to the Apple notary service 
+== launch gk-b-xattr-removed: fresh PlatformProbe.app  --mode info
+after run: no dialog windows on screen (44 on-screen windows checked);
+{
+  "runID": "gk-b-xattr-removed",
+  "mode": "info",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/PlatformProbeFixtures/gatekeeper/fresh/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "gk-b-xattr-removed",
+        "--mode",
+        "info"
+      ],
+      "step": "launched"
+    }
+  ]
+}
+== 4b. route b after a blocked launch (the user tried to open it first)
+== launch gk-b-blocked-first: blocked PlatformProbe.app  --mode info
+TIMEOUT after 8s: no complete result for gk-b-blocked-first
+on-screen dialog windows: no dialog windows on screen (44 on-screen windows checked);
+probe processes: 
+after run: no dialog windows on screen (44 on-screen windows checked);
+no result file at /Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbe/Data/Library/Application Support/PlatformProbe/results/gk-b-blocked-first.json
+quarantine now: none
+== launch gk-b-after-block: blocked PlatformProbe.app  --mode info
+after run: no dialog windows on screen (44 on-screen windows checked);
+{
+  "runID": "gk-b-after-block",
+  "mode": "info",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/PlatformProbeFixtures/gatekeeper/blocked/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "gk-b-after-block",
+        "--mode",
+        "info"
+      ],
+      "step": "launched"
+    }
+  ]
+}
+== 5. route c: Homebrew cask from a local tap
+Homebrew 7.0.11-24-g2833c25-dirty
+== 5.platform-probe: brew install --cask --appdir=/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe
+    ronimoe/tap
+    stripe/stripe-cli
+    supabase/tap
+  ✔︎ Cask platform-probe (0.1.0)
+  ==> Installing Cask platform-probe
+  ==> Moving App 'PlatformProbe.app' to '/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe/PlatformProbe.app'
+  🍺  platform-probe was successfully installed!
+xattr: com.apple.provenance com.apple.quarantine 
+quarantine: 0381;6ae30940;;C39F31F1-4F4E-4A4C-B7B4-2469BFA5C676
+spctl --assess -vv:
+  /Users/ronimoe/PlatformProbeFixtures/brew-platform-probe/PlatformProbe.app: rejected
+syspolicy_check distribution:
+  App has failed one or more pre-distribution checks.
+  ---------------------------------------------------------------
+  Adhoc Signed App
+      Severity: Warning 
+      Full Error: This app is adhoc signed. While it may run locally, adhoc 
+          signed apps are not suitable for distribution. 
+      Type: Distribution Error 
+      Suggested Fix: Sign the app with a valid Developer ID certificate for 
+          distribution. 
+      Documentation: 
+          https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution 
+  
+  Notary Ticket Missing
+      File: PlatformProbe.app 
+      Severity: Fatal 
+      Full Error: A Notarization ticket is not stapled to this application. 
+      Type: Distribution Error 
+      Suggested Fix: If this application has already been uploaded to the Apple 
+          notary service, please make sure to attach the ticket with the `stapler 
+          staple` command. If not, please upload to the Apple notary service 
+== launch gk-c-platform-probe: brew-platform-probe PlatformProbe.app  --mode info
+TIMEOUT after 15s: no complete result for gk-c-platform-probe
+on-screen dialog windows: window owner=CoreServicesUIAgent pid=84041 layer=8 size=260x332;
+probe processes: 86462 /Users/ronimoe/PlatformProbeFixtures/brew-platform-probe/PlatformProbe.app/Contents/MacOS/PlatformProbe --run-id gk-c-platform-probe --mode info 
+after run: window owner=CoreServicesUIAgent pid=84041 layer=8 size=260x332;
+no result file at /Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbe/Data/Library/Application Support/PlatformProbe/results/gk-c-platform-probe.json
+(system log excerpt: results/logs-gk-c-platform-probe.txt)
+Gatekeeper alert on screen (CoreServicesUIAgent pid 84041); dismissing it by restarting the agent
+now: no dialog windows on screen (44 on-screen windows checked)
+  ==> Uninstalling Cask platform-probe
+  ==> Backing up App 'PlatformProbe.app' to '/opt/homebrew/Caskroom/platform-probe/0.1.0/PlatformProbe.app'
+  ==> Removing App '/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe/PlatformProbe.app'
+  ==> Purging files for version 0.1.0 of Cask platform-probe
+== 5.platform-probe-unquarantined: brew install --cask --appdir=/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-unquarantined
+  Warning: Calling `postflight` is deprecated! Use `postflight_steps` instead.
+  Please report this issue to the ronimoe/homebrew-lectern-probe tap (not Homebrew/* repositories), or even better, submit a PR to fix it:
+    /opt/homebrew/Library/Taps/ronimoe/homebrew-lectern-probe/Casks/platform-probe-unquarantined.rb:9
+    ronimoe/tap
+    stripe/stripe-cli
+    supabase/tap
+  ✔︎ Cask platform-probe-unquarantined (0.1.0)
+  ==> Installing Cask platform-probe-unquarantined
+  ==> Moving App 'PlatformProbe.app' to '/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-unquarantined/PlatformProbe.app'
+  🍺  platform-probe-unquarantined was successfully installed!
+xattr: com.apple.provenance 
+quarantine: none
+spctl --assess -vv:
+  /Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-unquarantined/PlatformProbe.app: rejected
+syspolicy_check distribution:
+  App has failed one or more pre-distribution checks.
+  ---------------------------------------------------------------
+  Adhoc Signed App
+      Severity: Warning 
+      Full Error: This app is adhoc signed. While it may run locally, adhoc 
+          signed apps are not suitable for distribution. 
+      Type: Distribution Error 
+      Suggested Fix: Sign the app with a valid Developer ID certificate for 
+          distribution. 
+      Documentation: 
+          https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution 
+  
+  Notary Ticket Missing
+      File: PlatformProbe.app 
+      Severity: Fatal 
+      Full Error: A Notarization ticket is not stapled to this application. 
+      Type: Distribution Error 
+      Suggested Fix: If this application has already been uploaded to the Apple 
+          notary service, please make sure to attach the ticket with the `stapler 
+          staple` command. If not, please upload to the Apple notary service 
+== launch gk-c-platform-probe-unquarantined: brew-platform-probe-unquarantined PlatformProbe.app  --mode info
+after run: no dialog windows on screen (41 on-screen windows checked);
+{
+  "runID": "gk-c-platform-probe-unquarantined",
+  "mode": "info",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-unquarantined/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "gk-c-platform-probe-unquarantined",
+        "--mode",
+        "info"
+      ],
+      "step": "launched"
+    }
+  ]
+}
+(system log excerpt: results/logs-gk-c-platform-probe-unquarantined.txt)
+  ==> Uninstalling Cask platform-probe-unquarantined
+  ==> Backing up App 'PlatformProbe.app' to '/opt/homebrew/Caskroom/platform-probe-unquarantined/0.1.0/PlatformProbe.app'
+  ==> Removing App '/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-unquarantined/PlatformProbe.app'
+  ==> Purging files for version 0.1.0 of Cask platform-probe-unquarantined
+== 5.platform-probe-steps: brew install --cask --appdir=/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-steps
+  ==> Trusted cask ronimoe/lectern-probe/platform-probe-steps
+    ronimoe/tap
+    stripe/stripe-cli
+    supabase/tap
+  ✔︎ Cask platform-probe-steps (0.1.0)
+  ==> Installing Cask platform-probe-steps
+  ==> Moving App 'PlatformProbe.app' to '/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-steps/PlatformProbe.app'
+  🍺  platform-probe-steps was successfully installed!
+xattr: com.apple.provenance 
+quarantine: none
+spctl --assess -vv:
+  /Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-steps/PlatformProbe.app: rejected
+syspolicy_check distribution:
+  App has failed one or more pre-distribution checks.
+  ---------------------------------------------------------------
+  Adhoc Signed App
+      Severity: Warning 
+      Full Error: This app is adhoc signed. While it may run locally, adhoc 
+          signed apps are not suitable for distribution. 
+      Type: Distribution Error 
+      Suggested Fix: Sign the app with a valid Developer ID certificate for 
+          distribution. 
+      Documentation: 
+          https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution 
+  
+  Notary Ticket Missing
+      File: PlatformProbe.app 
+      Severity: Fatal 
+      Full Error: A Notarization ticket is not stapled to this application. 
+      Type: Distribution Error 
+      Suggested Fix: If this application has already been uploaded to the Apple 
+          notary service, please make sure to attach the ticket with the `stapler 
+          staple` command. If not, please upload to the Apple notary service 
+== launch gk-c-platform-probe-steps: brew-platform-probe-steps PlatformProbe.app  --mode info
+after run: no dialog windows on screen (44 on-screen windows checked);
+{
+  "runID": "gk-c-platform-probe-steps",
+  "mode": "info",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-steps/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "gk-c-platform-probe-steps",
+        "--mode",
+        "info"
+      ],
+      "step": "launched"
+    }
+  ]
+}
+(system log excerpt: results/logs-gk-c-platform-probe-steps.txt)
+  ==> Uninstalling Cask platform-probe-steps
+  ==> Backing up App 'PlatformProbe.app' to '/opt/homebrew/Caskroom/platform-probe-steps/0.1.0/PlatformProbe.app'
+  ==> Removing App '/Users/ronimoe/PlatformProbeFixtures/brew-platform-probe-steps/PlatformProbe.app'
+  ==> Purging files for version 0.1.0 of Cask platform-probe-steps
+  Untapping ronimoe/lectern-probe...
+  Untapped 3 casks (8 files, 7.7KB).
+== 6. route d: a local build (no quarantine)
+xattr: com.apple.provenance 
+quarantine: none
+spctl --assess -vv:
+  /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app: rejected
+syspolicy_check distribution:
+  App has failed one or more pre-distribution checks.
+  ---------------------------------------------------------------
+  Adhoc Signed App
+      Severity: Warning 
+      Full Error: This app is adhoc signed. While it may run locally, adhoc 
+          signed apps are not suitable for distribution. 
+      Type: Distribution Error 
+      Suggested Fix: Sign the app with a valid Developer ID certificate for 
+          distribution. 
+      Documentation: 
+          https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution 
+  
+  Notary Ticket Missing
+      File: PlatformProbe.app 
+      Severity: Fatal 
+      Full Error: A Notarization ticket is not stapled to this application. 
+      Type: Distribution Error 
+      Suggested Fix: If this application has already been uploaded to the Apple 
+          notary service, please make sure to attach the ticket with the `stapler 
+          staple` command. If not, please upload to the Apple notary service 
+== launch gk-d-local-build: v1 PlatformProbe.app  --mode info
+after run: no dialog windows on screen (42 on-screen windows checked);
+{
+  "runID": "gk-d-local-build",
+  "mode": "info",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "gk-d-local-build",
+        "--mode",
+        "info"
+      ],
+      "step": "launched"
+    }
+  ]
+}

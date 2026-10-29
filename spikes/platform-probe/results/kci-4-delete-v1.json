@@ -1,0 +1,39 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1-iddr\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:25:49Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "keychain-delete",
+  "pid" : 69822,
+  "runID" : "kci-4-delete-v1",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:25:49Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1-iddr\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "kci-4-delete-v1",
+        "--mode",
+        "keychain-delete"
+      ],
+      "at" : "2026-10-29T08:25:49Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:25:49Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "delete-legacy"
+    },
+    {
+      "at" : "2026-10-29T08:25:49Z",
+      "message" : "A required entitlement isn't present.",
+      "status" : -34018,
+      "step" : "delete-dataProtection"
+    }
+  ]
+}
