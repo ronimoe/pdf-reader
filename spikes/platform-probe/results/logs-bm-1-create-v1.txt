@@ -1,0 +1,28 @@
+# containermanagerd (lines naming the probe, writes, errors)
+2026-10-29 15:54:48.497 Df containermanagerd[88723:35c168] [com.apple.containermanager:sandbox] Signature passed strict scrutiny; test = platform binary, pid = 88570, error = (0) <private>
+# TCC services requested (all processes)
+ 170 service=kTCCServiceAddressBook
+   2 service=kTCCServiceAppleEvents
+   4 service=kTCCServiceAudioCapture
+   2 service=kTCCServiceCalendar
+   8 service=kTCCServiceListenEvent
+  59 service=kTCCServiceLiverpool
+   3 service=kTCCServiceMicrophone
+   2 service=kTCCServiceReminders
+   5 service=kTCCServiceScreenCapture
+   2 service=kTCCServiceSystemPolicyAllFiles
+  23 service=kTCCServiceUbiquity
+   4 service=kTCCServiceWillow
+# TCC lines naming the probe
+2026-10-29 15:54:48.623 I  tccd[88757:35c1ed] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=89139, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/
+2026-10-29 15:54:48.623 I  tccd[88757:35c1ed] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=89139, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/
+2026-10-29 15:54:48.626 I  tccd[88757:35c1ed] [com.apple.TCC:access] BUNDLE_ATTRIBUTION: /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app/Contents/MacOS/PlatformProbe is main executable for candidateBundle(/Users/ronimoe
+2026-10-29 15:54:48.626 I  tccd[88757:35c1ed] [com.apple.TCC:access] BUNDLE_ATTRIBUTION: executable path file:///Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app/Contents/MacOS/PlatformProbe resolves to attributed bundle:
+2026-10-29 15:54:48.627 Df tccd[88757:35c1ed] [com.apple.TCC:access] -[TCCDAccessIdentity staticCode]: static code for: identifier io.github.ronimoe.PlatformProbe, type: 0: 0xc00db4900 at /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/P
+2026-10-29 15:54:48.628 I  tccd[88757:35c1ed] [com.apple.TCC:access] /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app/Contents/MacOS/PlatformProbe (offset 0) linked against SDK version 0x1b0000, platform: 1
+2026-10-29 15:54:48.628 I  tccd[88757:35c1ed] [com.apple.TCC:access] -[TCCDAccessIdentity matchesCodeRequirement:]: SecStaticCodeCheckValidity() static code (0xc00db4900) from io.github.ronimoe.PlatformProbe : anchor apple; status: -67050
+2026-10-29 15:54:48.628 I  tccd[88757:35c1ed] [com.apple.TCC:access] For io.github.ronimoe.PlatformProbe: matches platform requirements: No
+2026-10-29 15:54:48.628 E  tccd[88757:35c1ed] [com.apple.TCC:access] Prompting policy for hardened runtime; service: kTCCServiceAppleEvents requires entitlement com.apple.security.automation.apple-events but it is missing for accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=89
+2026-10-29 15:54:48.628 I  tccd[88757:35c1ed] [com.apple.TCC:access] Derived team id of (null) for TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=89139, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe
+# SecurityAgent / securityd / secd / syspolicyd lines naming the probe, and SecurityAgent activity
+# sandbox denials for the probe

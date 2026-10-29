@@ -1,0 +1,55 @@
+{
+  "buildTag" : "v2",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2\/PlatformProbe.app",
+  "bundleVersion" : "2",
+  "codeVariant" : "v2: rebuilt with a code change",
+  "complete" : true,
+  "finished" : "2026-10-29T08:24:25Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "keychain-read",
+  "pid" : 68450,
+  "runID" : "kc-5-read-v2-dp-interactive",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:24:25Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "kc-5-read-v2-dp-interactive",
+        "--mode",
+        "keychain-read",
+        "--variant",
+        "dataProtection",
+        "--interactive",
+        "yes"
+      ],
+      "at" : "2026-10-29T08:24:25Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:24:25Z",
+      "message" : "The specified item could not be found in the keychain.",
+      "status" : -25300,
+      "step" : "dataProtection-attributes"
+    },
+    {
+      "at" : "2026-10-29T08:24:25Z",
+      "message" : "The specified item could not be found in the keychain.",
+      "status" : -25300,
+      "step" : "dataProtection-data-noninteractive",
+      "valueMatches" : false
+    },
+    {
+      "at" : "2026-10-29T08:24:25Z",
+      "step" : "dataProtection-data-interactive-begin"
+    },
+    {
+      "at" : "2026-10-29T08:24:25Z",
+      "message" : "The specified item could not be found in the keychain.",
+      "status" : -25300,
+      "step" : "dataProtection-data-interactive",
+      "valueMatches" : false
+    }
+  ]
+}

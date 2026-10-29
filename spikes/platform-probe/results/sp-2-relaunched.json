@@ -1,0 +1,23 @@
+{
+  "buildTag" : "v2",
+  "bundlePath" : "\/Applications\/PlatformProbeSparkle.app",
+  "bundleVersion" : "2",
+  "codeVariant" : "v2: rebuilt with a code change",
+  "complete" : true,
+  "finished" : "2026-10-29T08:44:46Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbeSparkle\/Data",
+  "mode" : "info",
+  "pid" : 80208,
+  "runID" : "launch-1793263486-80208",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:44:46Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Applications\/PlatformProbeSparkle.app\/Contents\/MacOS\/PlatformProbeSparkle"
+      ],
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "launched"
+    }
+  ]
+}

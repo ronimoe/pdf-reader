@@ -1,0 +1,44 @@
+{
+  "buildTag" : "v1-nosandbox",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1-nosandbox\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:56:15Z",
+  "home" : "\/Users\/ronimoe",
+  "mode" : "keychain-read",
+  "pid" : 90782,
+  "runID" : "kcn-2-read-v1",
+  "sandboxed" : false,
+  "started" : "2026-10-29T08:56:15Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1-nosandbox\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "kcn-2-read-v1",
+        "--mode",
+        "keychain-read",
+        "--variant",
+        "legacy",
+        "--interactive",
+        "no"
+      ],
+      "at" : "2026-10-29T08:56:15Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:56:15Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "legacy-attributes"
+    },
+    {
+      "at" : "2026-10-29T08:56:15Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "legacy-data-noninteractive",
+      "valueMatches" : true
+    }
+  ]
+}

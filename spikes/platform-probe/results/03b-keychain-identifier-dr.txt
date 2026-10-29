@@ -1,0 +1,182 @@
+== signatures
+-- /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1-iddr/PlatformProbe.app
+Identifier=io.github.ronimoe.PlatformProbe
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=672 flags=0x10002(adhoc,runtime) hashes=10+7 location=embedded
+CDHash=227d378e46b41bbb2844e28a9789d410268a4820
+Signature=adhoc
+Info.plist entries=22
+TeamIdentifier=not set
+Runtime Version=27.0.0
+Designated requirement: designated => identifier "io.github.ronimoe.PlatformProbe"
+{"com.apple.security.files.user-selected.read-write":true,"com.apple.security.network.client":true,"com.apple.security.get-task-allow":true,"com.apple.security.app-sandbox":true,"com.apple.security.files.bookmarks.app-scope":true}
+/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1-iddr/PlatformProbe.app: satisfies its Designated Requirement
+-- /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app
+Identifier=io.github.ronimoe.PlatformProbe
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=672 flags=0x10002(adhoc,runtime) hashes=10+7 location=embedded
+CDHash=cabadc83f51793e15e76d62581987c89d210e4bb
+Signature=adhoc
+Info.plist entries=22
+TeamIdentifier=not set
+Runtime Version=27.0.0
+Designated requirement: designated => identifier "io.github.ronimoe.PlatformProbe"
+{"com.apple.security.files.user-selected.read-write":true,"com.apple.security.network.client":true,"com.apple.security.get-task-allow":true,"com.apple.security.app-sandbox":true,"com.apple.security.files.bookmarks.app-scope":true}
+/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app: satisfies its Designated Requirement
+== v1 (identifier DR) creates the items
+== launch kci-1-write-v1: v1-iddr PlatformProbe.app  --mode keychain-write
+after run: no dialog windows on screen (41 on-screen windows checked);
+{
+  "runID": "kci-1-write-v1",
+  "mode": "keychain-write",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "kci-1-write-v1",
+        "--mode",
+        "keychain-write"
+      ],
+      "step": "launched"
+    },
+    {
+      "message": "No error.",
+      "priorDeleteStatus": -25300,
+      "status": 0,
+      "step": "add-legacy"
+    },
+    {
+      "message": "A required entitlement isn't present.",
+      "priorDeleteStatus": -34018,
+      "status": -34018,
+      "step": "add-dataProtection"
+    }
+  ]
+}
+== v2 (identifier DR, different CDHash) reads, non-interactive
+== launch kci-2-read-v2-silent: v2-iddr PlatformProbe.app  --mode keychain-read --variant legacy --interactive no
+after run: no dialog windows on screen (41 on-screen windows checked);
+{
+  "runID": "kci-2-read-v2-silent",
+  "mode": "keychain-read",
+  "buildTag": "v2",
+  "codeVariant": "v2: rebuilt with a code change",
+  "bundleVersion": "2",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "kci-2-read-v2-silent",
+        "--mode",
+        "keychain-read",
+        "--variant",
+        "legacy",
+        "--interactive",
+        "no"
+      ],
+      "step": "launched"
+    },
+    {
+      "message": "No error.",
+      "status": 0,
+      "step": "legacy-attributes"
+    },
+    {
+      "message": "The user name or passphrase you entered is not correct.",
+      "status": -25293,
+      "step": "legacy-data-noninteractive",
+      "valueMatches": false
+    }
+  ]
+}
+(system log excerpt: results/logs-kci-2-read-v2-silent.txt)
+== v2 needs a prompt; trying interactively with a 25s timeout
+== launch kci-3-read-v2-interactive: v2-iddr PlatformProbe.app  --mode keychain-read --variant legacy --interactive yes
+TIMEOUT after 25s: no complete result for kci-3-read-v2-interactive
+on-screen dialog windows: window owner=SecurityAgent pid=68866 layer=1000 size=434x182;
+probe processes: 68862 /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe --run-id kci-3-read-v2-interactive --mode keychain-read --variant legacy --interactive yes 
+after run: window owner=SecurityAgent pid=68866 layer=1000 size=434x182;
+{
+  "runID": "kci-3-read-v2-interactive",
+  "mode": "keychain-read",
+  "buildTag": "v2",
+  "codeVariant": "v2: rebuilt with a code change",
+  "bundleVersion": "2",
+  "sandboxed": true,
+  "complete": false,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "kci-3-read-v2-interactive",
+        "--mode",
+        "keychain-read",
+        "--variant",
+        "legacy",
+        "--interactive",
+        "yes"
+      ],
+      "step": "launched"
+    },
+    {
+      "message": "No error.",
+      "status": 0,
+      "step": "legacy-attributes"
+    },
+    {
+      "message": "The user name or passphrase you entered is not correct.",
+      "status": -25293,
+      "step": "legacy-data-noninteractive",
+      "valueMatches": false
+    },
+    {
+      "step": "legacy-data-interactive-begin"
+    }
+  ]
+}
+(system log excerpt: results/logs-kci-3-read-v2-interactive.txt)
+== cleanup: v1 deletes the items
+== launch kci-4-delete-v1: v1-iddr PlatformProbe.app  --mode keychain-delete
+after run: window owner=SecurityAgent pid=68866 layer=1000 size=434x182;
+{
+  "runID": "kci-4-delete-v1",
+  "mode": "keychain-delete",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "kci-4-delete-v1",
+        "--mode",
+        "keychain-delete"
+      ],
+      "step": "launched"
+    },
+    {
+      "message": "No error.",
+      "status": 0,
+      "step": "delete-legacy"
+    },
+    {
+      "message": "A required entitlement isn't present.",
+      "status": -34018,
+      "step": "delete-dataProtection"
+    }
+  ]
+}
+no item for io.github.ronimoe.PlatformProbe.m0c-test left in the login keychain
