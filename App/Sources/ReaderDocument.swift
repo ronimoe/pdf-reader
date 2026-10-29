@@ -16,7 +16,29 @@ final class ReaderDocument: NSDocument {
     private(set) var layoutHints = DocumentLayoutHints.none
     /// The pages' labels, for go to page and the sidebar. Read once the
     /// document is unlocked.
-    private(set) var pageNumbering = PageNumbering(pageCount: 0)
+    /// Built the first time it's needed (go to page, search results): reading
+    /// every page's label creates every `PDFPage`, which costs tens of
+    /// milliseconds on a long document.
+    var pageNumbering: PageNumbering {
+        if let cachedNumbering { return cachedNumbering }
+        guard let pdfDocument, !pdfDocument.isLocked else { return PageNumbering(pageCount: 0) }
+        let numbering = definesPageLabels
+            ? PageNumbering(labels: (0..<pdfDocument.pageCount).map { pdfDocument.page(at: $0)?.label ?? "" }, definesLabels: true)
+            : PageNumbering(pageCount: pdfDocument.pageCount)
+        cachedNumbering = numbering
+        return numbering
+    }
+    private var cachedNumbering: PageNumbering?
+    /// Whether the catalog has `/PageLabels`. Read once the document is unlocked.
+    private(set) var definesPageLabels = false
+
+    /// One page's label, without building every label: the page's own when
+    /// the document defines labels, its number otherwise.
+    func label(forPageAt index: Int) -> String {
+        if let cachedNumbering { return cachedNumbering.label(forPageAt: index) }
+        guard definesPageLabels, let label = pdfDocument?.page(at: index)?.label, !label.isEmpty else { return String(index + 1) }
+        return label
+    }
     /// Identifies the document in the Keychain; readable while locked.
     var documentKey: DocumentKey {
         if let cachedKey { return cachedKey }
@@ -99,13 +121,17 @@ final class ReaderDocument: NSDocument {
     private func documentDidBecomeReadableIfUnlocked() {
         guard let pdfDocument, !pdfDocument.isLocked, !hasRecordedOriginals else { return }
         hasRecordedOriginals = true
-        originalPageRotations = (0..<pdfDocument.pageCount).map { pdfDocument.page(at: $0)?.rotation ?? 0 }
-        let labels = (0..<pdfDocument.pageCount).map { pdfDocument.page(at: $0)?.label ?? "" }
+        appliedViewRotation = 0
+        cachedNumbering = nil
         if let reference = pdfDocument.documentRef {
+            // Read from CoreGraphics' page dictionaries: asking PDFKit would
+            // create a PDFPage for every page (about 90 ms for 2,000 pages).
+            originalPageRotations = (0..<reference.numberOfPages).map { Int(reference.page(at: $0 + 1)?.rotationAngle ?? 0) }
             layoutHints = DocumentLayoutHints(document: reference)
-            pageNumbering = PageNumbering(labels: labels, definesLabels: PageNumbering.definesPageLabels(reference))
+            definesPageLabels = PageNumbering.definesPageLabels(reference)
         } else {
-            pageNumbering = PageNumbering(pageCount: pdfDocument.pageCount)
+            originalPageRotations = (0..<pdfDocument.pageCount).map { pdfDocument.page(at: $0)?.rotation ?? 0 }
+            definesPageLabels = false
         }
     }
 
@@ -182,7 +208,8 @@ final class ReaderDocument: NSDocument {
         hasRecordedOriginals = false
         originalPageRotations = []
         layoutHints = .none
-        pageNumbering = PageNumbering(pageCount: 0)
+        cachedNumbering = nil
+        definesPageLabels = false
         if let sessionPassword, pdf.isEncrypted {
             pdf.unlock(withPassword: sessionPassword)
         }
@@ -192,11 +219,23 @@ final class ReaderDocument: NSDocument {
     }
 
     private func fileDidMove(to url: URL) {
-        if url.pathComponents.contains(".Trash") {
+        if Self.isInTrash(url) {
             fileDidGoAway()
         } else {
             readerWindowController?.documentDidMove(to: url)
         }
+    }
+
+    /// Whether `url` is inside a Trash: the home folder's, or the per-volume
+    /// `.Trashes` on another disk.
+    nonisolated static func isInTrash(_ url: URL) -> Bool {
+        let components = url.standardizedFileURL.pathComponents
+        if components.contains(".Trash") || components.contains(".Trashes") { return true }
+        guard let trash = try? FileManager.default.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: url, create: false) else {
+            return false
+        }
+        let trashPath = trash.standardizedFileURL.resolvingSymlinksInPath().path
+        return url.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(trashPath + "/")
     }
 
     /// Deleted, or moved to the Trash: the document stays open with a
@@ -218,11 +257,18 @@ final class ReaderDocument: NSDocument {
     /// Rotates every page by `degrees` on top of its original rotation. Only
     /// the in-memory model changes; `originalData` is never touched.
     func applyViewRotation(_ degrees: Int) {
-        guard let pdfDocument else { return }
+        let degrees = ViewSettings.normalized(degrees)
+        // Pages already show their own rotation; touching them would create
+        // every PDFPage for nothing.
+        guard let pdfDocument, degrees != appliedViewRotation else { return }
         for (index, original) in originalPageRotations.enumerated() {
             pdfDocument.page(at: index)?.rotation = ViewSettings.normalized(original + degrees)
         }
+        appliedViewRotation = degrees
     }
+
+    /// The view rotation the model's pages carry now.
+    private var appliedViewRotation = 0
 
     // MARK: Printing
 

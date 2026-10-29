@@ -47,7 +47,14 @@ final class ReaderWindowController: NSWindowController {
 
     // Background work on the document's bytes (architecture §4.6)
     private(set) var renderer: PageRenderer?
-    private var textInventory: TextInventory?
+    private(set) var textInventory: TextInventory?
+    /// The text check in flight; replaced, and its result ignored, when the
+    /// document reloads.
+    private var textInventoryTask: Task<Void, Never>?
+    /// When the page highlights were last replaced, to throttle them while
+    /// results stream in.
+    private var lastHighlightUpdate: TimeInterval = 0
+    private var highlightedResultCount = 0
     private(set) var pagesWithoutText: [Int]?
 
     // Stored state (A2)
@@ -199,7 +206,8 @@ final class ReaderWindowController: NSWindowController {
     /// without a file (tests) have nothing stored.
     private func openStoredState(for document: ReaderDocument, pdf: PDFDocument) -> DocumentState? {
         guard let stateStore, let url = document.fileURL else { return nil }
-        let stored = stateStore.open(url: url, data: document.originalData, pageCount: pdf.pageCount)
+        let identifiers = pdf.documentRef.map(DocumentIdentity.fileIdentifiers(of:))
+        let stored = stateStore.open(url: url, data: document.originalData, pageCount: pdf.pageCount, fileIdentifiers: identifiers)
         storedDocumentID = stored.id
         var restored = stored.state.viewSettings
         if stored.match == .new, pdf.outlineRoot.map({ $0.numberOfChildren > 0 }) == true {
@@ -250,11 +258,19 @@ final class ReaderWindowController: NSWindowController {
     // MARK: Sidebar (spec §4.1)
 
     private func configureSidebar(for document: ReaderDocument, pdf: PDFDocument) {
+        // Both open their own copy of the document lazily, on their actor.
         renderer = PageRenderer(data: document.originalData, password: document.sessionPassword)
+        textInventoryTask?.cancel()
+        textInventoryTask = nil
         textInventory = TextInventory(data: document.originalData, password: document.sessionPassword)
         pagesWithoutText = nil
         outlineSection.setDocument(pdf)
-        thumbnailsSection.configure(document: pdf, renderer: renderer, numbering: document.pageNumbering, rotation: settings.rotation)
+        thumbnailsSection.configure(
+            document: pdf,
+            renderer: renderer,
+            label: { [weak document] index in document?.label(forPageAt: index) ?? String(index + 1) },
+            rotation: settings.rotation
+        )
         sidebar.show(settings.sidebar.section)
         sidebarItem.isCollapsed = !settings.sidebar.isVisible
         if let page = pdfView.currentPage { thumbnailsSection.setCurrentPage(pdf.index(for: page)) }
@@ -391,6 +407,7 @@ final class ReaderWindowController: NSWindowController {
         currentResultIndex = nil
         pane.endSearchSession()
         pdfView.highlightedSelections = nil
+        highlightedResultCount = 0
         pdfView.clearSelection()
         searchSection.setSearch(nil, numbering: PageNumbering(pageCount: 0))
         if searchField?.stringValue.isEmpty == false { searchField?.stringValue = "" }
@@ -415,8 +432,17 @@ final class ReaderWindowController: NSWindowController {
     private func searchDidChange() {
         searchSection.reload()
         guard let search else { return }
-        let shown = search.results.prefix(SearchResultsSectionViewController.rowLimit)
-        pdfView.highlightedSelections = shown.isEmpty ? nil : shown.map(\.selection)
+        // Replacing thousands of highlights is costly: do it when the count
+        // changed, at most twice a second while results stream in, and once
+        // more when the search ends.
+        let shown = min(search.results.count, SearchResultsSectionViewController.rowLimit)
+        let now = ProcessInfo.processInfo.systemUptime
+        guard shown != highlightedResultCount,
+              !search.isSearching || shown == 0 || now - lastHighlightUpdate >= 0.5
+        else { return }
+        lastHighlightUpdate = now
+        highlightedResultCount = shown
+        pdfView.highlightedSelections = shown == 0 ? nil : search.results.prefix(shown).map(\.selection)
     }
 
     @objc func showNextResult(_ sender: Any?) { stepResult(by: 1) }
@@ -456,21 +482,26 @@ final class ReaderWindowController: NSWindowController {
     }
 
     private func loadTextInventoryIfNeeded() {
-        guard pagesWithoutText == nil, let textInventory else { return }
-        Task { [weak self] in
+        guard pagesWithoutText == nil, textInventoryTask == nil, let textInventory else { return }
+        textInventoryTask = Task { [weak self] in
             let missing = await textInventory.pagesWithoutText()
-            guard let self else { return }
-            pagesWithoutText = missing
-            search?.pagesWithoutText = missing.count
+            self?.storeTextInventory(missing, from: textInventory)
         }
     }
 
-    /// Waits for the text inventory, for tests.
-    func waitForTextInventory() async {
-        guard let textInventory else { return }
-        let missing = await textInventory.pagesWithoutText()
+    /// Keeps a text check's result only if it is about the document showing
+    /// now: a check started before a reload finishes about the old file.
+    private func storeTextInventory(_ missing: [Int], from inventory: TextInventory) {
+        guard !Task.isCancelled, inventory === textInventory else { return }
+        textInventoryTask = nil
         pagesWithoutText = missing
         search?.pagesWithoutText = missing.count
+    }
+
+    /// Waits for the text check in flight, for tests.
+    func waitForTextInventory() async {
+        if textInventoryTask == nil { loadTextInventoryIfNeeded() }
+        await textInventoryTask?.value
     }
 
     // MARK: Changes on disk (B7)
@@ -485,6 +516,7 @@ final class ReaderWindowController: NSWindowController {
             search?.cancel()
             search = nil
             pdfView.highlightedSelections = nil
+            highlightedResultCount = 0
         }
         guard let pdf = readerDocument.pdfDocument, !readerDocument.isPasswordLocked else {
             // The new file needs a password the old one didn't.
@@ -524,7 +556,10 @@ final class ReaderWindowController: NSWindowController {
         guard let stateStore, let storedDocumentID, let readerDocument, let url = newURL ?? readerDocument.fileURL,
               let pdf = readerDocument.pdfDocument
         else { return }
-        let identity = stateStore.identity(for: url, data: readerDocument.originalData, pageCount: pdf.pageCount)
+        let identity = stateStore.identity(
+            for: url, data: readerDocument.originalData, pageCount: pdf.pageCount,
+            fileIdentifiers: pdf.documentRef.map(DocumentIdentity.fileIdentifiers(of:))
+        )
         stateStore.update(storedDocumentID) { $0.identity = identity }
     }
 

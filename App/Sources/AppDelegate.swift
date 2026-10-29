@@ -17,9 +17,35 @@ enum AppEnvironment {
     /// Application Support in the container; a throwaway folder while
     /// hosting tests, so documents tests open never reach the user's state.
     static var stateDirectory: URL {
-        isHostingTests
-            ? FileManager.default.temporaryDirectory.appending(path: "LecternTestState-\(UUID().uuidString)", directoryHint: .isDirectory)
-            : DocumentStateStore.defaultDirectory()
+        guard isHostingTests else { return DocumentStateStore.defaultDirectory() }
+        let folder = FileManager.default.temporaryDirectory.appending(path: "\(testFolderPrefix)\(UUID().uuidString)", directoryHint: .isDirectory)
+        testStateFolder = folder
+        removeAbandonedTestFolders()
+        // The test host ends with exit(), not terminate:.
+        atexit { AppEnvironment.removeTestStateFolder() }
+        return folder
+    }
+
+    static let testFolderPrefix = "LecternTestState-"
+
+    /// The test host's throwaway state folder, removed when it exits.
+    nonisolated(unsafe) private(set) static var testStateFolder: URL?
+
+    nonisolated static func removeTestStateFolder() {
+        guard let testStateFolder else { return }
+        try? FileManager.default.removeItem(at: testStateFolder)
+    }
+
+    /// Folders left by test hosts that crashed or were killed. Only old ones:
+    /// other test runs may share this container right now.
+    private static func removeAbandonedTestFolders() {
+        let temporary = FileManager.default.temporaryDirectory
+        let entries = (try? FileManager.default.contentsOfDirectory(at: temporary, includingPropertiesForKeys: [.creationDateKey])) ?? []
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+        for entry in entries where entry.lastPathComponent.hasPrefix(testFolderPrefix) {
+            let created = (try? entry.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantFuture
+            if created < cutoff { try? FileManager.default.removeItem(at: entry) }
+        }
     }
 }
 

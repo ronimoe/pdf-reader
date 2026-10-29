@@ -282,6 +282,20 @@ The same type is stored as the reading position (A2) and used for history entrie
   - Whole Word reads only the text of pages that have matches, and caches it.
   - Excerpts are built when a row is shown.
   - The results list shows the first 5,000 matches; the count covers them all.
+  - Page highlights are replaced at most twice a second while results stream in, and once more at the end *(Amended 2026-10-29, M2 review)*.
+
+**Main-thread cost of opening** *(Amended 2026-10-29, M2 review)*
+- **What is kept off the main thread.**
+  - The renderer and the text inventory open their own documents lazily, on their actors.
+  - Original rotations are read from CoreGraphics' page dictionaries, which avoids creating a `PDFPage` for every page.
+  - Page labels are read only when needed.
+  - The view rotation isn't reapplied when it hasn't changed.
+  - Thumbnail rows have a fixed height, so the table doesn't measure every page.
+  - The store reuses the parsed `/ID`.
+- **Measured on a generated 2,000-page file** (`OpeningPerformanceTests`).
+  - Opening adds about 15–17 ms over PDFKit's own work (read, parse and layout, about 135 ms) once the window itself is taken out.
+  - Building the window costs about 35–41 ms for any document, so the total over PDFKit is about 50–59 ms.
+  - Before these changes, the total over PDFKit was about 400 ms.
 
 **Saving**
 - Serialising and verifying run off the main thread, from a snapshot of the annotation state.
@@ -324,6 +338,12 @@ The same type is stored as the reading position (A2) and used for history entrie
   4. Otherwise a new record starts.
 
   A fresh bookmark is recorded on every open, which replaces a stale one.
+- **Never losing the index** *(Amended 2026-10-29, M2 review)*.
+  - An `index.json` that can't be read or decoded is moved aside (`index.unreadable-<time>.json`), and the index is rebuilt from `Documents/*.json`. A missing index is rebuilt the same way.
+  - State files are written before the index. If any state file fails, the index waits, and the failed records are retried after 5 s.
+- **Pruning (privacy).** Each record keeps a path and a bookmark, so:
+  - Records not opened for 180 days, and any beyond the newest 500, are dropped together with their state files.
+  - File ▸ Open Recent ▸ Clear Menu also forgets the stored state of the files it clears.
 - **Comparing paths.** Paths are compared in their canonical form. Inside the sandbox, `resolvingSymlinksInPath` leaves `/tmp` as it is, while a resolved bookmark gives `/private/tmp`.
 - **A file moved while it is open.** The identity is refreshed from the new URL that file coordination reports. `NSDocument` may not have updated `fileURL` yet.
 - **First open.** A document with a table of contents opens the sidebar on that section.

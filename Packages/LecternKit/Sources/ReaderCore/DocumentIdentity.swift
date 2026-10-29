@@ -68,9 +68,14 @@ public struct DocumentIdentity: Codable, Hashable, Sendable {
     /// The `/ID` pair as hex, readable while the document is locked.
     public static func fileIdentifiers(ofPDF data: Data) -> [String] {
         guard let provider = CGDataProvider(data: data as CFData),
-              let document = CGPDFDocument(provider),
-              let array = document.fileIdentifier
+              let document = CGPDFDocument(provider)
         else { return [] }
+        return fileIdentifiers(of: document)
+    }
+
+    /// The same, from a document that is already parsed.
+    public static func fileIdentifiers(of document: CGPDFDocument) -> [String] {
+        guard let array = document.fileIdentifier else { return [] }
         var result: [String] = []
         for index in 0..<CGPDFArrayGetCount(array) {
             var string: CGPDFStringRef?

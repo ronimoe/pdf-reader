@@ -313,14 +313,29 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
     }
 
     @Test func historyIsPerPane() throws {
-        let harness = try NavigationHarness(FixturePDF.prose(pages: 4))
+        // Two panes on the same PDFDocument, as the M3 split will have.
+        let harness = try NavigationHarness(FixturePDF.prose(pages: 10))
         defer { harness.close() }
         #expect(harness.pane.id == .primary)
         let other = ReaderPane(id: .secondary)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentView = other.view
         other.view.document = harness.pdfView.document
-        other.jump(toPageAt: 3)
-        #expect(other.history.backList.count == 1)
-        #expect(harness.history.isEmpty)
+        #expect(other.view.document === harness.pdfView.document)
+
+        harness.pane.jump(toPageAt: 2)
+        other.jump(toPageAt: 7)
+        other.jump(toPageAt: 9)
+        #expect(harness.history.backList.map(\.pageIndex) == [0])
+        #expect(other.history.backList.map(\.pageIndex) == [0, 7])
+
+        // Going back in one pane moves only that pane.
+        other.goBack()
+        #expect(other.view.visibleAnchor?.pageIndex == 7)
+        #expect(harness.currentPageIndex == 2)
+        #expect(harness.history.backList.map(\.pageIndex) == [0])
+        #expect(!harness.history.canGoForward)
+        #expect(other.history.canGoForward)
     }
 }
 
@@ -464,24 +479,16 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
         #expect(await unlocked.thumbnail(pageIndex: 0, fitting: CGSize(width: 93, height: 120), scale: 1, rotation: 0) != nil)
     }
 
-    @Test func rendersInParallelWithTheMainThread() async throws {
-        // The renderer's own document draws while the main thread is busy
-        // with the on-screen one: the main actor never waits for it.
-        let data = FixturePDF.prose(pages: 40)
-        let renderer = PageRenderer(data: data)
-        let rendering = Task.detached {
-            var count = 0
-            for index in 0..<40 where await renderer.thumbnail(pageIndex: index, fitting: CGSize(width: 93, height: 120), scale: 2, rotation: 0) != nil {
-                count += 1
-            }
-            return count
+    @MainActor
+    @Test func rendersOffTheMainThreadEvenWhenAskedFromIt() async throws {
+        // Requested from the main actor, as the thumbnails table does; the
+        // drawing itself must happen on the renderer's actor elsewhere.
+        let renderer = PageRenderer(data: FixturePDF.prose(pages: 12))
+        for index in 0..<12 {
+            #expect(await renderer.thumbnail(pageIndex: index, fitting: CGSize(width: 93, height: 120), scale: 2, rotation: 0) != nil)
         }
-        let busy = await MainActor.run { () -> Int in
-            let document = PDFDocument(data: data)!
-            return (0..<40).reduce(0) { $0 + (document.page(at: $1)?.string?.count ?? 0) }
-        }
-        #expect(busy > 0)
-        #expect(await rendering.value == 40)
+        #expect(await renderer.renderCount == 12)
+        #expect(await renderer.mainThreadRenderCount == 0)
     }
 }
 

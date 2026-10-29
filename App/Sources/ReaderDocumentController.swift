@@ -1,4 +1,5 @@
 import AppKit
+import Persistence
 
 /// The app's document controller. It must be created before
 /// `NSApplicationMain` (see main.swift): the first instance becomes `.shared`.
@@ -32,6 +33,20 @@ final class ReaderDocumentController: NSDocumentController {
     override func noteNewRecentDocumentURL(_ url: URL) {
         guard recordsRecentDocuments else { return }
         super.noteNewRecentDocumentURL(url)
+    }
+
+    /// Clearing Open Recent also forgets what was stored for those files:
+    /// positions, history, settings, paths and bookmarks.
+    override func clearRecentDocuments(_ sender: Any?) {
+        let cleared = recentDocumentURLs
+        super.clearRecentDocuments(sender)
+        Self.forgetStoredState(for: cleared, in: AppEnvironment.stateStore)
+    }
+
+    static func forgetStoredState(for urls: [URL], in store: DocumentStateStore?) {
+        guard let store, !urls.isEmpty else { return }
+        store.forget(fileURLs: urls)
+        store.flush()
     }
 
     // A reader has no untitled documents: New (and the tab bar's +) opens one instead.

@@ -13,7 +13,8 @@ public final class ThumbnailsSectionViewController: SidebarSectionViewController
     public let tableView = ActivatingTableView()
     public private(set) var document: PDFDocument?
     public private(set) var renderer: PageRenderer?
-    private var numbering = PageNumbering(pageCount: 0)
+    /// A page's label, asked for only for rows on screen.
+    private var labelForPage: (Int) -> String = { String($0 + 1) }
     private var rotation = 0
     /// Set while the table's selection follows the reader, so it isn't
     /// mistaken for the user's.
@@ -36,6 +37,9 @@ public final class ThumbnailsSectionViewController: SidebarSectionViewController
         tableView.headerView = nil
         tableView.style = .sourceList
         tableView.intercellSpacing = NSSize(width: 0, height: 4)
+        // One fixed height: variable heights would make the table measure
+        // every page of a long document when it loads.
+        tableView.rowHeight = Self.thumbnailSide + Self.labelHeight + Self.verticalPadding
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
@@ -50,11 +54,11 @@ public final class ThumbnailsSectionViewController: SidebarSectionViewController
 
     public override var preferredFirstResponder: NSView? { tableView }
 
-    /// Shows `document`'s pages, drawn by `renderer`.
-    public func configure(document: PDFDocument?, renderer: PageRenderer?, numbering: PageNumbering, rotation: Int) {
+    /// Shows `document`'s pages, drawn by `renderer`, labelled by `label`.
+    public func configure(document: PDFDocument?, renderer: PageRenderer?, label: @escaping (Int) -> String, rotation: Int) {
         self.document = document
         self.renderer = renderer
-        self.numbering = numbering
+        labelForPage = label
         self.rotation = rotation
         loadViewIfNeeded()
         tableView.reloadData()
@@ -102,10 +106,6 @@ extension ThumbnailsSectionViewController: NSTableViewDataSource, NSTableViewDel
         document?.pageCount ?? 0
     }
 
-    public func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        thumbnailSize(forPageAt: row).height + Self.labelHeight + Self.verticalPadding
-    }
-
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let identifier = NSUserInterfaceItemIdentifier("ThumbnailCell")
         let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? ThumbnailCellView ?? {
@@ -114,8 +114,10 @@ extension ThumbnailsSectionViewController: NSTableViewDataSource, NSTableViewDel
             return cell
         }()
         let size = thumbnailSize(forPageAt: row)
-        cell.show(pageIndex: row, label: numbering.label(forPageAt: row), size: size)
-        cell.setAccessibilityLabel(numbering.description(forPageAt: row))
+        let label = labelForPage(row)
+        let count = document?.pageCount ?? 0
+        cell.show(pageIndex: row, label: label, size: size)
+        cell.setAccessibilityLabel(label == String(row + 1) ? "Page \(row + 1) of \(count)" : "Page \(label) (\(row + 1) of \(count))")
         if let renderer {
             let scale = tableView.window?.backingScaleFactor ?? 2
             let rotation = rotation

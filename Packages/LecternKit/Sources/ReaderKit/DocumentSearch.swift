@@ -75,15 +75,15 @@ public final class DocumentSearch {
         self.document = document
         let center = NotificationCenter.default
         observers = [
-            center.addObserver(forName: .PDFDocumentDidFindMatch, object: document, queue: nil) { [weak self] notification in
+            center.addObserver(forName: .PDFDocumentDidFindMatch, object: document, queue: .main) { [weak self] notification in
                 let selection = notification.userInfo?["PDFDocumentFoundSelection"] as? PDFSelection
                 nonisolated(unsafe) let found = selection
                 MainActor.assumeIsolated { self?.didFind(found) }
             },
-            center.addObserver(forName: .PDFDocumentDidEndPageFind, object: document, queue: nil) { [weak self] _ in
+            center.addObserver(forName: .PDFDocumentDidEndPageFind, object: document, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.didEndPage() }
             },
-            center.addObserver(forName: .PDFDocumentDidEndFind, object: document, queue: nil) { [weak self] _ in
+            center.addObserver(forName: .PDFDocumentDidEndFind, object: document, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.didEnd() }
             },
         ]
