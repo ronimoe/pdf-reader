@@ -24,7 +24,7 @@ nonisolated enum SpikeFixtures {
     ]
 
     static func js(_ source: String) -> String {
-        "<< /S /JavaScript /JS (\(RawPDF.escape(source))) >>"
+        "<< /S /JavaScript /JS (\(SpikeRawPDF.escape(source))) >>"
     }
 
     static func setField(_ name: String) -> String {
@@ -64,16 +64,16 @@ nonisolated enum SpikeFixtures {
         objects[2] = "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"
         objects[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 10 0 R >> >> /Annots [\(fieldRefs.joined(separator: " ")) 50 0 R] /AA << /O 42 0 R >> >>"
         objects[4] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 10 0 R >> >> >>"
-        objects[6] = RawPDF.textContent(["JavaScript probe, page 1"], top: 760)
-        objects[7] = RawPDF.textContent(["JavaScript probe, page 2"], top: 760)
-        objects[10] = RawPDF.helvetica
+        objects[6] = SpikeRawPDF.textContent(["JavaScript probe, page 1"], top: 760)
+        objects[7] = SpikeRawPDF.textContent(["JavaScript probe, page 2"], top: 760)
+        objects[10] = SpikeRawPDF.helvetica
         objects[50] = "<< /Type /Annot /Subtype /Link /Rect [72 100 300 140] /Border [0 0 1] /Contents (js-link) /A \(setField("out_link")) >>"
         objects[40] = js("this.getField(\"out_open\").value = \"JS\" + \"_RAN\"; this.pageNum = 1;")
         objects[41] = "<< /Names [(lectern) 44 0 R] >>"
         objects[42] = setField("out_page")
         objects[43] = js("var lecternWillClose = 1;")
         objects[44] = setField("out_doc")
-        return RawPDF.build(objects: objects, root: 1).data
+        return SpikeRawPDF.build(objects: objects, root: 1).data
     }
 
     // MARK: Q2 action types
@@ -124,12 +124,12 @@ nonisolated enum SpikeFixtures {
         objects[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 10 0 R >> >> /Annots [\(annotRefs.joined(separator: " "))] >>"
         objects[4] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 10 0 R >> >> >>"
         objects[5] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R /Resources << /Font << /F1 10 0 R >> >> >>"
-        objects[6] = RawPDF.textContent(linkSpecs.map(\.tag), x: 340, top: 758, size: 12)
-        objects[7] = RawPDF.textContent(["Page 2 (chapter2)"])
-        objects[8] = RawPDF.textContent(["Page 3"])
+        objects[6] = SpikeRawPDF.textContent(linkSpecs.map(\.tag), x: 340, top: 758, size: 12)
+        objects[7] = SpikeRawPDF.textContent(["Page 2 (chapter2)"])
+        objects[8] = SpikeRawPDF.textContent(["Page 3"])
         objects[9] = "<< /Names [(chapter2) [4 0 R /XYZ 72 600 null]] >>"
-        objects[10] = RawPDF.helvetica
-        return RawPDF.build(objects: objects, root: 1).data
+        objects[10] = SpikeRawPDF.helvetica
+        return SpikeRawPDF.build(objects: objects, root: 1).data
     }
 
     // MARK: Q3 form fields
@@ -140,14 +140,14 @@ nonisolated enum SpikeFixtures {
         objects[1] = "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [20 0 R 21 0 R 22 0 R] /DA (/Helv 12 Tf 0 g) /DR << /Font << /Helv 10 0 R >> >> >> >>"
         objects[2] = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
         objects[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 10 0 R >> >> /Annots [20 0 R 21 0 R 22 0 R] >>"
-        objects[4] = RawPDF.textContent(["Form probe"], top: 760)
-        objects[10] = RawPDF.helvetica
+        objects[4] = SpikeRawPDF.textContent(["Form probe"], top: 760)
+        objects[10] = SpikeRawPDF.helvetica
         objects[20] = "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (Alice) /Rect [72 650 300 680] /P 3 0 R /F 4 /DA (/Helv 12 Tf 0 g) >>"
         objects[21] = "<< /Type /Annot /Subtype /Widget /FT /Tx /T (city) /V (Paris) /Rect [72 600 300 630] /P 3 0 R /F 4 /DA (/Helv 12 Tf 0 g) >>"
         objects[22] = "<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /V /Off /AS /Off /Rect [72 550 92 570] /P 3 0 R /F 4 /MK << /CA (4) >> /DA (/ZaDb 12 Tf 0 g) /AP << /N << /Yes 30 0 R /Off 31 0 R >> >> >>"
-        objects[30] = RawPDF.stream("0 0 0 rg 4 4 12 12 re f", dict: "/Type /XObject /Subtype /Form /BBox [0 0 20 20]")
-        objects[31] = RawPDF.stream("", dict: "/Type /XObject /Subtype /Form /BBox [0 0 20 20]")
-        return RawPDF.build(objects: objects, root: 1).data
+        objects[30] = SpikeRawPDF.stream("0 0 0 rg 4 4 12 12 re f", dict: "/Type /XObject /Subtype /Form /BBox [0 0 20 20]")
+        objects[31] = SpikeRawPDF.stream("", dict: "/Type /XObject /Subtype /Form /BBox [0 0 20 20]")
+        return SpikeRawPDF.build(objects: objects, root: 1).data
     }
 
     // MARK: Q6 incremental update
@@ -162,20 +162,20 @@ nonisolated enum SpikeFixtures {
         objects[1] = "<< /Type /Catalog /Pages 2 0 R /OpenAction [3 0 R /Fit] /LecternCatalogKey (catalog-custom-marker) /PageLabels << /Nums [0 << /S /r >>] >> /AcroForm << /Fields [8 0 R] /DA (/Helv 12 Tf 0 g) /DR << /Font << /Helv 5 0 R >> >> >> >>"
         objects[2] = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
         objects[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> /Annots [8 0 R] /LecternPageKey (page-custom-marker) >>"
-        objects[4] = RawPDF.textContent(["Revision one text"])
-        objects[5] = RawPDF.helvetica
+        objects[4] = SpikeRawPDF.textContent(["Revision one text"])
+        objects[5] = SpikeRawPDF.helvetica
         objects[6] = "<< /Title (Original Title) /Producer (Lectern raw writer) /LecternInfoKey (info-custom-marker) >>"
         objects[7] = "(orphan-object-marker)"
         objects[8] = "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (form-value-marker) /Rect [72 500 300 530] /P 3 0 R /F 4 /DA (/Helv 12 Tf 0 g) >>"
-        let base = RawPDF.build(
+        let base = SpikeRawPDF.build(
             objects: objects, root: 1, info: 6,
             trailerExtra: "/ID [<\(originalID)> <\(originalID)>] /LecternTrailerKey (trailer-custom-marker)",
             comment: "lectern-comment-marker"
         )
-        let updated = RawPDF.appendUpdate(
+        let updated = SpikeRawPDF.appendUpdate(
             to: base,
             objects: [
-                4: RawPDF.textContent(["Revision two text"]),
+                4: SpikeRawPDF.textContent(["Revision two text"]),
                 6: "<< /Title (Updated Title) /Producer (Lectern raw writer) /LecternInfoKey (info-custom-marker) >>",
             ],
             root: 1, info: 6,

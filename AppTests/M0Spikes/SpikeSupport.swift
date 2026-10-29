@@ -22,7 +22,7 @@ nonisolated enum SpikeLog {
 
 /// Writes PDF syntax by hand, for fixtures PDFKit can't author (JavaScript,
 /// Launch, GoToR, SubmitForm actions; incremental updates; orphan objects).
-nonisolated struct RawPDF {
+nonisolated struct SpikeRawPDF {
     struct Built {
         var data: Data
         var xrefOffset: Int

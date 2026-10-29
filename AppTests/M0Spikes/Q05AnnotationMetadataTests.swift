@@ -56,7 +56,7 @@ extension M0bSpikes {
             for (subtype, sets) in keys.sorted(by: { $0.key < $1.key }) {
                 SpikeLog.note("Q5", "\(subtype) written \(sets.count)x, keys: \(sets.map { $0.sorted() })")
             }
-            let escapedName = RawPDF.escape(NSFullUserName())
+            let escapedName = SpikeRawPDF.escape(NSFullUserName())
             #expect(PDFBytes.count("/T (\(escapedName))", in: data) >= 4)
             for subtype in ["Highlight", "Underline", "StrikeOut", "Text"] {
                 let set = try #require(keys[subtype]?.first, "\(subtype) written")
@@ -83,7 +83,7 @@ extension M0bSpikes {
             for (subtype, sets) in keys.sorted(by: { $0.key < $1.key }) {
                 SpikeLog.note("Q5", "cleared: \(subtype) keys: \(sets.map { $0.sorted() })")
             }
-            #expect(!PDFBytes.contains(RawPDF.escape(NSFullUserName()), in: data))
+            #expect(!PDFBytes.contains(SpikeRawPDF.escape(NSFullUserName()), in: data))
             for subtype in ["Highlight", "Underline", "StrikeOut", "Text"] {
                 let set = try #require(keys[subtype]?.first)
                 #expect(!set.contains("/T"), "\(subtype)")
@@ -110,7 +110,7 @@ extension M0bSpikes {
             let (document, _) = try makeAnnotated { $0.userName = "Reader Name" }
             let data = try #require(document.dataRepresentation())
             #expect(PDFBytes.count("/T (Reader Name)", in: data) >= 4)
-            #expect(!PDFBytes.contains(RawPDF.escape(NSFullUserName()), in: data))
+            #expect(!PDFBytes.contains(SpikeRawPDF.escape(NSFullUserName()), in: data))
         }
     }
 }
