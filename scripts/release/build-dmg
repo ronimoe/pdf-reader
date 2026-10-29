@@ -1,0 +1,122 @@
+#!/bin/zsh
+# Builds a Release Lectern.app, checks its signature, and packages it as
+#   build/release/Lectern-<version>.dmg        (Lectern.app, an Applications link, "Read Me First.txt")
+#   build/release/Lectern-<version>.dmg.sha256 (shasum -a 256 format; `shasum -c` from build/release)
+#
+# The app is signed ad-hoc (no Developer ID) with the hardened runtime on and without
+# get-task-allow (project.yml, docs/architecture.md §8). The version is MARKETING_VERSION.
+# Safe to re-run: each run deletes the previous outputs and its own DerivedData, so
+# the app is built clean. Stops at the first error. The DMG and .sha256 are written
+# under build/release/.partial and moved into place only after `hdiutil verify` passes
+# and the checksum is written, so a failed run never leaves a DMG behind.
+#
+# Usage: scripts/release/build-dmg
+set -euo pipefail
+cd "${0:A:h:h:h}"
+
+OUT=build/release
+DERIVED=$OUT/DerivedData
+ARCHIVE=$OUT/Lectern.xcarchive
+STAGING=$OUT/dmg-staging
+PARTIAL=$OUT/.partial
+LOG=$OUT/build.log
+SIGNATURE_REPORT=$OUT/signature.txt
+
+say() { print -r -- "== $*"; }
+die() { print -r -- "build-dmg: $*" >&2; exit 1; }
+
+for tool in xcodegen xcodebuild codesign hdiutil ditto plutil shasum; do
+  command -v $tool >/dev/null || die "$tool not found"
+done
+mkdir -p $OUT
+
+say "generate the Xcode project"
+xcodegen generate --quiet
+
+VERSION=$(xcodebuild -project Lectern.xcodeproj -target Lectern -configuration Release -showBuildSettings 2>/dev/null \
+  | awk -F' = ' '$1 ~ /^ *MARKETING_VERSION$/ && !found { print $2; found = 1 }')
+[[ -n $VERSION ]] || die "could not read MARKETING_VERSION from the Release build settings"
+[[ $VERSION =~ '^[0-9]+(\.[0-9]+)*$' ]] || die "unexpected MARKETING_VERSION '$VERSION'"
+DMG=$OUT/Lectern-$VERSION.dmg
+SHA_FILE=$DMG.sha256
+say "version $VERSION"
+# A failed run must not leave the previous DMG looking like this build's.
+rm -rf $DMG $SHA_FILE $PARTIAL $STAGING
+
+say "archive the Release configuration, clean (log: $LOG)"
+rm -rf $ARCHIVE $DERIVED
+xcodebuild -project Lectern.xcodeproj -scheme Lectern -configuration Release \
+  -destination 'generic/platform=macOS' -derivedDataPath $DERIVED -archivePath $ARCHIVE \
+  archive >$LOG 2>&1 || { tail -40 $LOG >&2; die "xcodebuild archive failed (full log: $LOG)"; }
+APP=$ARCHIVE/Products/Applications/Lectern.app
+[[ -d $APP ]] || die "no Lectern.app in $ARCHIVE"
+
+built_version=$(plutil -extract CFBundleShortVersionString raw -o - $APP/Contents/Info.plist)
+[[ $built_version == $VERSION ]] || die "app reports version $built_version, expected $VERSION"
+
+say "check the signature and entitlements (report: $SIGNATURE_REPORT)"
+details=$(codesign -dvvv $APP 2>&1)
+ENTITLEMENTS=$OUT/entitlements.plist
+rm -f $ENTITLEMENTS
+codesign -d --entitlements - --xml $APP >$ENTITLEMENTS 2>/dev/null
+[[ -s $ENTITLEMENTS ]] || die "the app has no entitlements (expected the sandbox)"
+{
+  print -r -- "Lectern $VERSION, $(date '+%Y-%m-%d %H:%M:%S %z')"
+  print -r -- "$details" | grep -E '^(Identifier=|Format=|CodeDirectory |Signature=|TeamIdentifier=|Runtime Version=)'
+  print -r -- "Entitlements:"
+  plutil -p $ENTITLEMENTS | sed 's/^/  /'
+} >$SIGNATURE_REPORT
+flags=$(print -r -- "$details" | sed -nE 's/^CodeDirectory .*flags=0x[0-9a-f]+\(([^)]*)\).*/\1/p')
+[[ ,$flags, == *,adhoc,* ]]   || die "not ad-hoc signed (flags: '$flags')"
+[[ ,$flags, == *,runtime,* ]] || die "hardened runtime is off (flags: '$flags')"
+print -r -- "$details" | grep -qx 'Signature=adhoc' || die "signature is not ad-hoc"
+# PlistBuddy, not plutil: plutil key paths split on the dots in entitlement names.
+entitlement() { /usr/libexec/PlistBuddy -c "Print :$1" $ENTITLEMENTS 2>/dev/null; }
+if entitlement com.apple.security.get-task-allow >/dev/null; then
+  die "get-task-allow is present in the Release entitlements"
+fi
+sandbox=$(entitlement com.apple.security.app-sandbox) || die "the app-sandbox entitlement is missing"
+[[ $sandbox == true ]] || die "app-sandbox is '$sandbox', expected true"
+codesign --verify --deep --strict --verbose=2 $APP >>$SIGNATURE_REPORT 2>&1 \
+  || { cat $SIGNATURE_REPORT >&2; die "codesign --verify --deep --strict failed"; }
+print -r -- "flags: $flags; app-sandbox: true; get-task-allow: absent; verify --deep --strict: ok"
+
+say "assemble the disk image"
+mkdir -p $STAGING $PARTIAL
+ditto $APP $STAGING/Lectern.app
+ln -s /Applications $STAGING/Applications
+cat >"$STAGING/Read Me First.txt" <<EOF
+Lectern $VERSION
+
+1. Drag Lectern to the Applications folder.
+
+2. Lectern is not signed with an Apple Developer ID, so the first time
+   you open it macOS says it was "Not Opened" because Apple could not
+   verify it. Click Done (not Move to Trash).
+
+3. Open System Settings > Privacy & Security. In the Security section,
+   click "Open Anyway" next to the message about Lectern. The button
+   appears for about an hour after step 2. Enter your login password,
+   then click Open.
+
+   Or, instead of steps 2 and 3, run this in Terminal:
+     xattr -dr com.apple.quarantine /Applications/Lectern.app
+
+You only need to do this once for each copy you download.
+Right-click > Open no longer skips this check on macOS 15 and later.
+
+More: docs/INSTALL.md at https://github.com/ronimoe/pdf-reader
+EOF
+hdiutil create -quiet -volname "Lectern $VERSION" -srcfolder $STAGING -fs APFS -format UDZO -ov $PARTIAL/${DMG:t}
+hdiutil verify -quiet $PARTIAL/${DMG:t}
+rm -rf $STAGING
+(cd $PARTIAL && shasum -a 256 ${DMG:t} >${SHA_FILE:t} && shasum -a 256 -c -s ${SHA_FILE:t})
+
+# Publish: the DMG first, then its checksum. update-cask refuses a DMG without one.
+mv $PARTIAL/${DMG:t} $DMG
+mv $PARTIAL/${SHA_FILE:t} $SHA_FILE
+rmdir $PARTIAL
+size=$(stat -f %z $DMG)
+say "done"
+print -r -- "$DMG ($size bytes, $(( (size + 524288) / 1048576 )) MB)"
+cat $SHA_FILE

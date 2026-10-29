@@ -454,7 +454,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 3. Sign the update archive with Sparkle's EdDSA key. The private key is kept off the repo and backed up offline.
 4. Publish a Homebrew cask in our own tap, `ronimoe/lectern`.
    - The cask removes the download quarantine after installing, through `postflight`. The official `homebrew/cask` rejects apps that fail Gatekeeper, so it can't host this app.
-   - It sets `auto_updates true`, so `brew upgrade` and Sparkle don't fight.
+   - *(Amended 2026-10-29, M6a)* It leaves `auto_updates` unset: the in-app updater is opt-in and off by default, so `brew upgrade` must handle upgrades.
 5. **User install instructions** are in `docs/INSTALL.md`, written in M6:
    - Homebrew from the tap,
    - the DMG with System Settings → Privacy & Security → **Open Anyway**,

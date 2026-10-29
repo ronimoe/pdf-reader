@@ -211,3 +211,24 @@ The automated security review flagged the same parser problems. Fixes include a 
 - The built app was opened on all 8 real-world PDFs, including the IRS forms, with no new crash reports.
 
 **Also seen in the crash reports, and expected:** 3 deliberate crash probes from the M0/M1 reviews (15:12, 15:24), and 1 test-host crash from an M0b spike (15:53).
+
+## M6a: Release packaging (branch `m6a-packaging`, PR #9)
+
+**Landed**
+- **`scripts/release/build-dmg`:** atomic output, signature and entitlement checks, DMG plus SHA-256.
+- **`verify-dmg`:** launch test, plus `spctl` checks on quarantined copies, which are never opened.
+- **`update-cask` and `check-cask`.**
+- **`packaging/homebrew/Casks/lectern.rb`:** for our own tap. A `postflight_steps` removes the quarantine, and `auto_updates` is left unset, because the in-app updater is opt-in.
+- **`docs/INSTALL.md` and `README.md`.**
+
+**Review:** the code-reviewer found no blockers and seven should-fixes, all fixed: an atomic DMG with a required checksum, trap handling, relative paths, `auto_updates`, not disturbing a running Lectern, and doc wording.
+
+**Verified**
+- The DMG is about 830 KB, ad-hoc signed with the hardened runtime, sandbox on, no `get-task-allow`.
+- The app launches from the DMG.
+- `brew style` and `brew audit` pass.
+
+**Not verified, and for you to decide**
+- **The repository is private,** so the release download URLs and the tap won't work for anyone else until it's made public.
+- Clicking Open Anyway.
+- The cask's `zap` step.
