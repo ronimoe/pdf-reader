@@ -1,7 +1,7 @@
 # Product Specification — Open-Source PDF Reader for macOS
 
 - **Document version:** 1.0 — Initial Product Requirements
-- **Product name:** To be determined
+- **Product name:** Lectern *(decided 2026-10-30, see [decisions.md](decisions.md))*
 - **Initial platform:** macOS
 - **Project model:** Free and open source
 - **Status:** Product vision and scope definition

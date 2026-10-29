@@ -1,7 +1,5 @@
 # Lectern
 
-*Lectern is a placeholder name.*
-
 A free, open-source PDF reader for the Mac: fast, calm and built for reading. It's meant for people who spend hours in long books, academic papers, manuals and reports, and it aims to feel like a natural part of macOS rather than a document-processing suite.
 
 **Never lose your place.** When you follow a reference, footnote, figure or cross-reference, Lectern lets you preview the destination, or open it beside the page you're on, without leaving where you were reading.
