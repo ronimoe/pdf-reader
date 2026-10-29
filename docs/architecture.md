@@ -268,6 +268,7 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
   - Links inside the preview move it and push onto its own Back stack. Go is the Return key equivalent.
 - **Annotation refresh across panes.** `ReaderWindowController.notifyAnnotationsChanged(from:)` re-binds every other pane (`ReaderPDFView.rebindDocument()`: `show(nil)`, `show(document)`, restore the anchor). It then re-binds the source pane too.
   - Re-binding moves page ownership (M0b Q7), so without that a second change made in the source would show only in the other pane. The test covers three changes alternating between the panes.
+  - Re-binding clears each pane's text selection, and the source pane's too, which M4 must allow for. The fit reference page and zoom are kept.
   - Measured: 22–33 ms per call (both panes re-bound) on a 6-page fixture, M3 Pro, debug build. Each pane keeps its place. Flicker isn't checked: offscreen captures don't show annotations (M0b Q11).
 
 ### 4.5 Keeping your place

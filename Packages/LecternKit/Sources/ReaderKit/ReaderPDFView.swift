@@ -413,9 +413,16 @@ public final class ReaderPDFView: PDFView {
     public func rebindDocument() {
         guard let document else { return }
         let anchor = currentAnchor
-        // show(_:) keeps the zoom mode and re-applies it.
+        // show(_:) keeps the zoom mode but fits against the first page; put
+        // back the page the fit modes measured, so pages of other sizes don't
+        // change the zoom on every annotation change.
+        let reference = fitReferencePageIndex
         show(nil)
         show(document)
+        if reference != fitReferencePageIndex {
+            fitReferencePageIndex = reference
+            applyZoom()
+        }
         layoutDocumentView()
         if let anchor { restore(anchor) }
     }

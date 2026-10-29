@@ -162,10 +162,11 @@ extension ReaderWindowController {
     // MARK: Annotation changes (M0b Q7)
 
     /// Call after any annotation add, edit or delete made through `source`.
-    /// A live change shows only in the view that last laid the page out, so
-    /// every other pane re-assigns its document and keeps its place. If the
-    /// source isn't the page's owner it re-binds too.
-    func notifyAnnotationsChanged(from source: ReaderPane, pages: [PDFPage] = []) {
+    /// A live change shows only in the view that last laid the page out
+    /// (M0b Q7), so every other pane re-assigns its document and keeps its
+    /// place; then the source does too, as the re-binds moved page ownership
+    /// away from it. Re-binding clears each pane's text selection.
+    func notifyAnnotationsChanged(from source: ReaderPane) {
         for pane in panes where pane !== source {
             pane.view.rebindDocument()
         }
