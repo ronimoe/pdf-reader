@@ -114,8 +114,8 @@ import Testing
     @Test func addsHighlightToMinimalFile() throws {
         let original = Self.minimalPDF()
         let quad = Quad(rect: PDFRect(x: 20, y: 20, width: 100, height: 14))
-        let result = try IncrementalWriter().save(original: original, changes: [
-            .addHighlight(NewHighlight(pageIndex: 0, quads: [quad], contents: "hi", author: "Me")),
+        let result = try IncrementalWriter().saveInPlace(original: original, changes: [
+            .addMarkup(NewMarkup(kind: .highlight, pageIndex: 0, quads: [quad], contents: "hi", author: "Me")),
         ])
         #expect(result.data.prefix(original.count) == original)
         #expect(result.xrefKind == .table)
@@ -147,7 +147,7 @@ import Testing
         out += "xref\n0 4\n0000000000 65535 f\r\n"
         out += String(format: "%010d 00000 n\r\n%010d 00000 n\r\n%010d 00001 n\r\n", offsets[0], offsets[1], offsets[2])
         out += "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n\(xref)\n%%EOF\n"
-        let result = try IncrementalWriter().save(original: Data(out.utf8), changes: [
+        let result = try IncrementalWriter().saveInPlace(original: Data(out.utf8), changes: [
             .addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 10, y: 10), contents: "gen"))
         ])
         #expect(result.rewrittenObjects == [ObjectRef(3, 1)])
@@ -160,14 +160,14 @@ import Testing
 
     @Test func refusesEncrypted() {
         let data = Self.minimalPDF(trailerExtra: "/Encrypt << /Filter /Standard /V 5 /R 6 >> ")
-        #expect(throws: PDFSaveError.encrypted) { try IncrementalWriter().save(original: data, changes: []) }
+        #expect(throws: PDFSaveError.encrypted) { try IncrementalWriter().saveInPlace(original: data, changes: []) }
     }
 
     @Test func refusesStaleXRef() {
         let data = Self.minimalPDF(corruptOffset: true)
         // Object 3's entry points 5 bytes early, into the previous object's "endobj".
         #expect(throws: PDFSaveError.malformed("expected integer at offset 114")) {
-            try IncrementalWriter().save(original: data, changes: [
+            try IncrementalWriter().saveInPlace(original: data, changes: [
                 .addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 10, y: 10), contents: "x")),
             ])
         }
@@ -176,10 +176,10 @@ import Testing
     @Test func unknownAnnotationAndPage() {
         let data = Self.minimalPDF()
         #expect(throws: PDFSaveError.annotationNotFound(ObjectRef(99, 0))) {
-            try IncrementalWriter().save(original: data, changes: [.delete(ObjectRef(99, 0))])
+            try IncrementalWriter().saveInPlace(original: data, changes: [.delete(ObjectRef(99, 0))])
         }
         #expect(throws: PDFSaveError.pageOutOfRange(3)) {
-            try IncrementalWriter().save(original: data, changes: [
+            try IncrementalWriter().saveInPlace(original: data, changes: [
                 .addNote(NewNote(pageIndex: 3, origin: PDFPoint(x: 0, y: 0), contents: "x")),
             ])
         }

@@ -4,7 +4,7 @@ import Testing
 
 private func save(_ data: Data, _ changes: [AnnotationChange] = [.testNote],
                   options: IncrementalWriter.Options = .init()) throws(PDFSaveError) -> SaveResult {
-    try IncrementalWriter(options: options).save(original: data, changes: changes)
+    try IncrementalWriter(options: options).saveInPlace(original: data, changes: changes)
 }
 
 /// Malformed input must come back as a `PDFSaveError`, never a trap.
