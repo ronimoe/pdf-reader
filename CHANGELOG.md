@@ -28,7 +28,8 @@ The first release: a calm, native PDF reader for macOS 26 on Apple Silicon. No a
 ### Annotations
 - Highlight, underline, strike-through, sticky notes and comments in six named colours, with undo and redo, an annotation list, and Next/Previous Annotation.
 - Saving appends to the PDF without rewriting it, checks the written file before it replaces the original, and never uses PDFKit's own save. Signed, certified and Reader-extended files are saved as a copy.
-- Unsaved annotations are journaled and offered back after a crash.
+- Annotations can be saved into password-protected PDFs (RC4, AES-128 and AES-256), which stay encrypted with their own key and password. A file whose permissions forbid commenting can be annotated once its owner password is entered. Certificate-encrypted files, Acrobat 9's AES-256 (revision 5) and custom encryption filters are explained and not changed.
+- Unsaved annotations are journaled and offered back after a crash. An encrypted document's journal is itself encrypted, and is offered back only once the document is unlocked.
 - When a file changes on disk, a clean document reloads silently; one with unsaved annotations asks whether to reload or save a copy.
 - Forms are shown read-only and never changed.
 

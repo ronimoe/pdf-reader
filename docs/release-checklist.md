@@ -85,6 +85,7 @@ None of these can be done headlessly; the automated suites cover what they can (
 | **Real hover and Force Click** | Hover a citation for 0.5 s; Force Click a figure reference; neither moves your place | M0b, M3 |
 | **The Tab guard with a real keyboard** | In `irs-fw9.pdf`, press Tab: focus must not enter a form field | M4b |
 | **Preview and Acrobat Reader** | Save highlights and a note into a copy of an arXiv paper and the IRS W-9 copy; open both in Preview and Acrobat Reader; the annotations show and the form values are unchanged | M0a, M4a |
+| **An encrypted saved file in Preview and Acrobat Reader** | Open `Tests/Corpus/public/encrypted-aes256.pdf` (password `user-pass`) and `encrypted-r4-aes128-objstm.pdf` (`user-pass`) in Lectern, add a highlight and a note, ⌘S. Open each saved file in Preview and in Acrobat Reader: both must ask for the password, accept `user-pass`, and show the highlight and the note with their text. Also `encrypted-r2-rc4-40.pdf` (`user-pass`, RC4) in Acrobat Reader | M7 |
 | **In-place save under the sandbox** | Open a PDF from your Documents folder, highlight, ⌘S, reopen | M4b |
 | **Session restore across a real relaunch** | Open two windows with tabs and a split, quit, relaunch; also with a file from another volume | M5 |
 | **A cancelled quit through AppKit's real prompt** | Make an unsaved highlight, ⌘Q, Cancel; the session must still be saved on the next quit | M5 |

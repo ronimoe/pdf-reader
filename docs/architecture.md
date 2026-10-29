@@ -82,12 +82,12 @@ PDFKit (system framework) is used for rendering, text extraction and selection, 
 
 ### 3.2 Saving annotations: **decided: candidate 1, our own incremental writer** *(Amended 2026-10-29)*
 
-The M0a prototype passed every applicable pass criterion on the whole generated test collection. Full results are in [spikes/m0a-save.md](spikes/m0a-save.md). Encrypted files are refused with `PDFSaveError.encrypted`. In v1, annotations can't be saved into encrypted files at all (see §4.3).
+The M0a prototype passed every applicable pass criterion on the whole generated test collection. Full results are in [spikes/m0a-save.md](spikes/m0a-save.md). Encrypted files were refused with `PDFSaveError.encrypted`. *(Amended 2026-10-30, M7: the writer now saves into files encrypted with the Standard security handler; see item 7 below and §4.3.)*
 
 *(Amended 2026-10-29, M4a.)* `Saveability.evaluate` reports one of three outcomes:
 - `inPlace`,
 - `copyOnly`, for signed, certified (DocMDP) and Reader-extended (UR3) files, and files in a read-only location,
-- `unsupported`, for encrypted or malformed files.
+- `unsupported`, for malformed files and, since M7, only the encryption the writer doesn't handle (`UnsupportedReason.encrypted(EncryptionProblem)`: revision 5, a non-Standard handler, a custom crypt filter, or a password it can't authenticate). Supported encrypted files are `inPlace` or `copyOnly` like any other.
 
 Copy-only files are saved with `saveCopy`, which is the original bytes plus the appended update, written to a new file. The production API is described in [spikes/m4a-save-engine.md](spikes/m4a-save-engine.md).
 
@@ -130,6 +130,7 @@ The candidates, in order of preference:
 5. **Signatures unchanged.** Signature fields and their signed byte ranges are unchanged. Signed documents still go to Save a Copy for v1 (A1), but the writer must not damage them.
 6. **Other readers.** The highlights and notes show up in Preview, Acrobat Reader and pdf.js (journey C, step 6).
 7. **Encrypted files: measure and decide.** Find out whether new objects can be encrypted with the document's key (RC4 or AES). If not, encrypted documents are added to the list that always goes to Save a Copy.
+   - *(Outcome, 2026-10-30, M7.)* **They can, and they are saved in place.** PDFSave authenticates the password itself and encrypts the update with the file's own key: the Standard handler at R2 and R3 (RC4, 40 to 128 bits), R4 with `/V2`, `/AESV2` or `/Identity` (strings and streams may differ; `/EncryptMetadata false` honoured), and R6 (`/AESV3`). Every variant has a fixture and passes criteria 1 to 6 with the password, plus a **strong oracle**: the same edits made on the file's plaintext twin (`qpdf --decrypt` of the fixture) and on the encrypted file give identical annotation objects once qpdf decrypts the output (`scripts/corpus/verify --check oracle`). The derived file key equals qpdf's (`--show-encryption-key`) for the user and the owner password of every fixture. R5, the public-key handler, custom crypt filters and unauthenticated passwords stay `unsupported` (B6, amended 2026-10-30).
 
 **Fallback if every candidate fails.** All saves go through Save a Copy, using PDFKit's normal write on a clean document (§4.3). In-place saving moves out of v1.
 
@@ -150,6 +151,7 @@ App (AppKit shell)
 
 - **ReaderCore** and **PDFSave** have no UI. Most unit tests live there.
 - *(Amended 2026-10-29, M4b)* **Persistence** depends on **PDFSave** as well as ReaderCore: the crash journal stores `AnnotationChange` values. PDFSave is still a leaf (Foundation and Compression only).
+- *(Amended 2026-10-30, M7)* PDFSave also uses Apple's CryptoKit (MD5, SHA-2) and CommonCrypto (AES-CBC and -ECB, RC4) for encrypted files, and Persistence uses CryptoKit's AES-GCM and HKDF for the sealed journal. No new dependency.
 - **ReaderKit** is the only module that touches `PDFView`.
 
 ### 4.2 How a document is organised at runtime
@@ -231,6 +233,14 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
   - separates form fields from their widgets, so `qpdf` warns on every widget, which breaks A5.
 
   The only case where the incremental writer can't produce the copy is an encrypted document (`PDFSaveError.encrypted`). Saving annotations into encrypted documents isn't supported in v1. The app explains this and saves nothing.
+
+**Encrypted documents** *(Amended 2026-10-30, M7: replaces the paragraph above.)* Annotations are saved into documents encrypted with the Standard security handler (R2, R3, R4, R6), and the file stays encrypted exactly as it was.
+- **The key.** PDFKit doesn't expose the file key or which password matched, so `PDFSaveDocument(data:password:)` authenticates on its own (ISO 32000-2 §7.6.4, algorithms 2, 2.A, 2.B, 6, 7 and 11). It tries the session password as the user password, then as the owner password, then the empty user password (files that open without a prompt, for which the app holds no password). Only a key that reproduces `/U` (through `/O` for the owner password), and for R6 also decrypts `/Perms` to the dictionary's `/P` and `/EncryptMetadata`, is ever used; otherwise the file is `unsupported(.encrypted(.passwordNotAuthenticated))`. Passwords are PDFDocEncoding padded to 32 bytes for R2 to R4, and SASLprep'd UTF-8 cut to 127 bytes for R6 (each also tried as its plain UTF-8; only one that authenticates counts). Malformed `/V`, `/R`, `/Length`, `/O`, `/U`, `/OE`, `/UE`, `/Perms` or `/CF` throw a typed error, never trap (`EncryptionTests`, and 3,000 fuzzed mutations of the encrypted fixtures).
+- **Reading.** The handler is installed before any object is resolved. Each indirect object's strings and streams are decrypted as it is read, with the key of the object number and generation the file gives it; objects inside an object stream are decrypted with their stream, never one by one. Never decrypted: the `/Encrypt` dictionary, a signature dictionary's `/Contents` (`/Type /Sig` or `/DocTimeStamp`, or any dictionary with `/ByteRange`), cross-reference streams, data under the `/Identity` filter (including a stream's own `/Crypt` filter), and `/Metadata` streams when `/EncryptMetadata` is false. So descriptors (`/NM`, `/Contents`, `/Subtype`) are real for encrypted files, and the matcher and the M6 page filter work on them (`descriptorsAreComplete`). Revisions that disagree about `/Encrypt` are refused.
+- **Writing.** Every string and stream of every object the update writes is encrypted in `serialize` with the key of the object number it is written as: MD5 of the file key, the low 3 bytes of the number and 2 of the generation, plus `sAlT` for AES; R6 uses the file key. AES gets a random 16-byte IV, prepended, with PKCS#7 padding, and the stream `/Length` is the ciphertext's. Encrypted strings are written as hex. A rewritten object (a page's `/Annots`, an edited annotation) was decrypted with its own key when read and is encrypted again under the same number, so ciphertext never moves between objects. The cross-reference stream and `/Encrypt` are never encrypted; the trailer (or cross-reference stream dictionary) keeps `/Encrypt` as the same reference and `/ID` exactly as it was (the key depends on `/ID[0]`), and the writer's own verification fails otherwise.
+- **The safety checks.** The writer re-reads its output with the same password and requires the same file key. `SavedFileCheck.verify(…, password:)` opens the read-back with the session password and compares every annotation's decrypted subtype, `/NM` and `/Contents`, not just counts: the added and edited ones against what the writer meant to write (`SaveResult.writtenAnnotations`), every other one against the original. A wrong key gives the right count with garbage text, and the check catches it (`EncryptionTests.aWrongObjectKeyIsCaught`).
+- **The app.** The inspection, the writer, `SavedFileCheck`, the descriptors after a save and the re-inspection all use `ReaderDocument.sessionPassword`, or none. A save never changes the encryption, so `DocumentKey` (the Keychain entry, positions, bookmarks) stays the same (`EncryptedJournalTests.theDocumentKeyIsTheSameAfterAnEncryptedSave`), and a B7 reload unlocks again with the session password. PDFKit's `allowsCommenting` stays the gate: a file whose `/P` forbids annotating is blocked until the owner password is entered (B6).
+- **Known gap.** PDFKit on macOS 26 can't unlock any non-ASCII password (CoreGraphics can, given the right bytes, but a `PDFDocument` doesn't follow). Such a file can't be opened in Lectern except with an ASCII owner password, although PDFSave authenticates the same string (`EncryptionTests.pdfKitCantUnlockANonASCIIPassword`).
 
 ### 4.4 Link interception and preview (A3, A4)
 
@@ -387,7 +397,7 @@ The same type is stored as the reading position (A2) and used for history entrie
 
 **The annotation list** *(Added 2026-10-30, M6)*
 - `annotationList` reads only the pages that can hold a listed annotation: those the background inspection's descriptors list one on, plus every page an annotation was added to or put back on this session (`AnnotationEditor.pagesThatCanHoldListedAnnotations`). Reading every page's annotations took 0.53 s on the main thread for the 3,270-page manual's 18,553 links; the list now takes 1.5–2.7 ms there.
-- Until the inspection has run, or when it couldn't read the file's annotations (encrypted or malformed: `AnnotationFileInfo.descriptorsAreComplete` is false), every page is read as before.
+- Until the inspection has run, or when it couldn't read the file's annotations (malformed, or encrypted in a way PDFSave doesn't support: `AnnotationFileInfo.descriptorsAreComplete` is false), every page is read as before. *(Amended 2026-10-30, M7: supported encrypted files are decrypted, so their descriptors are complete.)*
 - `AnnotationMatcher` indexes a batch by page and by `/NM`, so matching a page costs that page's annotations, not the whole file's.
 
 **Saving**
@@ -415,7 +425,9 @@ The same type is stored as the reading position (A2) and used for history entrie
 | `DocumentState` | Persistence | Identity, last anchor, per-pane history, reader bookmarks, view settings. Written to disk as JSON |
 | `AnnotationChange` | PDFSave | Add, edit or delete of one annotation, with its full properties. Feeds the crash journal and the writer |
 | `PendingChanges` | PDFSave | The ordered list of unsaved `AnnotationChange`s. Edits and deletes of an annotation added since the last save fold into its add; a colour or contents edit that returns to the file's value is withdrawn *(Added 2026-10-29, M4b)* |
-| `SavedFileCheck` | PDFSave | The read-back after a save: the bytes, the original as a prefix, the annotation count and every added `/NM` *(Added 2026-10-29, M4b)* |
+| `SavedFileCheck` | PDFSave | The read-back after a save: the bytes, the original as a prefix, the annotation count and every added `/NM` *(Added 2026-10-29, M4b)*. *(Amended 2026-10-30, M7: opened with the session password, and every annotation's decrypted subtype, `/NM` and `/Contents` compared.)* |
+| `StandardSecurity`, `EncryptionProblem` | PDFSave | The Standard security handler: password authentication, the file key, per-object keys, decrypting what is read and encrypting what is written; and why an encrypted file can't be saved into *(Added 2026-10-30, M7)* |
+| `JournalKey` | Persistence | The key an encrypted document's crash journal is sealed with: HKDF-SHA256 of the file key, salted with the `DocumentKey` *(Added 2026-10-30, M7)* |
 | `AnnotationJournal`, `JournalEntry` | Persistence | The crash journal (§6) *(Added 2026-10-29, M4b)* |
 | `AnnotationColorPreset`, `AnnotationKindName` | ReaderCore | The six named colours (B4), names for other apps' colours, and which kinds are listed and can be recoloured *(Added 2026-10-29, M4b)* |
 | `AnnotationEditor` | App | One per `PDFDocument`. Applies each user action to `PendingChanges` and to PDFKit, matches file annotations page by page, and registers the inverse action for undo. So undo works across a save: undoing a saved add appends a delete, and undoing a saved delete recreates the annotation under a new `/NM` (markup and notes only) *(Added 2026-10-29, M4b)* |
@@ -471,6 +483,12 @@ The same type is stored as the reading position (A2) and used for history entrie
   - A different hash, or a file that can't be read, explains that the annotations no longer fit and offers **Discard** or **Keep for Now**.
   - **Every answer acts on that one file.** Discard deletes it; a successful Restore deletes it only after the replayed changes have been written to the live journal (flushed, not left to the debounce, and the write confirmed), and never when the offered file is itself the live journal; if that write fails, the offered file stays kept. Keep leaves it kept. Other kept journals are never touched and are offered on later opens. No journal is ever deleted without the user seeing it.
 - Restoring isn't an undoable action.
+
+**Encrypted documents** *(Added 2026-10-30, M7)*
+- A journal must not leave an encrypted document's notes on disk in plain text. Its change list is sealed with AES-GCM (`JournalEntry.sealed`, nonce, ciphertext and tag together) under `JournalKey`: HKDF-SHA256 of the PDF's file key, salted with the document's `DocumentKey`, with the info string `io.github.ronimoe.Lectern annotation journal v1`. The SHA-256 of the original is authenticated with it, so a payload can't be moved to another file's entry. The metadata (the file's UUID name, the hash, the date) stays plain, so a journal can be matched and explained without the key.
+- The key exists only in memory, and only once the document is unlocked and inspected (`AnnotationFileInfo.journalKey`). The file key is the same whichever password opened the file, so the user and the owner password give the same journal key, and a save doesn't change it.
+- **Fail closed.** An encrypted document without a key (its encryption unsupported) journals nothing; a seal that fails writes nothing. Never the plain text.
+- **Restore** runs only after unlocking, since the journal check waits for the inspection. A sealed journal that doesn't open (no key, another key, damage) is `.unreadable`: it is explained, kept, and deleted only if the user chooses Discard, like any other kept journal.
 
 **Other storage**
 - **Recent documents:** the system recents list kept by `NSDocumentController`.

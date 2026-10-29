@@ -11,8 +11,10 @@ Redistributable test PDFs (decision A6), in two groups:
   regenerated.
 - **`public/fetched/` holds real-world files too large to commit** (git-ignored).
   `scripts/corpus/bootstrap` downloads them and refuses any whose SHA-256 differs from the one
-  listed [below](#fetched-files). `scripts/test.sh` fails without them; a plain `swift test` leaves
-  their cases out.
+  listed [below](#fetched-files). `scripts/test.sh` runs `scripts/corpus/bootstrap --fetch` first
+  (a no-op when they are present and match) and stops with one message if that fails. A plain
+  `swift test` leaves their cases out; with `LECTERN_REQUIRE_TOOLS=1`, a missing one fails only its
+  own cases, each saying which file to fetch.
 
 Private, non-redistributable PDFs go in `private/`, which is git-ignored.
 
@@ -27,7 +29,8 @@ scripts/corpus/generate --only linearized-qpdf certified-docmdp   # rewrites jus
 Needs qpdf and mupdf-tools from Homebrew. Output isn't byte-reproducible (the signatures, the
 AES salt and MuPDF's IDs change each run), so regenerate only the files whose cases change (`--only`),
 and re-run `swift test` in `Packages/LecternKit` afterwards. The names `--only` accepts are the file
-names without `.pdf`, plus `encrypted` for both encrypted files.
+names without `.pdf`, plus `encrypted` for the two original encrypted files (`encrypted-aes256` and
+`encrypted-aes256-owner-only`).
 
 ## Generated files
 
@@ -47,6 +50,35 @@ names without `.pdf`, plus `encrypted` for both encrypted files.
 | `linearized-qpdf.pdf` | **Linearized** (first-page cross-reference section at the start, `startxref` pointing at it, valid hint tables: `qpdf --check-linearization` is clean) | reportlab → `qpdf --linearize` | Generated; GPL-3.0 |
 | `encrypted-aes256.pdf` | AES-256 (R6), user password `user-pass`, owner password `owner-pass` | `qpdf --encrypt … 256` | Generated; GPL-3.0 |
 | `encrypted-aes256-owner-only.pdf` | AES-256 with an empty user password (opens without a prompt) and annotation/modification forbidden | `qpdf --encrypt "" … 256 --modify=none --annotate=n` | Generated; GPL-3.0 |
+| `encrypted-r2-rc4-40.pdf` | R2, RC4 40-bit; user `user-pass`, owner `owner-pass` | `qpdf --allow-weak-crypto --encrypt … --bits=40` | Generated; GPL-3.0 |
+| `encrypted-r3-rc4-annotated.pdf` | R3, RC4 128-bit, no user password; the MuPDF annotations of `third-party-annots.pdf` (another app's, edited through decrypted descriptors) | MuPDF, then `qpdf --encrypt … --bits=128 --use-aes=n` | Generated; GPL-3.0 |
+| `encrypted-r4-rc4.pdf` | R4 with the `/V2` (RC4) crypt filter; **non-ASCII user password `pässwörd`** (stored in PDFDocEncoding), owner `owner-pass` | `qpdf --encrypt … --bits=128 --use-aes=n --force-V4` | Generated; GPL-3.0 |
+| `encrypted-r4-aes128-objstm.pdf` | R4 with `/AESV2`; user `user-pass`; cross-reference stream and object streams holding the pages | `qpdf --object-streams=generate --encrypt … --bits=128 --use-aes=y` | Generated; GPL-3.0 |
+| `encrypted-r4-cleartext-metadata.pdf` | R4 AES with `/EncryptMetadata false` and a real XMP `/Metadata` stream left in the clear; no user password | pikepdf (XMP), then `qpdf --encrypt … --use-aes=y --cleartext-metadata` | Generated; GPL-3.0 |
+| `encrypted-r4-identity-strings.pdf` | R4 with **different filters**: `/StmF` AESV2, `/StrF /Identity` (strings in the clear, including a note's `/Contents` and `/NM`); no user password | Hand-assembled by `generate.py` (algorithms 2, 3 and 5), accepted only after `qpdf --check` | Generated; GPL-3.0 |
+| `encrypted-r6-objstm-restricted.pdf` | R6 (AES-256), no user password, object streams; printing and copying forbidden, **commenting allowed** | `qpdf --object-streams=generate --encrypt "" … 256 --modify=annotate --print=none --extract=n` | Generated; GPL-3.0 |
+| `encrypted-r6-unicode.pdf` | R6 with a **non-ASCII user password `Grüße-ключ`** (precomposed, so NFC and NFKC agree), owner `owner-pass` | `qpdf --encrypt … 256` | Generated; GPL-3.0 |
+| `encrypted-signed.pdf` | R6, no user password, then an approval signature in an incremental update (encrypted by pyHanko with the file's key); copy-only, signature must stay intact | `qpdf --encrypt`, then pyHanko 0.38, throwaway certificate | Generated; GPL-3.0 |
+| `encrypted-signed.cert.pem` | Its public certificate (trust root for `verify`) | `cryptography` | Generated; GPL-3.0 |
+| `encrypted-r5.pdf` | R5, Acrobat 9's withdrawn AES-256; user `user-pass`. **Still refused** | `qpdf --encrypt … 256 --force-R5` | Generated; GPL-3.0 |
+| `encrypted-pubkey.pdf` | The public-key handler (`/Adobe.PubSec`), for a throwaway certificate whose private key is discarded: nothing can decrypt it. **Still refused.** PDFKit opens it as if unencrypted and shows blank pages | pyHanko `encrypt_pubkey` | Generated; GPL-3.0 |
+
+Every owner password is `owner-pass`.
+
+**Encrypted files (M7).** Each supported variant has a corpus case and a *plaintext twin*: the
+package tests decrypt the fixture with `qpdf --decrypt` at run time (nothing extra is committed),
+make the same edits on both with fixed `/NM` values, and `verify --check oracle` decrypts the
+encrypted output with qpdf and compares every page's annotation objects with the twin's (page
+references by index, other annotations by subtype, name and rectangle, streams decoded). The
+other checks open inputs and outputs with the password. Two exceptions, both measured:
+- The tools' libraries (pikepdf, Poppler, MuPDF, pdf.js) take a password's bytes as given, so a
+  non-ASCII password reaches them as UTF-8, not the PDFDocEncoding an R4 file needs. The two
+  non-ASCII files are opened there with their owner password; `EncryptionTests.theFileKeyIsQpdfs`
+  checks the user passwords against `qpdf --show-encryption-key` (given through `--password-file`,
+  since Foundation's `Process` decomposes non-ASCII arguments).
+- Poppler 26.09 doesn’t implement different `/StmF` and `/StrF` ("Unsupported version/revision (4/4)")
+  and can't read `encrypted-r4-identity-strings.pdf` even unmodified; its Poppler check is `n/a`.
+  qpdf, MuPDF, pdf.js and PDFKit read it.
 
 The page text is original filler written for this corpus.
 
@@ -168,6 +200,8 @@ to 5 MB (each mutated save of the 15 MB manual would re-verify the whole file).
 **The regression suite** (`RegressionSuiteTests`, decision A6) lists every PDF here and fails on a
 file without an entry: each must open in PDFKit (with its password, if any), render page 1, give
 text where it has a text layer (and none at all for the scan), and be released when closed; and the
-writer must have a case for each one (`Corpus.cases`, refused for the encrypted files). The
+writer must have a case for each one (`Corpus.cases`; refused for the R5 and public-key files).
+PDFKit can't unlock a non-ASCII password, so those two files open there with the owner password,
+and the public-key file is only checked to open and give no text. The
 performance tests on the representative documents are described in
 [docs/performance.md](../../docs/performance.md).
