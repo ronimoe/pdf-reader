@@ -75,7 +75,16 @@ PDFKit (system framework) is used for rendering, text extraction and selection, 
   - `cancelFindString` stops the callbacks at once. `.diacriticInsensitive` works. There is no whole-word option, so Whole Word filters the matches.
   - The M0b spike branch had published nothing when M2 started, so these numbers come from M2's own probe.
 
-### 3.2 Saving annotations: **open, decided by the A1 prototype**
+### 3.2 Saving annotations: **decided: candidate 1, our own incremental writer** *(Amended 2026-10-29)*
+
+The M0a prototype passed every applicable pass criterion on the whole generated test collection. Full results are in [spikes/m0a-save.md](spikes/m0a-save.md). Encrypted files are refused with `PDFSaveError.encrypted` and go to Save a Copy. Signed files also still go to Save a Copy (A1).
+
+**Open work for production (M4)**
+- Map each `PDFAnnotation` to its object in the file. Our own annotations are matched by `/NM`; third-party ones by page and `/Rect`.
+- Fuzz the parser.
+- Test the writer on real-world files: linearized, certified (DocMDP) and Reader-extended (`/Perms /UR3`).
+
+The candidate table and pass criteria below are kept as the record of how the decision was made.
 
 The save path must:
 - **append** changes to the original file (an incremental update), and
@@ -132,7 +141,8 @@ App (AppKit shell)
 **Panes**
 - Each tab has one or two panes.
 - Each pane is a `ReaderPDFView` with its own `HistoryStack` (B2) and `ReadingAnchor`.
-- Both panes share the same `PDFDocument`, so an annotation added in one appears in the other at once.
+- Both panes share the same `PDFDocument`.
+- **Annotation changes don't reach the other pane on their own** *(Amended 2026-10-29, M0b Q7)*. A live annotation change shows only in the pane that last laid out the page. After every annotation change, the other pane must re-assign its `document`, keeping its anchor, to refresh. Five cheaper refresh calls were tried and none worked.
 
 **Focus (B3)**
 - The tab tracks which pane is focused.
@@ -161,14 +171,36 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
   - Printing uses the on-screen model, so a rotated view prints rotated, as in Preview.
 - **Form fields (A5)** stay non-editable because `ReaderPDFView` catches mouse and keyboard events aimed at them. Their `isReadOnly` flag is never set. Prototype check [verify]: whether keyboard focus can still reach a field.
 - **The author (B4)** is set only on new annotations, from Settings, where the default is empty.
+  - PDFKit fills in `/T` (the Mac account's full name) and `/M` (a date) on every new annotation, including its popup, on its own *(Amended 2026-10-29, M0b Q5)*.
+  - Clear both explicitly, and set them only from Settings. The incremental writer serialises only what we give it, so it is the final guard.
 
 **What gets written**
 - The **incremental writer** writes only the objects the app chose to create or change: annotation objects, plus the annotation lists of the pages involved. Changed rotation therefore can't reach the file.
-- **Save a Copy** and the fallback path build a **fresh `PDFDocument` from the original bytes**, then copy across only the annotations the user created, edited or deleted. They never write the on-screen model directly.
+- **Save a Copy is the original bytes plus the incremental writer's appended section, written to a new file.** PDFKit's own `write(to:)` and `dataRepresentation()` are never used to save *(Amended 2026-10-29, M0b Q6)*. They rewrite the whole file, which:
+  - drops page labels, `/ID`, custom metadata and the revision history,
+  - separates form fields from their widgets, so `qpdf` warns on every widget, which breaks A5.
+
+  The only case where the incremental writer can't produce the copy is an encrypted document (`PDFSaveError.encrypted`). Saving annotations into encrypted documents isn't supported in v1. The app explains this and saves nothing.
 
 ### 4.4 Link interception and preview (A3, A4)
 
-*(Amended 2026-10-29, M2)* Until M3 takes over, PDFKit still follows internal links itself. On macOS 26 a click goes through `PDFView.perform(_:)` (`PDFActionGoTo`), then `go(to: PDFDestination)`.
+*Amended 2026-10-29, from M0b Q2, Q7 and Q8. See [spikes/m0b-pdfkit.md](spikes/m0b-pdfkit.md).*
+
+**Interception points.** Intercept link clicks in `mouseDown`, because PDFKit acts on mouse-down, and override `perform(_:)` as a catch-all.
+
+**Classifying actions**
+- Classify by `action.type`, not by Swift subclass.
+- `Launch` arrives as a URL action with no URL.
+- Reading `PDFActionRemoteGoTo.url` from Swift crashes, so never touch it.
+
+**Close PDFKit's side paths**
+- Its private "Open Link" context-menu method, which calls `NSWorkspace` directly. The custom context menu from M1 already removes it.
+- The `PDFViewDelegate` default, which opens URLs.
+- PDFKit's own Force Click gesture recogniser. Remove it, and handle `pressureChange` ourselves.
+
+**`/Fit` destinations.** `/Fit`, `/FitH` and `/FitR` all arrive as "no position", and PDFKit doesn't fit the page. The preview applies fit-to-page itself.
+
+*(Amended 2026-10-29, M2)* Until M3 takes over, PDFKit still follows internal links itself. On macOS 26 a click goes through `PDFView.perform(_:)` (`action.type` "GoTo"), then `go(to: PDFDestination)`.
 - `ReaderPDFView` overrides `perform(_:)`. A `GoTo` that moved the view records the departure in the pane's history.
 - Named `GoBack` and `GoForward` actions use the pane's history, not PDFKit's own.
 - PDFView's own `goBack:`, `goForward:` and page actions are never the menu commands' selectors. A test checks that `ReaderPDFView` responds to none of them.
@@ -375,7 +407,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 **Test PDF regression suite (A6)**
 - Every file in the collection must open, render page 1, extract text where it exists, and close cleanly.
 - The writer is run on every file that can be annotated.
-- The script that generates test files lives in `Tests/Corpus/generate`.
+- The script that generates test files is `scripts/corpus/generate`, and `scripts/corpus/verify` runs the external-reader checks. Committed outputs live in `Tests/Corpus/public/`.
 - Private, non-redistributable PDFs go in `Tests/Corpus/private/` (git-ignored) and are used when present.
 
 **User-interface tests (XCUITest)**
@@ -427,7 +459,7 @@ Every decision mapped to the component that implements it and the milestone that
 
 ## 13. Open items
 
-1. **The save path (§3.2).** Decided by M0.
+1. ~~**The save path (§3.2).**~~ Decided in M0a: our own incremental writer.
 2. **Every [verify] item.** Resolved by M0.
 3. ~~**Apple Developer Program membership**~~ Decided: none for v1. Unsigned (ad-hoc) distribution with documented install steps (§8).
 4. **Product name and bundle ID.** Needed before M1 settles the storage paths. A placeholder works until then.

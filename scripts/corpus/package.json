@@ -1,0 +1,9 @@
+{
+  "name": "lectern-corpus-tools",
+  "private": true,
+  "description": "pdf.js checks for the Lectern test corpus",
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "pdfjs-dist": "6.4.299"
+  }
+}

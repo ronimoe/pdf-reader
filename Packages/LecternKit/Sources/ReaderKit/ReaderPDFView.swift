@@ -490,7 +490,7 @@ public final class ReaderPDFView: PDFView {
         isAdjustingGeometry = wasAdjusting
         // Wherever the action leads is the new place.
         keptAnchor = visibleAnchor
-        guard action is PDFActionGoTo, let departure, let arrival = visibleAnchor,
+        guard action.type == "GoTo", let departure, let arrival = visibleAnchor,
               !arrival.isSamePlace(as: departure)
         else { return }
         onLinkJump?(departure)
