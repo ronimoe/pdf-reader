@@ -73,43 +73,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let emptyState = AppEnvironment.isHostingTests ? EmptyStateController(recentURLs: { [] }) : EmptyStateController()
     private(set) lazy var settings = SettingsWindowController()
     private(set) lazy var keyboardShortcuts = KeyboardShortcutsWindowController()
-    /// Last session's windows and tabs (B3). Never used while hosting tests.
-    private(set) var session: SessionRestorer?
-    /// True from launch until last session's documents have reopened, so the empty state doesn't
-    /// flash up first.
-    private(set) var isRestoringSession = false
-    private var emptyStateWanted = false
+    /// Last session's windows and tabs (B3), and the empty state. Its restorer is nil while
+    /// hosting tests, so the test host never restores or saves a session.
+    private(set) var sessions: SessionCoordinator?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         let store = DocumentStateStore(directory: AppEnvironment.stateDirectory)
         AppEnvironment.stateStore = store
         AppEnvironment.journal = AnnotationJournal(directory: store.directory.appending(path: "Journal", directoryHint: .isDirectory))
+        let restorer = AppEnvironment.isHostingTests ? nil
+            : SessionRestorer(fileURL: store.directory.appending(path: "Session.json"), policy: { AppEnvironment.preferences.sessionRestore })
+        let emptyState = emptyState
+        let sessions = SessionCoordinator(
+            restorer: restorer,
+            emptyStateDidChange: { emptyState.documentsDidChange(count: $0) },
+            showEmptyState: { emptyState.show() },
+            hideEmptyState: { emptyState.hide() }
+        )
+        self.sessions = sessions
         let controller = NSDocumentController.shared as? ReaderDocumentController
-        controller?.onDocumentsChange = { [weak self] count in
-            guard let self else { return }
-            // While last session is reopening, its file isn't rewritten with half of it: a crash
-            // mid-restore must not lose the rest. The restore saves once it ends.
-            guard !isRestoringSession else { return }
-            emptyState.documentsDidChange(count: count)
-            session?.documentsDidChange()
-        }
-        guard !AppEnvironment.isHostingTests else { return }
-        let session = SessionRestorer(fileURL: store.directory.appending(path: "Session.json"), policy: { AppEnvironment.preferences.sessionRestore })
-        self.session = session
-        controller?.onWillReviewForQuit = { session.applicationWillQuit() }
-        guard session.shouldRestore, session.load()?.windows.isEmpty == false else { return }
-        isRestoringSession = true
-        Task { @MainActor in
-            await session.restore()
-            isRestoringSession = false
-            let count = NSDocumentController.shared.documents.count
-            if count == 0, emptyStateWanted || NSApp.windows.allSatisfy({ !$0.isVisible }) {
-                emptyState.show()
-            } else if count > 0 {
-                emptyState.hide()
-            }
-            session.documentsDidChange()
-        }
+        controller?.onDocumentsChange = { sessions.documentsDidChange(count: $0) }
+        controller?.onWillReviewForQuit = { sessions.willReviewForQuit() }
+        controller?.onReviewEnded = { sessions.reviewEnded(didReviewAll: $0) }
+        sessions.launch()
     }
 
     // A reader has no "new document". AppKit asks for an untitled file at
@@ -120,12 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        if isRestoringSession {
-            // Shown after the restore, only if nothing came back.
-            emptyStateWanted = true
-            return true
-        }
-        emptyState.show()
+        sessions?.openUntitled() ?? emptyState.show()
         return true
     }
 
@@ -142,9 +123,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Not while hosting tests, nor in a test launch that ignores saved state (verify-dmg):
         // the first-launch question would wait for an answer nobody gives.
-        guard !AppEnvironment.isHostingTests, !SessionRestorer.launchIgnoresPersistentState() else { return }
+        guard Self.asksAboutUpdatesAtLaunch(hostingTests: AppEnvironment.isHostingTests, ignoresState: SessionRestorer.launchIgnoresPersistentState()) else { return }
         // After the launch's own windows: the first-launch question (A4), or scheduled checks.
         DispatchQueue.main.async { AppEnvironment.updates.start() }
+    }
+
+    /// The first-launch question and scheduled checks start only in a real launch.
+    static func asksAboutUpdatesAtLaunch(hostingTests: Bool, ignoresState: Bool) -> Bool {
+        !hostingTests && !ignoresState
     }
 
     /// Lectern ▸ Check for Updates…
@@ -163,7 +149,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (document as? ReaderDocument)?.readerWindowController?.saveAnchor()
         }
         AppEnvironment.stateStore?.flush()
-        // Saved already if the quit began with the unsaved-documents review.
-        if let session, !session.isTerminating { session.applicationWillQuit() }
+        sessions?.willTerminate()
     }
 }

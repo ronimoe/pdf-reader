@@ -324,9 +324,13 @@ final class ReaderWindowController: NSWindowController {
         }
     }
 
+    /// Set for windows a session restore reopens: they ask for a password (or read the Keychain)
+    /// only when they become key, one at a time, never all at once at launch.
+    var defersPasswordCheckUntilKey = false
+
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        checkPasswordsIfNeeded()
+        if !defersPasswordCheckUntilKey { checkPasswordsIfNeeded() }
     }
 
     // Restored windows can come back without showWindow; checking when the
@@ -381,7 +385,8 @@ final class ReaderWindowController: NSWindowController {
         }
         settings = restored
         primaryPane.setHistory(stored.state.history[.primary] ?? HistoryStack())
-        bookmarks = ReaderBookmarks.sorted(stored.state.bookmarks.map { $0.clamped(toPageCount: pdf.pageCount) })
+        // As stored: clamped only where shown or followed, so nothing is lost if the file grows back.
+        bookmarks = ReaderBookmarks.sorted(stored.state.bookmarks)
         return stored.state
     }
 
@@ -744,7 +749,7 @@ final class ReaderWindowController: NSWindowController {
             return
         }
         readerDocument.applyViewRotation(settings.rotation)
-        bookmarks = bookmarks.map { $0.clamped(toPageCount: pdf.pageCount) }
+        refreshBookmarkList()
         for (pane, anchor) in anchors {
             pane.setHistory(pane.history.clamped(toPageCount: pdf.pageCount))
             var paneSettings = settings

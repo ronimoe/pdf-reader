@@ -41,6 +41,15 @@ final class SessionRestorer {
     /// Called on each restored window before it is ordered in (it must not order the window in
     /// itself); tests make it invisible.
     var prepareWindow: (NSWindow) -> Void = { _ in }
+    /// Makes the front window key once everything is in place. Only that window, so only that
+    /// tab asks for a password at launch (B6); the others ask when they become key.
+    var makeKey: (NSWindow) -> Void = { $0.makeKeyAndOrderFront(nil) }
+    /// The reader windows whose session is saved.
+    var currentControllers: () -> [ReaderWindowController] = {
+        NSDocumentController.shared.documents.compactMap { ($0 as? ReaderDocument)?.readerWindowController }
+    }
+    /// A restored frame smaller than this (or empty, from a damaged file) is ignored.
+    static let minimumFrameSize = NSSize(width: 320, height: 240)
     /// Set while quitting: documents closing during the quit don't shrink the saved session.
     private(set) var isTerminating = false
     private var accessedURLs: [URL] = []
@@ -61,12 +70,26 @@ final class SessionRestorer {
         UserDefaults.standard.bool(forKey: "NSQuitAlwaysKeepsWindows")
     }
 
-    /// `-ApplePersistenceIgnoreState YES` (a test launch, such as scripts/release/verify-dmg's):
-    /// last session is neither restored nor overwritten.
+    /// `-ApplePersistenceIgnoreState YES` on the command line (a test launch, such as
+    /// scripts/release/verify-dmg's): last session is neither restored nor overwritten.
     var ignoresPersistentState: () -> Bool = { SessionRestorer.launchIgnoresPersistentState() }
 
+    static let ignoreStateArgument = "ApplePersistenceIgnoreState"
+
+    /// Only the launch arguments count: someone who set `ApplePersistenceIgnoreState` globally
+    /// (`defaults write -g …`) keeps session restore and scheduled update checks.
     static func launchIgnoresPersistentState() -> Bool {
-        UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState")
+        argumentFlag(ignoreStateArgument, in: UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain))
+    }
+
+    /// A Boolean from the argument domain (`-Key YES`).
+    static func argumentFlag(_ key: String, in arguments: [String: Any]) -> Bool {
+        switch arguments[key] {
+        case let value as Bool: value
+        case let value as NSNumber: value.boolValue
+        case let value as String: ["yes", "true", "1"].contains(value.lowercased())
+        default: false
+        }
     }
 
     var shouldRestore: Bool {
@@ -108,11 +131,12 @@ final class SessionRestorer {
         return SessionState(windows: windows)
     }
 
-    /// Writes the session; with "Never", forgets it instead (a list of open files is kept only
-    /// when it can be used).
+    /// Writes the session, but only while it could be restored: with "Never", or "As set in
+    /// System Settings" while macOS closes windows on quit, the file is deleted instead, so no
+    /// list of open files is kept that nothing will read.
     func save(_ state: SessionState) {
         guard !ignoresPersistentState() else { return }
-        if policy() == .never || state.windows.isEmpty {
+        if !policy().shouldRestore(systemKeepsWindows: systemKeepsWindows()) || state.windows.isEmpty {
             try? FileManager.default.removeItem(at: fileURL)
             return
         }
@@ -122,8 +146,7 @@ final class SessionRestorer {
     }
 
     func saveCurrentSession() {
-        let controllers = NSDocumentController.shared.documents.compactMap { ($0 as? ReaderDocument)?.readerWindowController }
-        save(Self.capture(controllers))
+        save(Self.capture(currentControllers()))
     }
 
     /// While running: kept up to date as documents open and close, so a crash still restores.
@@ -136,6 +159,11 @@ final class SessionRestorer {
     func applicationWillQuit() {
         saveCurrentSession()
         isTerminating = true
+    }
+
+    /// The user cancelled the quit (in the unsaved-changes review): keep saving as before.
+    func quitWasCancelled() {
+        isTerminating = false
     }
 
     func load() -> SessionState? {
@@ -152,32 +180,51 @@ final class SessionRestorer {
     func restore() async -> [NSDocument] {
         guard shouldRestore, let state = load() else { return [] }
         var reopened: [NSDocument] = []
+        var seenFiles = Set<String>()
+        var frontWindow: NSWindow?
         // Back to front, so the frontmost window ends up in front.
         for saved in state.windows.reversed() {
             var controllers: [(ReaderWindowController, SessionState.Tab)] = []
             var savedIndices: [Int] = []
             for (index, tab) in saved.tabs.enumerated() {
-                guard let url = resolve(tab) else { continue }
-                guard let document = try? await openDocument(url) else { continue }
+                guard let resolved = resolve(tab) else { continue }
+                // The same file listed twice comes back once.
+                let key = resolved.url.standardizedFileURL.resolvingSymlinksInPath().path
+                guard seenFiles.insert(key).inserted else {
+                    release(resolved)
+                    continue
+                }
+                guard let document = try? await openDocument(resolved.url) else {
+                    release(resolved)
+                    continue
+                }
                 if document.windowControllers.isEmpty { document.makeWindowControllers() }
-                guard let controller = (document as? ReaderDocument)?.readerWindowController else { continue }
-                // Already open (the file was listed twice, or opened by Finder at launch): leave it.
-                if controller.window?.isVisible == true { continue }
+                // Already open (by Finder at launch, say), or not a reader document: leave it.
+                guard let controller = (document as? ReaderDocument)?.readerWindowController,
+                      controller.window?.isVisible != true
+                else {
+                    release(resolved)
+                    continue
+                }
+                keep(resolved)
+                // A password is asked for only when this tab's window becomes key, not on show.
+                controller.defersPasswordCheckUntilKey = true
                 reopened.append(document)
                 controllers.append((controller, tab))
                 savedIndices.append(index)
             }
             guard let (first, _) = controllers.first, let firstWindow = first.window else { continue }
-            let frame = NSRectFromString(saved.frame)
+            let frame = Self.usableFrame(saved.frame)
             for (controller, _) in controllers {
                 guard let window = controller.window else { continue }
                 prepareWindow(window)
-                window.setFrame(frame, display: false)
+                if let frame { window.setFrame(frame, display: false) }
             }
             // A new window, not a tab of whatever is in front: tabbing is off while it orders in.
+            // Ordered in without becoming key; only the front window becomes key, at the end.
             let mode = firstWindow.tabbingMode
             firstWindow.tabbingMode = .disallowed
-            first.showWindow(nil)
+            firstWindow.orderFront(nil)
             firstWindow.tabbingMode = mode
             var previous = firstWindow
             for (controller, _) in controllers.dropFirst() {
@@ -195,25 +242,57 @@ final class SessionRestorer {
             if let window = selected.window {
                 window.tabGroup?.selectedWindow = window
                 // A tab group takes one frame; make sure it's the saved one.
-                window.setFrame(frame, display: true)
+                if let frame { window.setFrame(frame, display: true) }
+                frontWindow = window
             }
         }
+        if let frontWindow { makeKey(frontWindow) }
         return reopened
     }
 
+    /// The saved frame, unless it is damaged, empty or too small to use.
+    static func usableFrame(_ string: String) -> NSRect? {
+        let frame = NSRectFromString(string)
+        guard frame.width.isFinite, frame.height.isFinite, frame.origin.x.isFinite, frame.origin.y.isFinite,
+              frame.width >= minimumFrameSize.width, frame.height >= minimumFrameSize.height
+        else { return nil }
+        return frame
+    }
+
+    struct ResolvedTab {
+        let url: URL
+        /// Security-scoped access was started for it and must be stopped unless it's kept.
+        let isScoped: Bool
+    }
+
     /// The file a saved tab points at, through its bookmark (which follows moves), or its path.
-    /// Nil when it's gone.
-    private func resolve(_ tab: SessionState.Tab) -> URL? {
+    /// Nil when it's gone. Access to a bookmarked file starts before it is looked at: inside the
+    /// sandbox, a file outside the container can't even be seen without it.
+    func resolve(_ tab: SessionState.Tab) -> ResolvedTab? {
         if let bookmark = tab.bookmark {
             var stale = false
-            if let url = try? URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale),
-               FileManager.default.fileExists(atPath: url.path) {
-                // Held while the app runs: the document reads now and may save later.
-                if url.startAccessingSecurityScopedResource() { accessedURLs.append(url) }
-                return url
+            if let url = try? URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale) {
+                let scoped = url.startAccessingSecurityScopedResource()
+                if FileManager.default.fileExists(atPath: url.path) { return ResolvedTab(url: url, isScoped: scoped) }
+                if scoped { url.stopAccessingSecurityScopedResource() }
             }
         }
         let url = URL(fileURLWithPath: tab.path)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        return FileManager.default.fileExists(atPath: url.path) ? ResolvedTab(url: url, isScoped: false) : nil
     }
+
+    /// Held while the app runs: the document reads now and may save later.
+    private func keep(_ resolved: ResolvedTab) {
+        if resolved.isScoped { accessedURLs.append(resolved.url) }
+    }
+
+    /// A skipped tab gives its access back.
+    private func release(_ resolved: ResolvedTab) {
+        if resolved.isScoped { resolved.url.stopAccessingSecurityScopedResource() }
+        releasedCount += 1
+    }
+
+    /// For tests: how many resolved tabs were skipped and gave their access back.
+    private(set) var releasedCount = 0
+    var heldURLs: [URL] { accessedURLs }
 }

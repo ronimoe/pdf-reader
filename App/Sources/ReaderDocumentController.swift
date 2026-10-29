@@ -15,14 +15,23 @@ final class ReaderDocumentController: NSDocumentController {
     /// Called when quitting starts, before any document is closed by the unsaved-changes review:
     /// the session is saved with every window still open.
     var onWillReviewForQuit: (() -> Void)?
+    /// How that review ended: false if the user cancelled the quit.
+    var onReviewEnded: ((Bool) -> Void)?
+    /// The forwarder of the review in progress, kept until it answers.
+    private var pendingReview: ReviewForwarder?
 
     override func reviewUnsavedDocuments(
         withAlertTitle title: String?, cancellable: Bool, delegate: Any?,
         didReviewAllSelector: Selector?, contextInfo: UnsafeMutableRawPointer?
     ) {
         onWillReviewForQuit?()
-        super.reviewUnsavedDocuments(withAlertTitle: title, cancellable: cancellable, delegate: delegate,
-                                     didReviewAllSelector: didReviewAllSelector, contextInfo: contextInfo)
+        let forwarder = ReviewForwarder(delegate: delegate, selector: didReviewAllSelector) { [weak self] didReviewAll in
+            self?.onReviewEnded?(didReviewAll)
+            self?.pendingReview = nil
+        }
+        pendingReview = forwarder
+        super.reviewUnsavedDocuments(withAlertTitle: title, cancellable: cancellable, delegate: forwarder,
+                                     didReviewAllSelector: ReviewForwarder.selector, contextInfo: contextInfo)
     }
 
     override func addDocument(_ document: NSDocument) {

@@ -31,9 +31,13 @@ case "generate":
     try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                               attributes: [.posixPermissions: 0o700])
     let key = Curve25519.Signing.PrivateKey()
-    let contents = Data(key.rawRepresentation.base64EncodedString().utf8)
-    // Created with mode 600 from the start, never readable by others even briefly.
-    guard FileManager.default.createFile(atPath: url.path, contents: contents, attributes: [.posixPermissions: 0o600]) else {
+    let contents = Array(key.rawRepresentation.base64EncodedString().utf8)
+    // Created by open(2) with O_EXCL and mode 600, before a byte is written: never readable by
+    // anyone else, not even for a moment, whatever the umask, and never over an existing file.
+    umask(0o077)
+    let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+    guard fd >= 0 else { fail("could not create \(url.path): \(String(cString: strerror(errno)))") }
+    guard fchmod(fd, 0o600) == 0, write(fd, contents, contents.count) == contents.count, fsync(fd) == 0, close(fd) == 0 else {
         fail("could not write \(url.path)")
     }
     print(key.publicKey.rawRepresentation.base64EncodedString())

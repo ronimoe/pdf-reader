@@ -122,17 +122,40 @@ final class SparkleUpdater: NSObject, SoftwareUpdater {
     }
 }
 
-/// The first-launch question, as an alert. "Don't Check" is the default button: nothing goes
-/// over the network unless the user chooses it.
+/// The first-launch question, as an alert. "Don't Check" is the default button (Return), and
+/// Escape answers it too: nothing goes over the network unless the user chooses it.
 struct AlertUpdateQuestion: UpdateQuestionPresenting {
     func askAboutAutomaticChecks(answer: @escaping (Bool) -> Void) {
+        let alert = Self.makeAlert()
+        // NSAlert gives Escape to a button titled Cancel; there isn't one, so map it here.
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard let response = Self.response(forKeyDown: event) else { return event }
+            NSApp.stopModal(withCode: response)
+            return nil
+        }
+        let response = alert.runModal()
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        answer(Self.answer(for: response))
+    }
+
+    static func makeAlert() -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "Check for updates automatically?"
         alert.informativeText = "Lectern can check GitHub for a newer version once a day. Nothing about you or your documents is sent, and Lectern has no telemetry of any kind.\n\nYou can change this later in Settings."
         alert.addButton(withTitle: "Don’t Check")
         alert.addButton(withTitle: "Check Automatically")
-        answer(alert.runModal() == .alertSecondButtonReturn)
+        return alert
+    }
+
+    /// Escape answers no.
+    static func response(forKeyDown event: NSEvent) -> NSApplication.ModalResponse? {
+        event.keyCode == 53 ? .alertFirstButtonReturn : nil
+    }
+
+    /// Only "Check Automatically" is a yes.
+    static func answer(for response: NSApplication.ModalResponse) -> Bool {
+        response == .alertSecondButtonReturn
     }
 }
 
