@@ -67,6 +67,8 @@ public final class AnnotationJournal: Sendable {
         var generation: Int
         /// The write for this generation already happened.
         var isDone = false
+        /// That write failed.
+        var failed = false
     }
     private static let log = Logger(subsystem: "io.github.ronimoe.Lectern", category: "AnnotationJournal")
 
@@ -95,10 +97,14 @@ public final class AnnotationJournal: Sendable {
     }
 
     /// Writes any scheduled entry for `id` now, and waits for it.
-    public func flush(_ id: UUID) {
+    /// Returns whether the live journal now holds the latest recorded changes (true when there
+    /// was nothing to write).
+    @discardableResult
+    public func flush(_ id: UUID) -> Bool {
         queue.sync {
             let current = pending.withLock { $0[id]?.generation ?? 0 }
             writeIfCurrent(id, generation: current)
+            return pending.withLock { !($0[id]?.failed ?? false) }
         }
     }
 
@@ -197,6 +203,9 @@ public final class AnnotationJournal: Sendable {
             try data.write(to: file, options: .atomic)
         } catch {
             Self.log.error("Couldn't write the annotation journal: \(error.localizedDescription, privacy: .public)")
+            pending.withLock { state in
+                if state[id]?.generation == generation { state[id]?.failed = true }
+            }
         }
     }
 }

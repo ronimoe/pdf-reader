@@ -312,7 +312,10 @@ extension ReaderWindowController {
     /// After a save in place or as a new file: the journal goes, and the stored state follows
     /// the file (a Save As gets its own record, so its journal never lands under the original's).
     func documentDidSave(asNewFile: Bool) {
-        if let storedDocumentID { journal?.remove(storedDocumentID) }
+        // As for a reload: a journal not yet offered is set aside, never deleted unseen.
+        if let storedDocumentID {
+            if didCheckJournal { journal?.remove(storedDocumentID) } else { journal?.setAside(storedDocumentID) }
+        }
         if asNewFile, let stateStore, let readerDocument, let url = readerDocument.fileURL, let pdf = readerDocument.pdfDocument {
             let stored = stateStore.open(url: url, data: readerDocument.originalData, pageCount: pdf.pageCount,
                                          fileIdentifiers: pdf.documentRef.map(DocumentIdentity.fileIdentifiers(of:)))
@@ -335,7 +338,9 @@ extension ReaderWindowController {
     // MARK: Crash journal (A1)
 
     func recordJournal() {
-        guard let journal, let storedDocumentID, let editor = annotations, let hash = editor.originalSHA256 else { return }
+        // Before the check, the live journal is a crash journal not yet offered: nothing may
+        // write over it or (with an empty list, as a save writes) delete it.
+        guard didCheckJournal, let journal, let storedDocumentID, let editor = annotations, let hash = editor.originalSHA256 else { return }
         journal.record(JournalEntry(originalSHA256: hash, changes: editor.pending.changes), for: storedDocumentID)
     }
 
@@ -403,10 +408,12 @@ extension ReaderWindowController {
         }
         do throws(AnnotationRefusal) {
             try editor.replay(entry.changes)
-            // Written now, not after the debounce: the offered file goes only once the changes
-            // are on disk again.
-            if let storedDocumentID { journal?.flush(storedDocumentID) }
-            journal?.delete(file)
+            // Written now, not after the debounce. The offered file goes only once the changes
+            // are on disk again, and never when it is itself the live journal just written.
+            guard let journal, let storedDocumentID, journal.flush(storedDocumentID),
+                  file.url.standardizedFileURL != journal.url(for: storedDocumentID).standardizedFileURL
+            else { return }
+            journal.delete(file)
         } catch {
             explainAnnotationRefusal(error)
         }

@@ -467,7 +467,8 @@ extension M4Tests {
                 NSAlert().beginSheetModal(for: window) { response = $0 }
             }
             for _ in 0..<50 where response == nil { try await Task.sleep(for: .milliseconds(10)) }
-            #expect(response == .cancel)
+            // No buttons: the implicit OK.
+            #expect(response == .alertFirstButtonReturn)
         }
 
         // 8. The same-file check repeats when the bytes are written.
@@ -501,5 +502,135 @@ extension M4Tests {
             #expect(try SavedFile(harness.fileBytes).lecternDescriptors.count == 1)
             #expect(harness.presenter.changedFileQuestions == 0)
         }
+    }
+}
+
+extension M4Tests {
+    /// The final review round (2441171), each with a test that fails without its fix.
+    @MainActor @Suite struct ReviewRound3 {
+        func crash(_ folder: TemporaryFolder) async throws -> (url: URL, first: AnnotationHarness, id: UUID) {
+            let url = try folder.write(TwoSquaresFixture.make(swapped: false), to: "squares.pdf")
+            let first = try await AnnotationHarness(file: url, folder: folder)
+            let alpha = try #require(first.pdf.page(at: 0)?.annotations.first { $0.contents == "alpha" })
+            try first.editor.delete(alpha)
+            let id = try #require(first.controller.storedDocumentID)
+            first.journal.flush(id)
+            first.abandon()
+            return (url, first, id)
+        }
+
+        // MAJOR 1: Save As before the check keeps the crash journal, which the original then offers.
+        @Test func saveAsBeforeTheJournalCheckKeepsTheJournal() async throws {
+            let folder = try TemporaryFolder()
+            let crashed = try await crash(folder)
+            let second = try await AnnotationHarness(file: crashed.url, folder: folder, store: crashed.first.store, journal: crashed.first.journal,
+                                                     journalChoice: .keep, inspectionDelay: .seconds(1))
+            #expect(second.presenter.journalOffers.isEmpty, "the check hasn't run yet")
+            try await second.save(to: folder.url.appending(path: "copy.pdf"), .saveAsOperation)
+            await second.waitForInspection()
+            second.close()
+            #expect(second.journal.lookup(crashed.id, currentSHA256: JournalEntry.hash(of: try Data(contentsOf: crashed.url))) != .none,
+                    "the crash journal was deleted unseen")
+            let third = try await AnnotationHarness(file: crashed.url, folder: folder, store: crashed.first.store, journal: crashed.first.journal, journalChoice: .keep)
+            defer { third.close() }
+            #expect(third.presenter.journalOffers == [1])
+        }
+
+        // MAJOR 2: a Restore whose journal can't be written keeps the offered file.
+        @Test func restoreKeepsTheOfferedFileWhenTheJournalCantBeWritten() async throws {
+            let folder = try TemporaryFolder()
+            let crashed = try await crash(folder)
+            let second = try await AnnotationHarness(file: crashed.url, folder: folder, store: crashed.first.store, journal: crashed.first.journal,
+                                                     defersJournalOffer: true)
+            defer { second.close() }
+            let kept = try FileManager.default.contentsOfDirectory(at: second.journal.directory, includingPropertiesForKeys: nil)
+                .filter { $0.lastPathComponent.contains(".kept-") }
+            #expect(kept.count == 1)
+            // A directory where the live journal goes: every write of it fails.
+            try FileManager.default.createDirectory(at: second.journal.url(for: crashed.id), withIntermediateDirectories: false)
+            second.presenter.answerJournal(.restore)
+            #expect(second.editor.pending.count == 1, "restored on screen")
+            #expect(kept.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }, "the only copy on disk was deleted")
+        }
+
+        @Test func restoreNeverDeletesTheLiveJournalItJustWrote() async throws {
+            let folder = try TemporaryFolder()
+            let crashed = try await crash(folder)
+            let second = try await AnnotationHarness(file: crashed.url, folder: folder, store: crashed.first.store, journal: crashed.first.journal,
+                                                     journalChoice: .discard)
+            defer { second.close() }
+            // The offered file is the live journal itself (setting it aside failed).
+            let hash = try #require(second.editor.originalSHA256)
+            let entry = JournalEntry(originalSHA256: hash, changes: [.delete(ObjectRef(6))])
+            let live = second.journal.url(for: crashed.id)
+            try JSONEncoder.isoDates.encode(entry).write(to: live)
+            second.controller.restoreJournal(entry, from: JournalFile(url: live, lookup: .matching(entry)))
+            #expect(second.editor.pending.changes == [.delete(ObjectRef(6))])
+            guard case .matching(let written) = second.journal.read(live, currentSHA256: hash) else {
+                Issue.record("Restore deleted the journal of the changes it restored")
+                return
+            }
+            #expect(written.changes == second.editor.pending.changes)
+        }
+
+        // MINOR 3: a blocked alert answers as a person cancelling it would.
+        @Test func aBlockedAlertAnswersWithItsCancelButton() throws {
+            func alert(_ titles: [String]) -> NSAlert {
+                let alert = NSAlert()
+                titles.forEach { alert.addButton(withTitle: $0) }
+                return alert
+            }
+            var responses: [NSApplication.ModalResponse] = []
+            UITripwire.shared.expecting {
+                responses.append(alert(["OK", "Cancel"]).runModal())
+                responses.append(alert(["Save", "Cancel", "Don’t Save"]).runModal())
+                responses.append(alert(["Restore", "Discard", "Keep"]).runModal())
+                responses.append(alert([]).runModal())
+            }
+            #expect(responses == [.alertSecondButtonReturn, .alertSecondButtonReturn, .alertThirdButtonReturn, .alertFirstButtonReturn])
+        }
+
+        // MINOR 4: the write-path recheck, through NSDocument's real save.
+        @Test(arguments: [NSDocument.SaveOperationType.saveAsOperation, .saveToOperation])
+        func aFileChangedDuringTheSaveIsNotOverwritten(operation: NSDocument.SaveOperationType) async throws {
+            let harness = try await AnnotationHarness(corpus: "classic-xref")
+            defer { harness.close() }
+            try harness.highlight("quick brown fox")
+            let other = try IncrementalWriter().saveInPlace(original: harness.fileBytes, changes: [
+                .addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 50, y: 50), contents: "x")),
+            ]).data
+            // Unchanged when the save starts; another app writes the file before the bytes are.
+            harness.document.willWriteForTesting = { [url = harness.fileURL] in try? other.write(to: url) }
+            await #expect(throws: (any Error).self) { try await harness.save(to: harness.fileURL, operation) }
+            harness.document.willWriteForTesting = nil
+            #expect(harness.fileBytes == other)
+            #expect(harness.editor.pending.count == 1)
+        }
+
+        // MINOR 6: a same-size rewrite with a new date is a change, however it looks.
+        @Test func aSameSizeRewriteIsStillAChange() async throws {
+            let harness = try await AnnotationHarness(corpus: "classic-xref")
+            defer { harness.close() }
+            try harness.highlight("quick brown fox")
+            var rewritten = harness.fileBytes
+            let marker = try #require(rewritten.range(of: Data("%%EOF".utf8), options: .backwards))
+            rewritten.replaceSubrange(marker, with: Data("%%EOX".utf8))
+            #expect(rewritten.count == harness.fileBytes.count && rewritten != harness.fileBytes)
+            try rewritten.write(to: harness.fileURL)
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: harness.fileURL.path)
+            harness.document.save(nil)
+            await harness.settle { harness.presenter.changedFileQuestions > 0 }
+            #expect(harness.presenter.changedFileQuestions == 1)
+            #expect(harness.fileBytes == rewritten)
+            #expect(harness.editor.pending.count == 1)
+        }
+    }
+}
+
+extension JSONEncoder {
+    static var isoDates: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
     }
 }

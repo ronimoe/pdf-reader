@@ -690,9 +690,10 @@ final class ReaderWindowController: NSWindowController {
         configureSidebar(for: readerDocument, pdf: pdf)
         refreshStoredIdentity()
         if let storedDocumentID {
-            // A journal not yet offered (the file changed while it was being checked, or behind a
-            // password prompt) is set aside, to be offered as no longer fitting. Only a journal of
-            // this session's own changes, already superseded by the reload, is deleted.
+            // A journal not yet offered (the file changed while the background check was still
+            // running) is set aside, to be offered as no longer fitting. Only a journal of this
+            // session's own changes, superseded by the reload, is deleted. A reload to a file that
+            // needs a password returns above and leaves the journal for the check after unlocking.
             if didCheckJournal { journal?.remove(storedDocumentID) } else { journal?.setAside(storedDocumentID) }
         }
         readerDocument.inspectForAnnotations()

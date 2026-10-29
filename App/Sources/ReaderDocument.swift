@@ -66,8 +66,10 @@ final class ReaderDocument: NSDocument {
     var saveDestination: URL?
     /// The background look at the file for saving (Saveability, descriptors, hash).
     var inspection: Task<Void, Never>?
-    /// Tests only: how long the first background check waits before reporting, so a reload can
-    /// happen while it runs. Zero in the app.
+    /// Tests only: how long every background check waits before reporting, so a reload or a save
+    /// can happen while it runs. Zero in the app.
+    /// Tests only: runs as a save starts writing, so a test can change the file in between.
+    var willWriteForTesting: (() -> Void)?
     var inspectionDelay: Duration = .zero
 
     func resetCachedKey() { cachedKey = nil }

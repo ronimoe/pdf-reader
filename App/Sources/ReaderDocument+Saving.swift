@@ -216,6 +216,7 @@ extension ReaderDocument {
 
     private func writeAnnotatedFile(to url: URL, for operation: NSDocument.SaveOperationType, originalContentsURL: URL?) throws {
         lastWrite = nil
+        willWriteForTesting?()
         guard let editor = annotations else { throw Self.saveError("There is nothing to save.") }
         let original = originalData
         let changes = editor.pending.changes

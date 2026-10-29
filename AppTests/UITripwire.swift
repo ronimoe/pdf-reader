@@ -24,6 +24,14 @@ nonisolated final class UITripwire: @unchecked Sendable {
         print("UITripwire: blocked \(call)\(wasExpected ? " (expected)" : "")")
     }
 
+    /// What a person dismissing the alert would answer: its Cancel button (titled Cancel, or
+    /// answering Escape), otherwise its last button, otherwise the implicit OK.
+    static func cancelResponse(of alert: NSAlert?) -> NSApplication.ModalResponse {
+        let buttons = alert?.buttons ?? []
+        let index = buttons.firstIndex { $0.keyEquivalent == "\u{1b}" || $0.title == "Cancel" } ?? (buttons.isEmpty ? 0 : buttons.count - 1)
+        return NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertFirstButtonReturn.rawValue + index)
+    }
+
     /// Runs `body`, which tries to show UI on purpose; what it tries is recorded in `expected`
     /// and returned, not counted against any test.
     @discardableResult
@@ -65,18 +73,18 @@ nonisolated final class UITripwire: @unchecked Sendable {
         let cancel = NSApplication.ModalResponse.cancel.rawValue
         replace(NSAlert.self, "runModal", { (alert: AnyObject) in
             tripwire.record("NSAlert.runModal: \((alert as? NSAlert)?.messageText ?? "?")")
-            return cancel
+            return UITripwire.cancelResponse(of: alert as? NSAlert).rawValue
         } as RunModal)
         // Each blocked sheet still ends: its handler gets Cancel, so no flow waits forever.
-        func finish(_ handler: Response?) {
+        func finish(_ handler: Response?, with response: Int = cancel) {
             guard let handler else { return }
             // AppKit calls these on the main thread and expects the answer there, later.
             nonisolated(unsafe) let unsafeHandler = handler
-            DispatchQueue.main.async { unsafeHandler(cancel) }
+            DispatchQueue.main.async { unsafeHandler(response) }
         }
         replace(NSAlert.self, "beginSheetModalForWindow:completionHandler:", { (alert: AnyObject, _, handler) in
             tripwire.record("NSAlert.beginSheetModal: \((alert as? NSAlert)?.messageText ?? "?")")
-            finish(handler)
+            finish(handler, with: UITripwire.cancelResponse(of: alert as? NSAlert).rawValue)
         } as SheetModal)
         replace(NSSavePanel.self, "runModal", { (_: AnyObject) in
             tripwire.record("NSSavePanel.runModal")

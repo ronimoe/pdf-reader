@@ -165,6 +165,20 @@ import Testing
         try JSONDecoder.journal.decode(JournalEntry.self, from: Data(contentsOf: url))
     }
 
+    @Test func flushReportsAFailedWrite() throws {
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let journal = journal(debounce: .seconds(60))
+        let id = UUID()
+        #expect(journal.flush(id), "nothing to write is success")
+        try FileManager.default.createDirectory(at: journal.url(for: id), withIntermediateDirectories: true)
+        journal.record(JournalEntry(originalSHA256: "h", changes: changes), for: id)
+        #expect(!journal.flush(id))
+        #expect(!journal.flush(id), "still not written")
+        try FileManager.default.removeItem(at: journal.url(for: id))
+        journal.record(JournalEntry(originalSHA256: "h", changes: changes), for: id)
+        #expect(journal.flush(id))
+    }
+
     @Test func hashIsSHA256Hex() {
         #expect(JournalEntry.hash(of: Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
