@@ -68,7 +68,14 @@ public final class DocumentSearch {
     public var coalescingInterval: TimeInterval = 0.1
 
     private var pageTexts: [Int: NSString] = [:]
-    private var changeIsScheduled = false
+    /// The pending coalesced update: a run-loop timer in the common modes. Until M6 this was
+    /// `DispatchQueue.main.asyncAfter`. PDFKit posts its find notifications on the main thread
+    /// itself, and a main-queue block can't run while the main thread is already inside one. So
+    /// when the run loop is spun from within a main-queue block (a modal session, a tracking loop,
+    /// or a `@MainActor` test spinning `RunLoop`), queued updates waited until the search ended.
+    /// Under the app's own event loop they ran fine (first results after 0.21 s on the 3,270-page
+    /// manual). A timer fires in any of those run loops, so it is kept for robustness.
+    private var changeTimer: Timer?
     private var observers: [NSObjectProtocol] = []
 
     public init(document: PDFDocument) {
@@ -90,6 +97,7 @@ public final class DocumentSearch {
     }
 
     isolated deinit {
+        changeTimer?.invalidate()
         observers.forEach(NotificationCenter.default.removeObserver)
         if document.isFinding { document.cancelFindString() }
     }
@@ -178,18 +186,20 @@ public final class DocumentSearch {
 
     private func scheduleChange(now: Bool = false) {
         if now {
-            changeIsScheduled = false
+            changeTimer?.invalidate()
+            changeTimer = nil
             onChange?()
             return
         }
-        guard !changeIsScheduled else { return }
-        changeIsScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + coalescingInterval) { [weak self] in
+        guard changeTimer == nil else { return }
+        let timer = Timer(timeInterval: coalescingInterval, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.changeIsScheduled else { return }
-                self.changeIsScheduled = false
+                guard let self, self.changeTimer != nil else { return }
+                self.changeTimer = nil
                 self.onChange?()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        changeTimer = timer
     }
 }

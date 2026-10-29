@@ -79,17 +79,26 @@ struct AnnotationFileInfo: Sendable {
     var saveability: Saveability
     var descriptors: [AnnotationDescriptor]
     var sha256: String
+    /// False when the file's annotations couldn't be read (encrypted or malformed): the
+    /// descriptors are then empty, not a list of every annotation.
+    var descriptorsAreComplete = true
+    /// The page count the descriptors were read against (nil when unknown). If it isn't PDFKit's,
+    /// their page indices can't be trusted for the annotation list.
+    var pageCount: Int?
 
     /// Parses the file off the main thread: Saveability, every annotation's descriptor, and the
     /// SHA-256 the crash journal is keyed to.
     nonisolated static func inspect(_ data: Data, readOnlyLocation: Bool) async -> AnnotationFileInfo {
         await Task.detached(priority: .userInitiated) {
             let saveability = Saveability.evaluate(data, readOnlyLocation: readOnlyLocation)
-            var descriptors: [AnnotationDescriptor] = []
-            if case .unsupported = saveability {} else {
-                descriptors = (try? PDFSaveDocument(data: data).annotations()) ?? []
+            var descriptors: [AnnotationDescriptor]?
+            var pageCount: Int?
+            if case .unsupported = saveability {} else if let document = try? PDFSaveDocument(data: data) {
+                descriptors = try? document.annotations()
+                pageCount = document.pageCount
             }
-            return AnnotationFileInfo(saveability: saveability, descriptors: descriptors, sha256: JournalHash.of(data))
+            return AnnotationFileInfo(saveability: saveability, descriptors: descriptors ?? [], sha256: JournalHash.of(data),
+                                      descriptorsAreComplete: descriptors != nil, pageCount: pageCount)
         }.value
     }
 }
@@ -424,11 +433,13 @@ final class AnnotationEditor {
 
     /// The save wrote `result`: these bytes are now the original, the list is empty, and matching
     /// starts again from the new file. The pages aren't reloaded.
-    func didSave(_ data: Data, descriptors: [AnnotationDescriptor], saveability: Saveability) {
+    func didSave(_ data: Data, descriptors: [AnnotationDescriptor], saveability: Saveability, descriptorsAreComplete: Bool = true) {
         original = data
         pending.removeAll()
         newNames = [:]
-        info = AnnotationFileInfo(saveability: saveability, descriptors: descriptors, sha256: JournalHash.of(data))
+        // An incremental save adds annotations, never pages: the page count read at open still holds.
+        info = AnnotationFileInfo(saveability: saveability, descriptors: descriptors, sha256: JournalHash.of(data),
+                                  descriptorsAreComplete: descriptorsAreComplete, pageCount: info?.pageCount)
         matches = [:]
         matchedPages = []
         didChange()
@@ -436,6 +447,26 @@ final class AnnotationEditor {
 
     func updateSaveability(_ saveability: Saveability) {
         info?.saveability = saveability
+    }
+
+    // MARK: The list
+
+    /// The pages that can hold an annotation the sidebar lists (spec §5.3): those the file has one
+    /// on, by the background inspection's descriptors, plus every page an annotation was added to
+    /// or put back on in this session. So the list reads only those pages, not every page of a
+    /// 3,000-page manual full of links (M6, docs/performance.md). Nil until the inspection is
+    /// done, when it couldn't read the file's annotations, or when its page count isn't PDFKit's:
+    /// then every page has to be read. A descriptor without a subtype counts as possibly listed,
+    /// since PDFKit may still show it as something.
+    func pagesThatCanHoldListedAnnotations() -> Set<Int>? {
+        guard let info, info.descriptorsAreComplete, info.pageCount == pdf.pageCount else { return nil }
+        var pages = Set(info.descriptors.filter { $0.subtype.isEmpty || AnnotationKindName.isListed(subtype: $0.subtype) }.map(\.pageIndex))
+        for annotation in known.values {
+            guard let page = annotation.page else { continue }
+            let index = pdf.index(for: page)
+            if index != NSNotFound { pages.insert(index) }
+        }
+        return pages
     }
 
     // MARK: Matching

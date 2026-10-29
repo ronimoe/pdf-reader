@@ -8,7 +8,9 @@ settings:
   base:
     # Placeholder product name; renaming is a change to PRODUCT_NAME and
     # PRODUCT_BUNDLE_IDENTIFIER below (see docs/progress.md).
-    MARKETING_VERSION: "0.1.0"
+    # Release version (docs/release-checklist.md). CURRENT_PROJECT_VERSION is the build number
+    # Sparkle compares (CFBundleVersion): a whole number that goes up by one with every release.
+    MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
@@ -34,6 +36,14 @@ targets:
     platform: macOS
     sources:
       - App/Sources
+      # Shipped inside the app (Help menu, About): the GPL-3.0, third-party notices (Sparkle's
+      # MIT licence), and the known limitations. scripts/release/verify-dmg checks all three.
+      - path: LICENSE
+        buildPhase: resources
+      - path: App/Resources/Acknowledgements.txt
+        buildPhase: resources
+      - path: docs/known-limitations.md
+        buildPhase: resources
     dependencies:
       - package: LecternKit
         product: ReaderCore

@@ -366,6 +366,11 @@ The same type is stored as the reading position (A2) and used for history entrie
   - Excerpts are built when a row is shown.
   - The results list shows the first 5,000 matches; the count covers them all.
   - Page highlights are replaced at most twice a second while results stream in, and once more at the end *(Amended 2026-10-29, M2 review)*.
+  - *(Amended 2026-10-30, M6)* **The 100 ms coalescing is a run-loop timer** in the common modes, not `DispatchQueue.main.asyncAfter`.
+    - PDFKit posts its find notifications on the main thread itself (the M6 review counted 234 on the main thread and none off it).
+    - A block queued with `asyncAfter` can't run while the main thread is already inside a main-queue block. So when the run loop is spun from within one, the list stayed empty until the search ended. That happens in a modal session, a tracking loop, or a `@MainActor` test spinning the run loop: the M6 performance test saw 7.5 s on the 3,270-page manual.
+    - Under the app's top-level event loop, `asyncAfter` showed the first results after 0.21 s, with 43 updates. So the empty list was most likely a test-harness effect, not something users saw.
+    - The timer fires in any run loop. It's kept because it's more robust, and `ReleaseTests.resultsReachTheListWhileALongSearchRuns` holds it to that.
 
 **Main-thread cost of opening** *(Amended 2026-10-29, M2 review)*
 - **What is kept off the main thread.**
@@ -380,11 +385,17 @@ The same type is stored as the reading position (A2) and used for history entrie
   - Building the window costs about 35–41 ms for any document, so the total over PDFKit is about 50–59 ms.
   - Before these changes, the total over PDFKit was about 400 ms.
 
+**The annotation list** *(Added 2026-10-30, M6)*
+- `annotationList` reads only the pages that can hold a listed annotation: those the background inspection's descriptors list one on, plus every page an annotation was added to or put back on this session (`AnnotationEditor.pagesThatCanHoldListedAnnotations`). Reading every page's annotations took 0.53 s on the main thread for the 3,270-page manual's 18,553 links; the list now takes 1.5–2.7 ms there.
+- Until the inspection has run, or when it couldn't read the file's annotations (encrypted or malformed: `AnnotationFileInfo.descriptorsAreComplete` is false), every page is read as before.
+- `AnnotationMatcher` indexes a batch by page and by `/NM`, so matching a page costs that page's annotations, not the whole file's.
+
 **Saving**
 - Serialising and verifying run off the main thread, from a snapshot of the annotation state.
 - The swap into place happens on the main thread through `NSDocument`'s safe-save.
 - *(Amended 2026-10-29, M4b)* **As built, the write runs on the main thread.** `canAsynchronouslyWrite` is false, so `NSDocument` calls `write(to:…)` on the main thread, and the serialising and the read-back check run there. M4a measured one highlight on a 1,000-page file at about 0.015 s in a release build, including the writer's own verification. Moving it off the main thread is left for when a measured case needs it.
   - What does run in the background is the check when a document opens or is saved: `Saveability`, every annotation's descriptor and the SHA-256, in one detached task. Annotation actions wait for it, and say so if the user is quicker.
+  - *(Amended 2026-10-30, M6)* **The measured case.** One highlight saved into the 3,270-page, 15 MB PostgreSQL manual blocks the main thread for 0.73 s in an optimised build (M3 Pro): 0.39 s in the writer with its verification, 0.33 s in `SavedFileCheck`, which re-reads the file and its 18,553 annotations. Both are A1's safety checks. It stays on the main thread for 1.0, as a known limitation; if the baseline M1 makes it worse than about 1.5 s, the write moves to `canAsynchronouslyWrite`.
 
 ## 5. Internal data structures
 
@@ -552,6 +563,20 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 
    The Control-click → Open bypass no longer exists on macOS 15 and later.
 
+*(Amended 2026-10-30, M6)* **As released.**
+- **Version.** `MARKETING_VERSION` 1.0.0 and `CURRENT_PROJECT_VERSION` 1 in `project.yml`. The build number is what Sparkle compares, so it goes up by one with every release. `CHANGELOG.md` records each release.
+- **Licences in the app and on the DMG.** The app bundles `LICENSE` (GPL-3.0), `Acknowledgements.txt` (Sparkle 2.10.1's MIT licence verbatim, with the notices for the code it bundles) and `known-limitations.md`, shown under Help ▸ Licence, Acknowledgements and Known Limitations. The About panel shows the version and build, the copyright, the source repository and the no-telemetry line. `build-dmg` adds `License.txt` and `Acknowledgements.txt` to the image. Sparkle is the only bundled third-party component: `Contents/Frameworks` holds only `Sparkle.framework`, and LecternKit is linked statically.
+- **No UI when checking a build.** `verify-dmg` no longer opens the app with a window. It runs the copied app's executable directly with `-LecternSelfCheck` (`SelfCheck`, App). `main.swift` handles that argument before `NSApplication` exists, so no window, Dock icon, alert or menu bar can appear. It runs inside the user's real sandbox container (*(Amended after the M6 review)*: earlier wording here said no state is read or written). It opens no document, and never touches `Session.json`, the crash journal, recent documents, the Keychain or Sparkle, which it never creates. The check covers:
+  - the bundle and Info.plist promises,
+  - Sparkle's version and that it's the only framework,
+  - the entitlements of the running process (`SecTaskCopyValueForEntitlement`), and that it has no `get-task-allow`,
+  - that the kernel reports the process sandboxed, inside its container,
+  - PDFKit and the incremental writer on a PDF made in memory.
+
+  The script requires exit 0 within 30 s, no window owned by the process (polled every 0.1 s while it runs, which is under a second), and no crash report. The window counter must first see the Dock's windows, and an error from it fails the run rather than counting as none.
+  - **Unexplained:** a probe that the sandbox refuses to read a file outside the container was tried and dropped. Started directly from a shell, the self-check read a file in `$TMPDIR` and one in the home folder, although the kernel reported the process sandboxed and it ran in its container. The xcodebuild-hosted test host can't read the repository, so the direct launch is the likely difference, but that is inferred, not shown. A normally launched copy still has to be checked by hand ([release-checklist.md](release-checklist.md) §5).
+- **Publishing is manual** ([release-checklist.md](release-checklist.md)): tag `v1.0.0`, upload the DMG, its `.sha256`, the zip and `appcast.xml` to a full (not draft, not pre-release) GitHub Release, and push the cask to `ronimoe/homebrew-lectern`. Nothing in the scripts publishes.
+
 ## 9. Testing
 
 **Unit tests (Swift Testing)**
@@ -563,6 +588,20 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 - The writer is run on every file that can be annotated.
 - The script that generates test files is `scripts/corpus/generate`, and `scripts/corpus/verify` runs the external-reader checks. Committed outputs live in `Tests/Corpus/public/`.
 - Private, non-redistributable PDFs go in `Tests/Corpus/private/` (git-ignored) and are used when present.
+- *(Amended 2026-10-30, M6)* **As built.**
+  - `RegressionSuiteTests` (PDFSave package tests, not sandboxed) lists every PDF under `Tests/Corpus/public/` and fails on one without an entry. Each must:
+    - open in PDFKit, with its password if it has one,
+    - render page 1 with ink,
+    - give text in its first pages, or none on any page for a scan,
+    - be released when let go.
+
+    The writer must have a `CorpusCase` for each file.
+  - The collection gained four representative documents (spec §9.1):
+    - a 475-page text-heavy book, which GovInfo has signed and certified;
+    - the 3,270-page PostgreSQL manual;
+    - an 1886 scan with no text layer;
+    - a 40.8 MB image-heavy NASA report. This one is fetched by `scripts/corpus/bootstrap` into the git-ignored `Tests/Corpus/public/fetched/`, checked by SHA-256, and required by `scripts/test.sh`.
+  - `Tests/Corpus/private/` is still unused by the suites.
 
 **User-interface tests (XCUITest)**
 - One script per journey in spec §10 (A–D), run against files from the collection.
@@ -590,6 +629,17 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 **Performance**
 - XCTest metrics for open time, scroll frame pacing, search time to first result, and thumbnail throughput.
 - Thresholds are set on the baseline M1 with 8 GB of memory before release (A6).
+- *(Amended 2026-10-30, M6)* **As built:** Swift Testing, not XCTest metrics, in `RepresentativePerformanceTests` (AppTests), run only by `scripts/perf.sh`.
+  - **Setup.** perf.sh stages the four representative files into the test host's container with an `enabled` marker (the sandboxed host can't read the repository). It builds the test configuration with `-O` into `build/DerivedData-perf`.
+  - **What's measured** (37 measurements in all):
+    - open to page 1 drawn;
+    - the main thread's cost per scroll step, and the footprint while scrolling;
+    - offscreen page drawing (`PDFPage.draw`; real frame pacing needs a screen), and the footprint once every page has been drawn;
+    - search: the first result shown, completion, and the longest main-thread gap;
+    - thumbnail throughput;
+    - the annotation list and ⌘S on the 3,270-page manual.
+  - **Pass or fail.** Each measurement has a threshold, and a test fails when one is exceeded. perf.sh fails if fewer than 37 measurements come back.
+  - **The thresholds are provisional.** No base M1 with 8 GB was available, so they were set from M3 Pro numbers with headroom and must be re-checked on that machine. The numbers and the reasons for each threshold are in [performance.md](performance.md).
 
 ## 10. License
 
@@ -610,6 +660,18 @@ GPL-3.0. See [LICENSE](../LICENSE). Distribution is direct only (B5), so no App 
 *(Amended 2026-10-29, M4b.)* M4 was delivered in two parts: M4a, the save engine (PDFSave), and M4b, everything in the app. Journey C step 6 is checked automatically in PDFKit, MuPDF, Poppler and pdf.js (M4a), and by `qpdf --check` on every file the app tests save. Preview and Acrobat Reader by hand are still open. The author setting's UI moves to M5 with Settings; the `annotationAuthor` user default already works.
 
 *(Amended 2026-10-29, M5.)* Reader bookmarks and their export, session restore, Settings, opt-in updates with Sparkle, the accessibility audit, the shortcut map and distraction-free mode landed in M5. VoiceOver and XCUITest journeys remain unverified (the user declined screen access).
+
+*(Amended 2026-10-30, M6.)* M6 delivered, locally:
+- the complete test collection;
+- the performance tests, with provisional thresholds, all met on an M3 Pro;
+- version 1.0.0 with the licences in the app;
+- the DMG, the signed update archive and appcast, and the cask at 1.0.0;
+- INSTALL, README, known limitations, the release checklist and the §11 audit ([acceptance.md](acceptance.md)).
+
+**Notarisation is out:** there is no Developer ID (B5). "Spec §11 fully met" depends on three things outside the build:
+- making the project public and publishing the release, which are the maintainer's decisions;
+- the manual checks in the release checklist;
+- performance on the A6 baseline Mac.
 
 Staffing and calendar dates aren't covered here.
 

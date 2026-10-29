@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Builds a Release Lectern.app, checks its signature, and packages it as
-#   build/release/Lectern-<version>.dmg        (Lectern.app, an Applications link, "Read Me First.txt")
+#   build/release/Lectern-<version>.dmg        (Lectern.app, an Applications link, "Read Me First.txt",
+#                                              License.txt and Acknowledgements.txt)
 #   build/release/Lectern-<version>.dmg.sha256 (shasum -a 256 format; `shasum -c` from build/release)
 #   build/release/Lectern-<version>.zip        the Sparkle update archive (sign it with
 #                                              scripts/release/sign-update, which writes appcast.xml)
@@ -117,6 +118,9 @@ Right-click > Open no longer skips this check on macOS 15 and later.
 
 More: docs/INSTALL.md at https://github.com/ronimoe/pdf-reader
 EOF
+# The licence (GPL-3.0) and third-party notices travel with the app; both are also inside it.
+cp LICENSE $STAGING/License.txt
+cp App/Resources/Acknowledgements.txt $STAGING/Acknowledgements.txt
 hdiutil create -quiet -volname "Lectern $VERSION" -srcfolder $STAGING -fs APFS -format UDZO -ov $PARTIAL/${DMG:t}
 hdiutil verify -quiet $PARTIAL/${DMG:t}
 rm -rf $STAGING

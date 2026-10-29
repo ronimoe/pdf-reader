@@ -113,10 +113,13 @@ private func save(_ data: Data, _ changes: [AnnotationChange] = [.testNote],
     }
 
     /// The same over the real-world files (MB-sized, so fewer iterations). Mutations also hit the
-    /// head, where linearized files keep their first-page cross-reference section.
+    /// head, where linearized files keep their first-page cross-reference section. Files over 5 MB
+    /// (the 3,270-page PostgreSQL manual) are left out: every mutated save re-verifies the whole
+    /// file, and its structure (a classic table, one revision) is the arXiv papers' too.
     @Test func fuzzRealWorldMutations() throws {
-        let files = try FileManager.default.contentsOfDirectory(at: Repo.realWorld, includingPropertiesForKeys: nil)
+        let files = try FileManager.default.contentsOfDirectory(at: Repo.realWorld, includingPropertiesForKeys: [.fileSizeKey])
             .filter { $0.pathExtension == "pdf" }
+            .filter { ((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) <= 5_000_000 }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .map { try [UInt8](Data(contentsOf: $0)) }
         try #require(files.count >= 9)

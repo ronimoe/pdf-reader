@@ -300,6 +300,18 @@ private func annotation(_ result: SaveResult, _ ref: ObjectRef) throws -> PDFDic
     }
 }
 
+@Suite struct IndirectSubtypeTests {
+    /// `/Subtype 9 0 R` pointing at `/Highlight` is legal, and PDFKit shows a highlight; the
+    /// descriptor must say so too, or the annotation list and the matcher lose it (M6 review).
+    @Test func anIndirectSubtypeIsResolved() throws {
+        let data = page1("/Annots [5 0 R] ", objects: [
+            (5, "<< /Type /Annot /Subtype 9 0 R /Rect [10 10 60 20] /QuadPoints [10 20 60 20 10 10 60 10] >>"),
+            (9, "/Highlight"),
+        ])
+        #expect(try PDFSaveDocument(data: data).annotations(onPage: 0).map(\.subtype) == ["Highlight"])
+    }
+}
+
 @Suite struct MatcherTests {
     static func desc(_ n: Int, page: Int = 0, _ subtype: String = "Highlight", rect: PDFRect = PDFRect(x: 10, y: 10, width: 50, height: 10),
                      name: String? = nil, contents: String? = nil, inline: Bool = false) -> AnnotationDescriptor {
@@ -372,6 +384,30 @@ private func annotation(_ result: SaveResult, _ ref: ObjectRef) throws -> PDFDic
         #expect(m.match([q, q], in: ds) == [.ambiguous([ObjectRef(5)]), .ambiguous([ObjectRef(5)])])
         let q2 = AnnotationQuery(pageIndex: 0, subtype: "Highlight", rect: Self.r, contentsAtOpen: "y")
         #expect(m.match([q, q2], in: ds) == [.matched(ObjectRef(5), .geometryAndContents), .matched(ObjectRef(6), .geometryAndContents)])
+    }
+
+    /// The batch API indexes by page and by `/NM` (M6); it must give what single queries give.
+    /// A name is looked up across every page, not only the query's.
+    @Test func batchNamesAreLookedUpOnEveryPage() {
+        let elsewhere = [Self.desc(5, page: 3, name: "lectern-a"), Self.desc(6)]
+        let moved = AnnotationQuery(pageIndex: 0, subtype: "Highlight", rect: Self.r, name: "lectern-a")
+        #expect(m.match([moved], in: elsewhere) == [.ambiguous([ObjectRef(5)])])
+        #expect(m.match([moved], in: elsewhere) == [m.match(moved, in: elsewhere)])
+    }
+
+    @Test func batchDuplicateNamesNeedGeometry() {
+        let ds = [Self.desc(5, name: "dup"), Self.desc(6, rect: PDFRect(x: 100, y: 10, width: 50, height: 10), name: "dup"),
+                  Self.desc(7, page: 2, name: "dup")]
+        let q = AnnotationQuery(pageIndex: 0, subtype: "Highlight", rect: Self.r, name: "dup")
+        #expect(m.match([q], in: ds) == [.matched(ObjectRef(5), .nameAndGeometry)])
+        #expect(m.match([q], in: ds) == [m.match(q, in: ds)])
+    }
+
+    @Test func batchUnknownNameIsNotFoundEvenOverAnAnnotation() {
+        // Object 6 sits exactly where the query is, but the query's name isn't in the file.
+        let ds = [Self.desc(5, name: "lectern-a"), Self.desc(6)]
+        let q = AnnotationQuery(pageIndex: 0, subtype: "Highlight", rect: Self.r, name: "lectern-new")
+        #expect(m.match([q], in: ds) == [.notFound])
     }
 
     @Test func inlineAnnotationsAreUnaddressable() {

@@ -33,11 +33,15 @@ import Testing
         let descriptors = try PDFSaveDocument(data: data).annotations()
         let qs = queries(pk)
         let results = AnnotationMatcher().match(qs, in: descriptors)
+        // Indexed, so the checks stay linear on the 3,270-page manual's 18,553 links.
+        let byPage = Dictionary(grouping: descriptors, by: \.pageIndex)
+        var byRef: [ObjectRef: AnnotationDescriptor] = [:]
+        for d in descriptors { if let ref = d.ref, byRef[ref] == nil { byRef[ref] = d } }
         // The independent answer: PDFKit lists a page's annotations in /Annots order, so the n-th
         // PDFKit annotation on a page is the n-th descriptor on that page.
         var expected: [ObjectRef?] = []
         for page in 0..<pk.pageCount {
-            let onPage = descriptors.filter { $0.pageIndex == page }
+            let onPage = byPage[page] ?? []
             let count = pk.page(at: page)!.annotations.count
             try #require(onPage.count == count, "\(label) page \(page + 1): PDFKit lists \(count), /Annots has \(onPage.count)")
             expected += onPage.map(\.ref)
@@ -47,7 +51,7 @@ import Testing
             switch r {
             case .matched(let ref, let method):
                 tally.byMethod[method, default: 0] += 1
-                let d = try #require(descriptors.first { $0.ref == ref })
+                let d = try #require(byRef[ref])
                 #expect(ref == expected[i], "\(label): \(q) matched \(ref), but it is \(String(describing: expected[i])) in /Annots order")
                 #expect(d.pageIndex == q.pageIndex && d.subtype == q.subtype, "\(label): \(q) matched \(d)")
                 // How far PDFKit's bounds are from /Rect, to justify the tolerance (notes excepted).
@@ -58,7 +62,7 @@ import Testing
             case .ambiguous(let refs):
                 tally.ambiguous += 1
                 // Only a real tie may be ambiguous: every candidate fits the query's page, subtype and rect.
-                let candidates = descriptors.filter { $0.ref.map(refs.contains) ?? false }
+                let candidates = refs.compactMap { byRef[$0] }
                 #expect(candidates.count >= 1 && candidates.allSatisfy { d in
                     d.pageIndex == q.pageIndex && d.subtype == q.subtype
                         && (d.rect.map { $0.isClose(to: q.rect, tolerance: AnnotationMatcher().tolerance) } ?? false)

@@ -377,7 +377,8 @@ public final class PDFSaveDocument {
             let components = try resolve(dict["C"] ?? .null).arrayValue?.compactMap(\.doubleValue)
             result.append(AnnotationDescriptor(
                 ref: ref, pageIndex: index, indexInAnnots: position,
-                subtype: dict["Subtype"]?.nameValue?.string ?? "",
+                // Resolved: `/Subtype 5 0 R` is legal, and PDFKit follows it.
+                subtype: try resolve(dict["Subtype"] ?? .null).nameValue?.string ?? "",
                 rect: rect, name: try text("NM"), contents: try text("Contents"), author: try text("T"),
                 inReplyTo: dict["IRT"]?.referenceValue, popup: dict["Popup"]?.referenceValue,
                 color: components.flatMap(AnnotationColor.init(components:))

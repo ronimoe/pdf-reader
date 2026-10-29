@@ -217,12 +217,16 @@ extension ReaderWindowController {
         annotationsSection.select(selectedAnnotation.map(ObjectIdentifier.init))
     }
 
-    /// Every listed annotation, page by page, top to bottom. Built on demand: it reads every page.
+    /// Every listed annotation, page by page, top to bottom. Built on demand. It reads only the
+    /// pages that can hold one (`pagesThatCanHoldListedAnnotations`), or every page until the
+    /// background inspection has read the file's annotations.
     var annotationList: [(item: AnnotationListItem, annotation: PDFAnnotation)] {
         if let annotationListCache { return annotationListCache }
         guard let readerDocument, let pdf = readerDocument.pdfDocument, !pdf.isLocked else { return [] }
         var list: [(item: AnnotationListItem, annotation: PDFAnnotation)] = []
-        for index in 0..<pdf.pageCount {
+        let pages = readerDocument.annotations?.pagesThatCanHoldListedAnnotations().map { $0.filter { $0 < pdf.pageCount }.sorted() }
+            ?? Array(0..<pdf.pageCount)
+        for index in pages {
             guard let page = pdf.page(at: index) else { continue }
             let listed = page.annotations.filter { AnnotationKindName.isListed(subtype: $0.type ?? "") }
                 .sorted { a, b in a.bounds.maxY != b.bounds.maxY ? a.bounds.maxY > b.bounds.maxY : a.bounds.minX < b.bounds.minX }

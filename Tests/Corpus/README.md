@@ -6,9 +6,13 @@ Redistributable test PDFs (decision A6), in two groups:
   fonts or images are embedded (only the 14 standard fonts, by name). Generated files are covered by
   this repository's licence (GPL-3.0).
 - **`public/realworld/` holds downloaded real-world files** whose licences allow redistribution
-  (CC BY 4.0, CC0 1.0, or US Government works in the public domain). They are committed unchanged;
+  (CC BY 4.0, CC0 1.0, the PostgreSQL Licence, or public domain). They are committed unchanged;
   each one's source, licence and SHA-256 are listed [below](#real-world-files). They are never
   regenerated.
+- **`public/fetched/` holds real-world files too large to commit** (git-ignored).
+  `scripts/corpus/bootstrap` downloads them and refuses any whose SHA-256 differs from the one
+  listed [below](#fetched-files). `scripts/test.sh` fails without them; a plain `swift test` leaves
+  their cases out.
 
 Private, non-redistributable PDFs go in `private/`, which is git-ignored.
 
@@ -68,6 +72,61 @@ not subject to copyright in the United States (17 U.S.C. §105).
 Total 9.15 MB. The IRS URLs always serve the current revision of the form, so a fresh download will
 differ; the SHA-256 identifies the copy committed here (W-9 Rev. March 2024; Form 1040 for 2025).
 
+### Representative documents (M6)
+
+Spec §9.1 asks for performance and reliability on text-heavy books, image-heavy reports, scanned
+documents and long technical manuals. Downloaded 2026-10-30, unmodified.
+
+| File | Category | Source URL | Licence | SHA-256 | Bytes |
+|------|----------|------------|---------|---------|------:|
+| `gpo-style-manual-2016.pdf` | Long text-heavy book (475 pages) | https://www.govinfo.gov/content/pkg/GPO-STYLEMANUAL-2016/pdf/GPO-STYLEMANUAL-2016.pdf | US Government work, public domain | `da9de9500079e885f54dc8dfe63f62ebbaa3535ce6398333fafbed46f5ce512f` | 4,409,389 |
+| `postgresql-17.11-US.pdf` | Long technical manual (3,270 pages) | https://www.postgresql.org/files/documentation/pdf/17/postgresql-17-US.pdf | [PostgreSQL Licence](https://www.postgresql.org/about/licence/) (permissive, BSD-style) | `04aceadfa46b68fa5695c74c5564f14708182d4dbcb46a825b54a42648d068d8` | 15,396,451 |
+| `annals-surgery-1886-anthrax-scan.pdf` | Scanned document, no text layer (46 pages) | https://archive.org/download/paper-doi-10_1097_00000658-188607000-00026/paper-doi-10_1097_00000658-188607000-00026.pdf | Public domain (published 1886; the Internet Archive item carries the [Public Domain Mark 1.0](https://creativecommons.org/publicdomain/mark/1.0/)) | `31df6f3ab408e5fa25c6c4d49bb644dddcd49989be8457e50992168b7a31a96a` | 1,672,861 |
+
+These three add 21.5 MB.
+
+- **`gpo-style-manual-2016.pdf`**: U.S. Government Publishing Office, *Style Manual*, 2016 edition
+  (GovInfo package GPO-STYLEMANUAL-2016). Its own page 2 says the electronic text "is available for
+  public use free of charge". GovInfo **signs and certifies** its PDFs (signature field
+  `USGPOSignature`, DocMDP), so this is also the collection's real-world certified file:
+  `Saveability` routes it to Save a Copy, and `verify` checks the signature is still intact and
+  covers its whole revision. The signing certificate (Symantec Shared CA for Adobe CDS) expired in
+  2020, so trust isn't evaluated for it.
+- **`postgresql-17.11-US.pdf`**: The PostgreSQL Global Development Group, *PostgreSQL 17.11
+  Documentation* (US Letter). Apache FOP 2.10; classic cross-reference table; 18,553 link
+  annotations, some of them exact duplicates (same page and rectangle), which the matcher reports
+  as ambiguous rather than guessing. The URL serves the newest 17.x release, so a fresh download
+  will differ. Its Legal Notice, which the licence requires to accompany copies, is on its own page 2:
+
+  > Portions Copyright © 1996-2026, PostgreSQL Global Development Group. Portions Copyright © 1994,
+  > The Regents of the University of California. Permission to use, copy, modify, and distribute
+  > this software and its documentation for any purpose, without fee, and without a written
+  > agreement is hereby granted, provided that the above copyright notice and this paragraph and the
+  > following two paragraphs appear in all copies. (The two paragraphs disclaim liability and
+  > warranties; see the file.)
+- **`annals-surgery-1886-anthrax-scan.pdf`**: "Malignant Anthrax", *Annals of Surgery*, July 1886
+  (DOI 10.1097/00000658-188607000-00026), from the Internet Archive's scholarly-papers collection.
+  **Licence evidence**, from the item's metadata (`https://archive.org/metadata/paper-doi-10_1097_00000658-188607000-00026`,
+  read 2026-10-30): `licenseurl` is `https://creativecommons.org/publicdomain/mark/1.0/`, `date` is
+  `1886-07`, `creator` is `A. Bois`, and the collections are `paper_doi_mirrored_texts` and `journals`. There is no
+  `rights` field. The `publisher` field names the DOI's present registrant, Ovid Technologies
+  (Wolters Kluwer Health). The public-domain status rests on the publication date: a work published in 1886 is
+  out of copyright in the United States (published before 1931), and the Public Domain Mark records
+  the Archive's own assessment.
+  An Acrobat 4 image import: every page is a scanned image and no page has text (`RegressionSuiteTests`
+  checks all 46).
+
+### Fetched files
+
+| File | Category | Source URL | Licence | SHA-256 | Bytes |
+|------|----------|------------|---------|---------|------:|
+| `nasa-earth-at-night.pdf` | Image-heavy report (200 pages) | https://www.nasa.gov/wp-content/uploads/2019/11/earth_at_night_508.pdf | US Government work, public domain | `8e622ca8f6d1ba0cf809549bddfee69e6754c3a3480d151c1fb54baf49b09be0` | 40,758,835 |
+
+NASA, *Earth at Night: Our Planet in Brilliant Darkness* (NP-2019-07-2739-HQ, 2019). Full-page
+satellite and Space Station imagery; its Appendix D credits every image to NASA (Black Marble, Earth
+Observatory, ISS), the USGS, NOAA, the DOD or the US Air Force, all US Government sources. InDesign
+and Adobe PDF Library 15; 134 link annotations. 40.8 MB, so it's fetched rather than committed.
+
 **Attribution (CC BY 4.0).** The files are redistributed unchanged.
 - `arxiv-2208.04284v5.pdf`: Lan V. Truong, "On Rademacher Complexity-based Generalization Bounds for Deep Learning", arXiv:2208.04284v5.
 - `arxiv-2310.12457v2.pdf`: Haitian Jiang, Renjie Liu, Zengfeng Huang, Yichuan Wang, Xiao Yan, Zhenkun Cai, Minjie Wang, David Wipf, "MuseGNN: Forming Scalable, Convergent GNN Layers that Minimize a Sampling-Based Energy", arXiv:2310.12457v2.
@@ -103,4 +162,12 @@ scripts/corpus/verify --manifest "$TMPDIR/lectern-corpus-pdf-reader/manifest.jso
 scripts/corpus/verify --manifest "$TMPDIR/lectern-corpus-pdf-reader/manifest.json" --markdown # table
 ```
 
-The seeded fuzz tests (`RobustnessTests`) mutate every file here, including `realworld/`.
+The seeded fuzz tests (`RobustnessTests`) mutate every file here, including `realworld/` files up
+to 5 MB (each mutated save of the 15 MB manual would re-verify the whole file).
+
+**The regression suite** (`RegressionSuiteTests`, decision A6) lists every PDF here and fails on a
+file without an entry: each must open in PDFKit (with its password, if any), render page 1, give
+text where it has a text layer (and none at all for the scan), and be released when closed; and the
+writer must have a case for each one (`Corpus.cases`, refused for the encrypted files). The
+performance tests on the representative documents are described in
+[docs/performance.md](../../docs/performance.md).
