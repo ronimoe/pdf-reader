@@ -94,6 +94,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ronimoe.LecternTests
         GENERATE_INFOPLIST_FILE: YES
+        # Installs the UI tripwire before any test runs: no test may show an alert or panel.
+        INFOPLIST_KEY_NSPrincipalClass: LecternTestPrincipal
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Lectern.app/Contents/MacOS/Lectern"
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

@@ -340,42 +340,71 @@ extension ReaderWindowController {
     }
 
     /// Offers back unsaved annotations from a session that ended unexpectedly.
+    ///
+    /// The offered journal is set aside first (`<uuid>.kept-<time>.json`), so nothing that
+    /// happens while the question is open (a reload, new changes, a save) can overwrite or delete
+    /// it. Every answer acts on that one file; other kept journals are offered on later opens.
     func checkJournal() {
         guard !didCheckJournal, let journal, let storedDocumentID, let editor = annotations, let hash = editor.originalSHA256,
-              let window, let readerDocument
+              window != nil
         else { return }
         didCheckJournal = true
+        guard var offered = journal.find(storedDocumentID, currentSHA256: hash) else { return }
+        if !offered.isKept, let kept = journal.setAside(storedDocumentID) {
+            offered = JournalFile(url: kept, lookup: journal.read(kept, currentSHA256: hash))
+        }
+        offerJournal(offered, to: editor)
+    }
+
+    private func offerJournal(_ file: JournalFile, to editor: AnnotationEditor) {
+        guard let journal, let window, let readerDocument else { return }
         let name = readerDocument.displayName ?? "This document"
-        switch journal.lookup(storedDocumentID, currentSHA256: hash) {
+        switch file.lookup {
         case .none:
             return
         case .matching(let entry):
             presenter.offerJournalRestore(name: name, changeCount: entry.changes.count, on: window) { [weak self] choice in
                 guard let self else { return }
+                // The file may have reloaded while the question was open: the changes then
+                // belong to bytes that are gone, and their object numbers mean nothing here.
+                guard let current = annotations, current === editor, current.originalSHA256 == entry.originalSHA256 else {
+                    reofferJournal(file)
+                    return
+                }
                 switch choice {
-                case .restore: restoreJournal(entry, id: storedDocumentID)
-                case .discard: journal.discard(storedDocumentID)
-                case .keep: journal.setAside(storedDocumentID)
+                case .restore: restoreJournal(entry, from: file)
+                case .discard: journal.delete(file)
+                case .keep: break
                 }
             }
         case .mismatched, .unreadable:
-            let unreadable = journal.lookup(storedDocumentID, currentSHA256: hash) == .unreadable
-            presenter.explainStaleJournal(name: name, unreadable: unreadable, on: window) { choice in
-                // Kept journals move aside, where the document's new changes never touch them.
-                if choice == .discard { journal.discard(storedDocumentID) } else { journal.setAside(storedDocumentID) }
+            presenter.explainStaleJournal(name: name, unreadable: file.lookup == .unreadable, on: window) { choice in
+                // Keep leaves it where it is, set aside; Discard deletes exactly this file.
+                if choice == .discard { journal.delete(file) }
             }
         }
     }
 
-    func restoreJournal(_ entry: JournalEntry, id: UUID) {
-        guard let editor = annotations, editor.pending.isEmpty else { return }
+    /// Asks again about a journal whose document changed under the question: compared with the
+    /// bytes open now, it no longer fits.
+    private func reofferJournal(_ file: JournalFile) {
+        guard let journal, let editor = annotations else { return }
+        // Before the new file's hash is known, nothing can match it.
+        let lookup = journal.read(file.url, currentSHA256: editor.originalSHA256 ?? "unknown")
+        offerJournal(JournalFile(url: file.url, lookup: lookup), to: editor)
+    }
+
+    /// Replays a journal the user chose to restore. It is deleted only once its changes are live
+    /// (and journaled again as such); otherwise it stays set aside.
+    func restoreJournal(_ entry: JournalEntry, from file: JournalFile) {
+        guard let editor = annotations, editor.pending.isEmpty else {
+            // New changes were made meanwhile: the journal stays set aside for the next open.
+            return
+        }
         do throws(AnnotationRefusal) {
             try editor.replay(entry.changes)
-            // The changes are live again and journaled as such; a kept copy isn't needed.
-            journal?.removeKept(id)
+            journal?.delete(file)
         } catch {
-            // Nothing was applied: keep the journal, out of the way of new changes.
-            journal?.setAside(id)
             explainAnnotationRefusal(error)
         }
     }
@@ -404,8 +433,7 @@ extension ReaderWindowController {
                     }
                 }
             case .saveCopy:
-                let base = (name as NSString).deletingPathExtension
-                presenter.chooseCopyDestination(suggestedName: "\(base) (annotated).pdf", on: window) { [weak self] url in
+                presenter.chooseCopyDestination(suggestedName: readerDocument.copySuggestedName, on: window) { [weak self] url in
                     guard let self else { return }
                     guard let url else {
                         isAskingAboutChangedFile = false
@@ -424,7 +452,7 @@ extension ReaderWindowController {
                 guard let self else { return }
                 if let error {
                     self.isAskingAboutChangedFile = false
-                    if let window = self.window { readerDocument.presentError(error, modalFor: window, delegate: nil, didPresent: nil, contextInfo: nil) }
+                    if let window = self.window { self.presenter.presentError(error, on: window) {} }
                     return
                 }
                 // The copy holds the annotations: open it, and show the file's new version here.

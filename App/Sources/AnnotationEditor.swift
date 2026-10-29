@@ -226,13 +226,17 @@ final class AnnotationEditor {
         let kind = annotation.type ?? ""
         guard AnnotationKindName.allowsColorChange(subtype: kind) else { throw .colorNotChangeable(kind: AnnotationKindName.name(forSubtype: kind)) }
         let id = ObjectIdentifier(annotation)
+        let previous = annotation.color
         let old: PDFRGBColor
+        /// Set when the file's own colour was showing: undo then withdraws the edit.
+        var revertsToFile: (ref: ObjectRef, hash: String?)?
         if let name = newNames[id] {
             old = pending.added(named: name).flatMap(\.addedColor) ?? Self.rgb(of: annotation)
             pending.setColor(color, ofAddNamed: name)
         } else {
             let ref = try fileRef(of: annotation)
             let fileColor = fileDescriptor(ref)?.color?.rgb
+            if pending.pendingColor(of: ref) == nil { revertsToFile = (ref, info?.sha256) }
             old = pending.pendingColor(of: ref) ?? fileColor ?? Self.rgb(of: annotation)
             if let fileColor, fileColor.isClose(to: color) {
                 // Back to what the file says: nothing left to save for this colour.
@@ -242,7 +246,29 @@ final class AnnotationEditor {
             }
         }
         annotation.color = color.nsColor
-        registerUndo("Change Colour") { (editor: AnnotationEditor) throws(AnnotationRefusal) in try editor.setColor(old, of: annotation) }
+        if let revertsToFile {
+            registerUndo("Change Colour") { (editor: AnnotationEditor) throws(AnnotationRefusal) in
+                try editor.revertColor(of: annotation, ref: revertsToFile.ref, to: previous, fileHash: revertsToFile.hash, otherwise: old, redo: color)
+            }
+        } else {
+            registerUndo("Change Colour") { (editor: AnnotationEditor) throws(AnnotationRefusal) in try editor.setColor(old, of: annotation) }
+        }
+        didChange()
+    }
+
+    /// Undo of a recolour made over the file's own colour: the edit is withdrawn and the colour
+    /// PDFKit showed comes back, so a file without `/C` never gets one. After a save in between,
+    /// the file has the new colour, and undo is a new edit back to the old one.
+    private func revertColor(of annotation: PDFAnnotation, ref: ObjectRef, to shown: NSColor, fileHash: String?,
+                             otherwise old: PDFRGBColor, redo color: PDFRGBColor) throws(AnnotationRefusal) {
+        if let refusal { throw refusal }
+        guard info?.sha256 == fileHash, newNames[ObjectIdentifier(annotation)] == nil else {
+            try setColor(old, of: annotation)
+            return
+        }
+        pending.cancelColorEdit(of: ref)
+        annotation.color = shown
+        registerUndo("Change Colour") { (editor: AnnotationEditor) throws(AnnotationRefusal) in try editor.setColor(color, of: annotation) }
         didChange()
     }
 

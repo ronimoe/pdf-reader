@@ -353,9 +353,15 @@ private struct Harness {
         let document = try ReaderDocument.loaded(try #require(TestPDF.encrypted(user: "user", owner: "owner")))
         let controller = ReaderWindowController(document: document, passwordStore: InMemoryPasswordStore(), presenter: SheetPresenter(), stateStore: nil)
         document.addWindowController(controller)
-        controller.showWindow(nil)
         let window = try #require(controller.window)
-        #expect(window.attachedSheet != nil)
+        // Never on screen: the window and its sheet are transparent and click-through.
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.setFrameAutosaveName("")
+        controller.showWindow(nil)
+        let sheet = try #require(window.attachedSheet)
+        sheet.alphaValue = 0
+        sheet.ignoresMouseEvents = true
 
         controller.passwordPrompt?.cancel()
         #expect(window.attachedSheet == nil)

@@ -67,6 +67,13 @@ final class ReaderDocument: NSDocument {
 
     func resetCachedKey() { cachedKey = nil }
 
+    /// After a Save As, the document has a file again (B7).
+    func fileIsBack() {
+        guard fileWasRemoved else { return }
+        fileWasRemoved = false
+        readerWindowController?.hideFileRemovedNotice()
+    }
+
     // A1: nothing is ever written without an explicit Save.
     override nonisolated class var autosavesInPlace: Bool { false }
     override nonisolated class var autosavesDrafts: Bool { false }

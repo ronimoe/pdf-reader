@@ -118,26 +118,66 @@ extension ReaderDocument {
         case .inPlace:
             super.save(withDelegate: delegate, didSave: didSaveSelector, contextInfo: contextInfo)
         case .nothingToSave:
-            // Nothing changed: nothing is written. A caller waiting for an answer still gets one.
-            if delegate != nil, !fileWasRemoved, fileURL != nil {
-                super.save(withDelegate: delegate, didSave: didSaveSelector, contextInfo: contextInfo)
-            }
+            // Nothing changed, so nothing is written; a caller waiting for an answer still gets one.
+            answer(delegate, didSave: didSaveSelector, contextInfo: contextInfo, saved: true)
         case .copy(let explanation):
             savePanelMessage = explanation
             runModalSavePanel(for: .saveAsOperation, delegate: delegate, didSave: didSaveSelector, contextInfo: contextInfo)
         case .refused(let refusal):
             readerWindowController?.explainAnnotationRefusal(refusal)
+            // Close ▸ Save and Quit ▸ Save wait for this answer; nothing was saved.
+            answer(delegate, didSave: didSaveSelector, contextInfo: contextInfo, saved: false)
         case .changedOnDisk:
             readerWindowController?.fileChangedWithUnsavedAnnotations()
+            answer(delegate, didSave: didSaveSelector, contextInfo: contextInfo, saved: false)
         }
+    }
+
+    /// Calls NSDocument's `document:didSave:contextInfo:` callback, as `super` would have.
+    private func answer(_ delegate: Any?, didSave selector: Selector?, contextInfo: UnsafeMutableRawPointer?, saved: Bool) {
+        guard let target = delegate as? NSObject, let selector, target.responds(to: selector) else { return }
+        typealias DidSave = @convention(c) (NSObject, Selector, NSDocument, ObjCBool, UnsafeMutableRawPointer?) -> Void
+        let implementation = unsafeBitCast(target.method(for: selector), to: DidSave.self)
+        implementation(target, selector, self, ObjCBool(saved), contextInfo)
+    }
+
+    /// The name a Save As panel suggests for a copy: "<name> (annotated).pdf".
+    var copySuggestedName: String {
+        let base = ((fileURL?.lastPathComponent ?? displayName ?? "Document") as NSString).deletingPathExtension
+        return "\(base) (annotated).pdf"
     }
 
     override func prepareSavePanel(_ savePanel: NSSavePanel) -> Bool {
         if let savePanelMessage {
+            // The copy route: say why, and never suggest the original's own name.
             savePanel.message = savePanelMessage
+            savePanel.nameFieldStringValue = copySuggestedName
             self.savePanelMessage = nil
         }
         return super.prepareSavePanel(savePanel)
+    }
+
+    /// Why saving to `url` is refused, or nil. Writing to the document's own file is allowed only
+    /// for an `inPlace` document whose file is still the bytes loaded here: otherwise Save As or
+    /// Save a Copy onto the same file would modify a signed original in place, or overwrite
+    /// another app's version (A1, B7). The file is compared by identity, not by path.
+    func refusalToSave(to url: URL) -> NSError? {
+        guard let fileURL, Self.isSameFile(url, fileURL) else { return nil }
+        if annotations?.saveability != .inPlace {
+            return Self.saveError("Lectern won’t save over this document.", recovery: "It can’t be changed safely, so your annotations go into a copy. Choose another name or place for it. The original file hasn’t been changed.")
+        }
+        if let onDisk = try? Data(contentsOf: fileURL), onDisk != originalData {
+            return Self.saveError("The file changed on disk since Lectern opened it.", recovery: "Lectern won’t save over the other app’s version. Choose another name or place for the copy. The file on disk hasn’t been changed.")
+        }
+        return nil
+    }
+
+    /// True when both URLs are the same file on disk (hard links and other paths included).
+    nonisolated static func isSameFile(_ a: URL, _ b: URL) -> Bool {
+        let first = try? a.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+        let second = try? b.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+        guard let first = first as? NSObject, let second = second as? NSObject else { return false }
+        return first.isEqual(second)
     }
 
     // MARK: Writing
@@ -206,6 +246,10 @@ extension ReaderDocument {
     }
 
     override func save(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType, completionHandler: @escaping ((any Error)?) -> Void) {
+        if let refusal = refusalToSave(to: url) {
+            completionHandler(refusal)
+            return
+        }
         super.save(to: url, ofType: typeName, for: saveOperation) { error in
             MainActor.assumeIsolated {
                 let written = self.lastWrite
@@ -226,6 +270,8 @@ extension ReaderDocument {
         }
         originalData = written.data
         resetCachedKey()
+        // A Save As rescued a deleted or trashed file: the document is the new file now.
+        if written.operation == .saveAsOperation { fileIsBack() }
         let descriptors = written.descriptors ?? (try? PDFSaveDocument(data: written.data).annotations()) ?? []
         let saveability = editor.saveability ?? .inPlace
         editor.didSave(written.data, descriptors: descriptors, saveability: saveability)
@@ -258,6 +304,20 @@ extension ReaderDocument {
     }
 
     // MARK: Errors
+
+    /// NSDocument reports save errors here. They go through the window's presenter, which tests
+    /// replace, so no test ever puts an alert on screen. The didPresent callback still fires.
+    override func presentError(_ error: any Error, modalFor window: NSWindow, delegate: Any?, didPresent didPresentSelector: Selector?, contextInfo: UnsafeMutableRawPointer?) {
+        guard let controller = readerWindowController else {
+            super.presentError(error, modalFor: window, delegate: delegate, didPresent: didPresentSelector, contextInfo: contextInfo)
+            return
+        }
+        controller.presenter.presentError(error, on: window) {
+            guard let target = delegate as? NSObject, let selector = didPresentSelector, target.responds(to: selector) else { return }
+            typealias DidPresent = @convention(c) (NSObject, Selector, ObjCBool, UnsafeMutableRawPointer?) -> Void
+            unsafeBitCast(target.method(for: selector), to: DidPresent.self)(target, selector, false, contextInfo)
+        }
+    }
 
     static func saveError(_ error: PDFSaveError) -> NSError {
         let reason: String = switch error {

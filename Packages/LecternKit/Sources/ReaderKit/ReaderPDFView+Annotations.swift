@@ -132,7 +132,7 @@ extension ReaderPDFView {
 
     /// Tab and Shift-Tab never reach PDFKit while the document has form fields: they move
     /// between the window's controls instead, so no field can take focus (A5, M0b Q3).
-    func handleFormKey(_ event: NSEvent) -> Bool {
+    public func handleFormKey(_ event: NSEvent) -> Bool {
         guard event.keyCode == 48, documentHasFormFields else { return false }
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         guard modifiers.subtracting(.shift).isEmpty else { return false }
@@ -144,16 +144,41 @@ extension ReaderPDFView {
         return true
     }
 
-    /// True when any page the document has built has a form widget, or the catalog has fields.
+    /// True when the catalog's AcroForm has fields, or any page has a Widget annotation (some
+    /// files have widgets without `/Fields`). Read from CoreGraphics' dictionaries, so no
+    /// `PDFPage` is created; worked out once per document.
     public var documentHasFormFields: Bool {
         if let known = formFieldsKnown { return known }
-        guard let reference = document?.documentRef, let catalog = reference.catalog else { return false }
-        var acroForm: CGPDFDictionaryRef?
-        var fields: CGPDFArrayRef?
-        let has = CGPDFDictionaryGetDictionary(catalog, "AcroForm", &acroForm) && acroForm.map { CGPDFDictionaryGetArray($0, "Fields", &fields) } == true
-            && fields.map { CGPDFArrayGetCount($0) > 0 } == true
+        guard let reference = document?.documentRef else { return false }
+        let has = Self.catalogHasFields(reference) || Self.pagesHaveWidgets(reference)
         formFieldsKnown = has
         return has
+    }
+
+    static func catalogHasFields(_ reference: CGPDFDocument) -> Bool {
+        guard let catalog = reference.catalog else { return false }
+        var acroForm: CGPDFDictionaryRef?
+        var fields: CGPDFArrayRef?
+        return CGPDFDictionaryGetDictionary(catalog, "AcroForm", &acroForm) && acroForm.map { CGPDFDictionaryGetArray($0, "Fields", &fields) } == true
+            && fields.map { CGPDFArrayGetCount($0) > 0 } == true
+    }
+
+    static func pagesHaveWidgets(_ reference: CGPDFDocument) -> Bool {
+        guard reference.numberOfPages > 0 else { return false }
+        for number in 1...reference.numberOfPages {
+            guard let dictionary = reference.page(at: number)?.dictionary else { continue }
+            var annots: CGPDFArrayRef?
+            guard CGPDFDictionaryGetArray(dictionary, "Annots", &annots), let annots else { continue }
+            for index in 0..<CGPDFArrayGetCount(annots) {
+                var annotation: CGPDFDictionaryRef?
+                var subtype: UnsafePointer<CChar>?
+                if CGPDFArrayGetDictionary(annots, index, &annotation), let annotation,
+                   CGPDFDictionaryGetName(annotation, "Subtype", &subtype), let subtype, String(cString: subtype) == "Widget" {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     // MARK: The selection control (Journey C)

@@ -36,6 +36,9 @@ protocol ReaderPresenting: AnyObject {
     /// Unsaved annotations for another version of the file, or a journal that can't be read.
     /// Discard deletes it; Keep leaves it for later. It is never deleted silently.
     func explainStaleJournal(name: String, unreadable: Bool, on window: NSWindow, choice: @escaping (JournalChoice) -> Void)
+    /// An error the document reports, such as a failed save. `completion` runs once it is
+    /// dismissed.
+    func presentError(_ error: any Error, on window: NSWindow, completion: @escaping () -> Void)
     /// The small popover for a note's text or a markup comment. `finished` gets the text to keep,
     /// or nil if cancelled.
     func editAnnotationText(heading: String, text: String, relativeTo rect: NSRect, of view: NSView, finished: @escaping (String?) -> Void)
@@ -204,6 +207,10 @@ final class SheetPresenter: ReaderPresenting {
         present(alert, on: window) { response in
             DispatchQueue.main.async { choice(response == .alertSecondButtonReturn ? .discard : .keep) }
         }
+    }
+
+    func presentError(_ error: any Error, on window: NSWindow, completion: @escaping () -> Void) {
+        present(NSAlert(error: error), on: window) { _ in completion() }
     }
 
     func editAnnotationText(heading: String, text: String, relativeTo rect: NSRect, of view: NSView, finished: @escaping (String?) -> Void) {

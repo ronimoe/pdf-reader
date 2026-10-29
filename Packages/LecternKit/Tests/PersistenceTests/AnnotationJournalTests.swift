@@ -115,7 +115,7 @@ import Testing
         }
         #expect(kept.changes == changes)
         #expect(journal.keptFiles(for: id).count == 1)
-        journal.discard(id)
+        journal.delete(try #require(journal.find(id, currentSHA256: "new")))
         #expect(journal.lookup(id, currentSHA256: "new") == .none)
         #expect(journal.keptFiles(for: id).isEmpty)
     }
@@ -129,9 +129,36 @@ import Testing
         journal.record(JournalEntry(originalSHA256: "new", changes: [changes[1]]), for: id)
         journal.flush(id)
         #expect(journal.lookup(id, currentSHA256: "new") == .matching(try decoded(journal.url(for: id))))
-        journal.removeKept(id)
-        #expect(journal.keptFiles(for: id).isEmpty)
-        #expect(FileManager.default.fileExists(atPath: journal.url(for: id).path))
+        // Acting on the offered (live) journal never touches the kept one the user hasn't seen.
+        let offered = try #require(journal.find(id, currentSHA256: "new"))
+        #expect(!offered.isKept)
+        journal.delete(offered)
+        #expect(journal.keptFiles(for: id).count == 1)
+        guard case .mismatched(let kept)? = journal.find(id, currentSHA256: "new").map(\.lookup) else {
+            Issue.record("the kept journal must be offered next")
+            return
+        }
+        #expect(kept.changes == changes)
+    }
+
+    @Test func settingAsideReturnsTheKeptFileAndNeverOverwritesOne() throws {
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let journal = journal(debounce: .seconds(60))
+        let id = UUID()
+        let now = Date()
+        journal.record(JournalEntry(originalSHA256: "a", changes: [changes[0]]), for: id)
+        let first = try #require(journal.setAside(id, now: now))
+        journal.record(JournalEntry(originalSHA256: "b", changes: [changes[1]]), for: id)
+        let second = try #require(journal.setAside(id, now: now))
+        #expect(first != second)
+        #expect(journal.setAside(id) == nil)
+        #expect(journal.read(first, currentSHA256: "a") == .matching(try decoded(first)))
+        #expect(journal.read(second, currentSHA256: "a") == .mismatched(try decoded(second)))
+        // A file outside the journal folder is never deleted.
+        let outside = folder.appending(path: "other.json")
+        try Data("x".utf8).write(to: outside)
+        journal.delete(JournalFile(url: outside, lookup: .unreadable))
+        #expect(FileManager.default.fileExists(atPath: outside.path))
     }
 
     private func decoded(_ url: URL) throws -> JournalEntry {

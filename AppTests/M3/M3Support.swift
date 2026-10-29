@@ -142,6 +142,7 @@ final class M3Harness {
     let previews = TestPreviewPresenter()
     let opener = RecordingURLOpener()
     let preferences = ReaderPreferences.ephemeral()
+    private let blockedUIBefore = UITripwire.shared.calls.count
 
     convenience init(_ data: Data = LinkFixture.make(), size: NSSize = NSSize(width: 640, height: 880)) throws {
         try self.init(document: ReaderDocument.loaded(data), store: nil, size: size)
@@ -175,6 +176,8 @@ final class M3Harness {
     }
 
     func close() {
+        let blocked = UITripwire.shared.calls.dropFirst(blockedUIBefore)
+        #expect(blocked.isEmpty, "a test tried to show UI: \(Array(blocked))")
         controller.dismissPreview()
         controller.window?.orderOut(nil)
         document.close()

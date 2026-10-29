@@ -58,6 +58,8 @@ final class AnnotationHarness {
     let presenter = RecordingPresenter()
     let preferences = ReaderPreferences.ephemeral()
     private(set) var openedCopies: [URL] = []
+    /// UI the tripwire had blocked before this harness opened.
+    private let blockedUIBefore = UITripwire.shared.calls.count
 
     /// Copies `name` from the corpus (or writes `data`) into a fresh folder and opens it.
     convenience init(corpus name: String) async throws {
@@ -75,7 +77,7 @@ final class AnnotationHarness {
     /// Opens `file` again, sharing the store and journal of an earlier harness (a relaunch).
     init(
         file: URL, folder: TemporaryFolder, store: DocumentStateStore? = nil, journal: AnnotationJournal? = nil, password: String? = nil,
-        journalChoice: JournalChoice = .restore, staleJournalChoice: JournalChoice = .discard
+        journalChoice: JournalChoice = .restore, staleJournalChoice: JournalChoice = .discard, defersJournalOffer: Bool = false
     ) async throws {
         self.folder = folder
         fileURL = file
@@ -88,6 +90,7 @@ final class AnnotationHarness {
             previewPresenter: TestPreviewPresenter(), urlOpener: RecordingURLOpener(), preferences: preferences, journal: self.journal
         )
         presenter.journalChoice = journalChoice
+        presenter.defersJournalOffer = defersJournalOffer
         presenter.staleJournalChoice = staleJournalChoice
         controller.openCopy = { [weak self] url in self?.openedCopies.append(url) }
         document.addWindowController(controller)
@@ -147,6 +150,8 @@ final class AnnotationHarness {
     func close() {
         controller.window?.orderOut(nil)
         document.close()
+        let blocked = UITripwire.shared.calls.dropFirst(blockedUIBefore)
+        #expect(blocked.isEmpty, "a test tried to show UI: \(Array(blocked))")
     }
 
     /// Leaves without closing the document, as a crash would: nothing is cleaned up.

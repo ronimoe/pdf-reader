@@ -188,14 +188,36 @@ final class RecordingPresenter: ReaderPresenting {
         chosen(copyDestination)
     }
 
+    /// When true, the Restore/Discard question stays open until the test calls `answerJournal`.
+    var defersJournalOffer = false
+    private var pendingJournalOffer: ((JournalChoice) -> Void)?
+
     func offerJournalRestore(name: String, changeCount: Int, on window: NSWindow, choice: @escaping (JournalChoice) -> Void) {
         journalOffers.append(changeCount)
-        choice(journalChoice)
+        if defersJournalOffer {
+            pendingJournalOffer = choice
+        } else {
+            choice(journalChoice)
+        }
+    }
+
+    /// Answers a deferred Restore/Discard question.
+    func answerJournal(_ answer: JournalChoice) {
+        let pending = pendingJournalOffer
+        pendingJournalOffer = nil
+        pending?(answer)
     }
 
     func explainStaleJournal(name: String, unreadable: Bool, on window: NSWindow, choice: @escaping (JournalChoice) -> Void) {
         staleJournalExplanations.append(unreadable)
         choice(staleJournalChoice)
+    }
+
+    private(set) var presentedErrors: [String] = []
+
+    func presentError(_ error: any Error, on window: NSWindow, completion: @escaping () -> Void) {
+        presentedErrors.append(error.localizedDescription)
+        completion()
     }
 
     func editAnnotationText(heading: String, text: String, relativeTo rect: NSRect, of view: NSView, finished: @escaping (String?) -> Void) {

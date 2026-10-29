@@ -722,6 +722,10 @@ final class ReaderWindowController: NSWindowController {
         stateStore.update(storedDocumentID) { $0.identity = identity }
     }
 
+    func hideFileRemovedNotice() {
+        notice.hide()
+    }
+
     func showFileRemovedNotice() {
         let name = readerDocument?.displayName ?? "This document"
         notice.show("“\(name)” was deleted or moved to the Trash. It stays open here until you close it.", duration: nil)
