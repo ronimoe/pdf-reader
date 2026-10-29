@@ -45,15 +45,24 @@ final class M5Harness {
         spin(timeout: 0.05) { false }
     }
 
-    /// No frame or toolbar autosave, fully transparent, never takes the mouse.
+    /// No frame or toolbar autosave, fully transparent, never takes the mouse. Ordered in on its
+    /// own, never as a tab of another test's window.
     static func makeInvisible(_ window: NSWindow, size: NSSize? = nil) {
-        window.setFrameAutosaveName("")
-        window.toolbar?.autosavesConfiguration = false
+        prepareInvisible(window)
         if let size { window.setContentSize(size) }
         window.setFrameOrigin(NSScreen.screens.first?.frame.origin ?? .zero)
+        let mode = window.tabbingMode
+        window.tabbingMode = .disallowed
+        window.orderFrontRegardless()
+        window.tabbingMode = mode
+    }
+
+    /// The same, without ordering the window in.
+    static func prepareInvisible(_ window: NSWindow) {
+        window.setFrameAutosaveName("")
+        window.toolbar?.autosavesConfiguration = false
         window.alphaValue = 0
         window.ignoresMouseEvents = true
-        window.orderFrontRegardless()
     }
 
     var window: NSWindow { controller.window! }

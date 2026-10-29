@@ -12,6 +12,18 @@ final class ReaderDocumentController: NSDocumentController {
     var onDocumentsChange: ((Int) -> Void)?
     /// Tests turn this off so fixtures don't land in the user's recents.
     var recordsRecentDocuments = true
+    /// Called when quitting starts, before any document is closed by the unsaved-changes review:
+    /// the session is saved with every window still open.
+    var onWillReviewForQuit: (() -> Void)?
+
+    override func reviewUnsavedDocuments(
+        withAlertTitle title: String?, cancellable: Bool, delegate: Any?,
+        didReviewAllSelector: Selector?, contextInfo: UnsafeMutableRawPointer?
+    ) {
+        onWillReviewForQuit?()
+        super.reviewUnsavedDocuments(withAlertTitle: title, cancellable: cancellable, delegate: delegate,
+                                     didReviewAllSelector: didReviewAllSelector, contextInfo: contextInfo)
+    }
 
     override func addDocument(_ document: NSDocument) {
         super.addDocument(document)

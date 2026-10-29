@@ -67,13 +67,41 @@ enum AppEnvironment {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let emptyState = EmptyStateController()
+    private(set) lazy var settings = SettingsWindowController()
+    private(set) lazy var keyboardShortcuts = KeyboardShortcutsWindowController()
+    /// Last session's windows and tabs (B3). Never used while hosting tests.
+    private(set) var session: SessionRestorer?
+    /// True from launch until last session's documents have reopened, so the empty state doesn't
+    /// flash up first.
+    private(set) var isRestoringSession = false
+    private var emptyStateWanted = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         let store = DocumentStateStore(directory: AppEnvironment.stateDirectory)
         AppEnvironment.stateStore = store
         AppEnvironment.journal = AnnotationJournal(directory: store.directory.appending(path: "Journal", directoryHint: .isDirectory))
-        (NSDocumentController.shared as? ReaderDocumentController)?.onDocumentsChange = { [weak self] count in
-            self?.emptyState.documentsDidChange(count: count)
+        let controller = NSDocumentController.shared as? ReaderDocumentController
+        controller?.onDocumentsChange = { [weak self] count in
+            guard let self else { return }
+            if !isRestoringSession { emptyState.documentsDidChange(count: count) }
+            session?.documentsDidChange()
+        }
+        guard !AppEnvironment.isHostingTests else { return }
+        let session = SessionRestorer(fileURL: store.directory.appending(path: "Session.json"), policy: { AppEnvironment.preferences.sessionRestore })
+        self.session = session
+        controller?.onWillReviewForQuit = { session.applicationWillQuit() }
+        guard session.shouldRestore, session.load()?.windows.isEmpty == false else { return }
+        isRestoringSession = true
+        Task { @MainActor in
+            await session.restore()
+            isRestoringSession = false
+            let count = NSDocumentController.shared.documents.count
+            if count == 0, emptyStateWanted || NSApp.windows.allSatisfy({ !$0.isVisible }) {
+                emptyState.show()
+            } else if count > 0 {
+                emptyState.hide()
+            }
+            session.documentsDidChange()
         }
     }
 
@@ -85,8 +113,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        if isRestoringSession {
+            // Shown after the restore, only if nothing came back.
+            emptyStateWanted = true
+            return true
+        }
         emptyState.show()
         return true
+    }
+
+    /// Lectern ▸ Settings… (⌘,)
+    @objc func showSettings(_ sender: Any?) {
+        settings.show()
+    }
+
+    /// Help ▸ Keyboard Shortcuts (⌘/)
+    @objc func showKeyboardShortcuts(_ sender: Any?) {
+        keyboardShortcuts.show()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -111,5 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (document as? ReaderDocument)?.readerWindowController?.saveAnchor()
         }
         AppEnvironment.stateStore?.flush()
+        // Saved already if the quit began with the unsaved-documents review.
+        if let session, !session.isTerminating { session.applicationWillQuit() }
     }
 }

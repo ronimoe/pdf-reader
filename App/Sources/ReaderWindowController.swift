@@ -115,8 +115,17 @@ final class ReaderWindowController: NSWindowController {
     private var anchorSave: DispatchWorkItem?
     private var collapseObservation: NSKeyValueObservation?
     /// Set while the sidebar opens or closes for a reason other than the
-    /// user's choice (a search showing its results), so it isn't remembered.
-    private var isMovingSidebarForSearch = false
+    /// user's choice (a search showing its results, distraction-free mode),
+    /// so it isn't remembered.
+    var isMovingSidebarForSearch = false
+    /// What distraction-free mode hid, to put back; nil while it is off. Kept for the window's
+    /// life (and the session, through `SessionRestorer`).
+    var distractionFree: DistractionFreeChrome?
+    /// Puts the window in or out of full screen. Tests record instead of moving a window into its
+    /// own Space.
+    var setFullScreen: (NSWindow, Bool) -> Void = { window, on in
+        if window.styleMask.contains(.fullScreen) != on { window.toggleFullScreen(nil) }
+    }
 
     private(set) weak var readerDocument: ReaderDocument?
     private let passwordStore: any DocumentPasswordStore
@@ -153,6 +162,9 @@ final class ReaderWindowController: NSWindowController {
         window.titleVisibility = .visible
         window.toolbarStyle = .unifiedCompact
         window.setFrameAutosaveName("ReaderWindow")
+        // Lectern restores sessions itself (SessionRestorer); AppKit's restoration would reopen
+        // the same documents a second time.
+        window.isRestorable = false
         super.init(window: window)
 
         configure(primaryPane)
@@ -209,10 +221,18 @@ final class ReaderWindowController: NSWindowController {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(pageDidChange(_:)), name: .PDFViewPageChanged, object: view)
         view.onVisibleAreaChange = { [weak self] in self?.saveAnchorSoon() }
+        // Escape ends a search, then leaves distraction-free mode.
         view.onCancel = { [weak self] in
-            guard let self, isSearching else { return false }
-            endSearch()
-            return true
+            guard let self else { return false }
+            if isSearching {
+                endSearch()
+                return true
+            }
+            if isDistractionFree {
+                setDistractionFree(false)
+                return true
+            }
+            return false
         }
         view.previewsOnHover = preferences.previewsLinksOnHover
         pane.onExternalLink = { [weak self] target in self?.handleExternalLink(target) }
@@ -506,6 +526,8 @@ final class ReaderWindowController: NSWindowController {
     /// ⌘F: puts the cursor in the search field.
     @objc func focusSearchField(_ sender: Any?) {
         guard isShowingContent, let window else { return }
+        // The search field lives in the toolbar.
+        if isDistractionFree { setDistractionFree(false) }
         if let toolbar = window.toolbar {
             if !toolbar.isVisible { toolbar.isVisible = true }
             // A customised toolbar may have lost the field; ⌘F brings it back.
@@ -581,14 +603,18 @@ final class ReaderWindowController: NSWindowController {
 
     private func setSidebarCollapsedForSearch(_ collapsed: Bool) {
         isMovingSidebarForSearch = true
-        sidebarItem.isCollapsed = collapsed
+        sidebarItem.isCollapsed = collapsed || isDistractionFree
         isMovingSidebarForSearch = false
     }
 
     var isSearching: Bool { search != nil }
 
     override func cancelOperation(_ sender: Any?) {
-        if isSearching { endSearch() }
+        if isSearching {
+            endSearch()
+        } else if isDistractionFree {
+            setDistractionFree(false)
+        }
     }
 
     private func searchDidChange() {
@@ -859,7 +885,7 @@ final class ReaderWindowController: NSWindowController {
 
     var layoutHints: DocumentLayoutHints { readerDocument?.layoutHints ?? .none }
 
-    private func preservingEveryAnchor(_ panes: ArraySlice<ReaderPane>, _ body: () -> Void) {
+    func preservingEveryAnchor(_ panes: ArraySlice<ReaderPane>, _ body: () -> Void) {
         guard let first = panes.first else {
             body()
             return
@@ -971,6 +997,9 @@ extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation 
         }
         if menuItem.action == #selector(toggleBookmark(_:)) {
             menuItem.title = hasBookmarkHere ? "Remove Bookmark" : "Add Bookmark"
+        }
+        if menuItem.action == #selector(toggleDistractionFree(_:)) {
+            menuItem.title = isDistractionFree ? "Exit Distraction-Free Mode" : "Enter Distraction-Free Mode"
         }
         if menuItem.action == #selector(toggleSplitView(_:)) {
             menuItem.title = isSplit ? "Close Split View" : "Split View"

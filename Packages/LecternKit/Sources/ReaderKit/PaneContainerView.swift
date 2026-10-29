@@ -58,10 +58,10 @@ public final class PaneContainerView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     /// Split chrome: the focus bar on the focused pane and a close button on
-    /// both. A single pane shows neither.
-    public func setSplitChrome(isSplit: Bool, isFocused: Bool, name: String) {
-        focusBar.isHidden = !(isSplit && isFocused)
-        closeButton.isHidden = !isSplit
+    /// both. A single pane shows neither, and distraction-free mode hides both.
+    public func setSplitChrome(isSplit: Bool, isFocused: Bool, name: String, hidesChrome: Bool = false) {
+        focusBar.isHidden = !(isSplit && isFocused) || hidesChrome
+        closeButton.isHidden = !isSplit || hidesChrome
         setAccessibilityLabel(isSplit ? "\(name) pane" : "Reading pane")
         setAccessibilityValue(isSplit && isFocused ? "focused" : nil)
     }

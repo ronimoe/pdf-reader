@@ -45,6 +45,8 @@ final class EmptyStateController {
         )
         window.title = ProcessInfo.processInfo.processName
         window.isReleasedWhenClosed = false
+        // Never reopened by AppKit's window restoration (Lectern restores sessions itself).
+        window.isRestorable = false
         // Document windows must never tab into this one.
         window.tabbingMode = .disallowed
         let content = DropTargetView(content: NSHostingView(rootView: EmptyStateView(model: model)))

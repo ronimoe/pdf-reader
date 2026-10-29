@@ -1,0 +1,85 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/private\/var\/folders\/d7\/_nfbcf6d5ng09r5ws2ztwbbh0000gn\/T\/lectern-sparkle-e2e.Lyp29R\/Applications\/PlatformProbeSparkle.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T16:12:47Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbeSparkle\/Data",
+  "mode" : "sparkle-update",
+  "pid" : 5426,
+  "runID" : "e2e-2-update",
+  "sandboxed" : true,
+  "started" : "2026-10-29T16:12:47Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/var\/folders\/d7\/_nfbcf6d5ng09r5ws2ztwbbh0000gn\/T\/lectern-sparkle-e2e.Lyp29R\/Applications\/PlatformProbeSparkle.app\/Contents\/MacOS\/PlatformProbeSparkle",
+        "--run-id",
+        "e2e-2-update",
+        "--mode",
+        "sparkle-update"
+      ],
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "feed" : "http:\/\/127.0.0.1:59925\/appcast.xml",
+      "installerLauncherService" : true,
+      "publicKeyPresent" : true,
+      "step" : "sparkle-config"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "ok" : true,
+      "step" : "updater-start"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "check-for-updates-called"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "driver-userInitiatedCheck"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "displayVersion" : "0.1.0 (2)",
+      "stage" : 0,
+      "step" : "driver-updateFound",
+      "version" : "2"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "driver-downloadInitiated"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "bytes" : 1040179,
+      "step" : "driver-expectedContentLength"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "driver-extracting"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "driver-readyToInstallAndRelaunch"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "driver-willInstallUpdate",
+      "version" : "2"
+    },
+    {
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "driver-willRelaunchApplication"
+    },
+    {
+      "applicationTerminated" : false,
+      "at" : "2026-10-29T16:12:47Z",
+      "step" : "driver-installing"
+    }
+  ]
+}

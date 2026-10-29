@@ -55,6 +55,21 @@ final class ReaderPreferences {
         }
     }
 
+    static let sessionRestoreKey = "ReopenDocumentsOnLaunch"
+    static let distractionFreeFullScreenKey = "DistractionFreeEntersFullScreen"
+
+    /// Whether last session's documents reopen at launch (B3, spec §5.4). Follows macOS by default.
+    var sessionRestore: SessionRestorePolicy {
+        get { (value(Self.sessionRestoreKey) as? String).flatMap(SessionRestorePolicy.init(rawValue:)) ?? .default }
+        set { setValue(newValue.rawValue, Self.sessionRestoreKey) }
+    }
+
+    /// Distraction-free mode also enters full screen. Off by default.
+    var distractionFreeEntersFullScreen: Bool {
+        get { value(Self.distractionFreeFullScreenKey) as? Bool ?? false }
+        set { setValue(newValue, Self.distractionFreeFullScreenKey) }
+    }
+
     /// Preferences that live only in memory, for tests: the test host is the
     /// app, so the standard defaults are the user's own.
     static func ephemeral() -> ReaderPreferences {

@@ -11,6 +11,8 @@ enum MainMenu {
         appMenu.addItem(withTitle: "About \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
@@ -64,6 +66,8 @@ enum MainMenu {
         toolbar.keyEquivalentModifierMask = [.command, .option]
         let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
         fullScreen.keyEquivalentModifierMask = [.command, .control]
+        let distractionFree = viewMenu.addItem(withTitle: "Enter Distraction-Free Mode", action: #selector(ReaderWindowController.toggleDistractionFree(_:)), keyEquivalent: "f")
+        distractionFree.keyEquivalentModifierMask = [.command, .shift]
         main.addItem(submenu: viewMenu, title: "View")
 
         let annotateMenu = AnnotateMenu(title: "Annotate")
@@ -83,6 +87,11 @@ enum MainMenu {
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         main.addItem(submenu: windowMenu, title: "Window")
         NSApplication.shared.windowsMenu = windowMenu
+
+        let helpMenu = NSMenu(title: "Help")
+        helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "/")
+        main.addItem(submenu: helpMenu, title: "Help")
+        NSApplication.shared.helpMenu = helpMenu
 
         return main
     }
