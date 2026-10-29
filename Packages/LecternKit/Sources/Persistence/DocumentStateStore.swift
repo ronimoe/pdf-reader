@@ -50,21 +50,36 @@ public struct StoredDocument: Sendable {
 /// to those UUIDs.
 ///
 /// Changes are kept in memory and written atomically after a debounce, on a
-/// private queue. `flush()` writes everything now; call it when a document
-/// closes and when the app quits. The root directory is injected, so tests
-/// never touch the app's container.
+/// private queue. State files are written before the index, so the index
+/// never names a record that isn't on disk; a failed write is retried.
+/// `flush()` writes everything now; call it when a document closes and when
+/// the app quits. The root directory is injected, so tests never touch the
+/// app's container.
+///
+/// The index is the only list of what was opened, so it is never thrown
+/// away: an index that can't be read is moved aside and rebuilt from the
+/// state files. Records are pruned after `maximumAge` without being opened,
+/// and beyond `maximumDocuments`, because each keeps a path and a bookmark.
 public final class DocumentStateStore: Sendable {
     public let directory: URL
     private let bookmarks: any FileBookmarking
     private let debounce: Duration
+    private let retryDelay: Duration
+    public let maximumDocuments: Int
+    public let maximumAge: TimeInterval
     private let queue = DispatchQueue(label: "io.github.ronimoe.Lectern.DocumentStateStore")
     private let shared = Mutex(Shared())
     private static let log = Logger(subsystem: "io.github.ronimoe.Lectern", category: "DocumentStateStore")
+
+    public static let defaultMaximumDocuments = 500
+    public static let defaultMaximumAge: TimeInterval = 180 * 24 * 60 * 60
 
     private struct Shared: Sendable {
         var index: [UUID: IndexEntry]?
         var states: [UUID: DocumentState] = [:]
         var dirty: Set<UUID> = []
+        /// Records whose state file is to be deleted.
+        var removed: Set<UUID> = []
         var indexIsDirty = false
         var writeIsScheduled = false
     }
@@ -79,10 +94,20 @@ public final class DocumentStateStore: Sendable {
         var documents: [String: IndexEntry]
     }
 
-    public init(directory: URL, bookmarks: any FileBookmarking = SecurityScopedBookmarks(), debounce: Duration = .seconds(1)) {
+    public init(
+        directory: URL,
+        bookmarks: any FileBookmarking = SecurityScopedBookmarks(),
+        debounce: Duration = .seconds(1),
+        retryDelay: Duration = .seconds(5),
+        maximumDocuments: Int = DocumentStateStore.defaultMaximumDocuments,
+        maximumAge: TimeInterval = DocumentStateStore.defaultMaximumAge
+    ) {
         self.directory = directory
         self.bookmarks = bookmarks
         self.debounce = debounce
+        self.retryDelay = retryDelay
+        self.maximumDocuments = max(1, maximumDocuments)
+        self.maximumAge = maximumAge
     }
 
     /// `Application Support/<bundle id>`, inside the sandbox container when
@@ -100,13 +125,18 @@ public final class DocumentStateStore: Sendable {
         documentsDirectory.appending(path: "\(id.uuidString).json")
     }
 
+    /// The records on file.
+    public var storedDocumentIDs: Set<UUID> { Set(loadedIndex().keys) }
+
     // MARK: Opening
 
-    /// The identity of the file at `url` with contents `data`.
-    public func identity(for url: URL, data: Data, pageCount: Int) -> DocumentIdentity {
+    /// The identity of the file at `url` with contents `data`. Pass the
+    /// `/ID` pair when the caller already has it, so the file isn't parsed
+    /// again.
+    public func identity(for url: URL, data: Data, pageCount: Int, fileIdentifiers: [String]? = nil) -> DocumentIdentity {
         DocumentIdentity(
             bookmark: bookmarks.bookmarkData(for: url),
-            fileIdentifiers: DocumentIdentity.fileIdentifiers(ofPDF: data),
+            fileIdentifiers: fileIdentifiers ?? DocumentIdentity.fileIdentifiers(ofPDF: data),
             pageCount: pageCount,
             fileSize: data.count,
             lastKnownPath: Self.path(of: url),
@@ -117,10 +147,10 @@ public final class DocumentStateStore: Sendable {
 
     /// Finds the stored state for the file that is opening, or starts a new
     /// record (A2). The record's identity is refreshed, including a new
-    /// bookmark, so a stale one is replaced.
+    /// bookmark, so a stale one is replaced. Old records are pruned.
     @discardableResult
-    public func open(url: URL, data: Data, pageCount: Int, now: Date = Date()) -> StoredDocument {
-        let identity = identity(for: url, data: data, pageCount: pageCount)
+    public func open(url: URL, data: Data, pageCount: Int, fileIdentifiers: [String]? = nil, now: Date = Date()) -> StoredDocument {
+        let identity = identity(for: url, data: data, pageCount: pageCount, fileIdentifiers: fileIdentifiers)
         let path = identity.lastKnownPath
         let index = loadedIndex()
 
@@ -156,6 +186,7 @@ public final class DocumentStateStore: Sendable {
         state.lastOpened = now
         let stored = state
         save(stored, for: id)
+        prune(now: now)
         return StoredDocument(id: id, state: stored, match: match)
     }
 
@@ -166,8 +197,9 @@ public final class DocumentStateStore: Sendable {
     }
 
     /// Changes a document's state. The write happens after the debounce.
+    /// A record that was forgotten or pruned stays gone.
     public func update(_ id: UUID, _ change: (inout DocumentState) -> Void) {
-        guard var state = loadedState(for: id) else { return }
+        guard loadedIndex()[id] != nil, var state = loadedState(for: id) else { return }
         change(&state)
         save(state, for: id)
     }
@@ -177,50 +209,132 @@ public final class DocumentStateStore: Sendable {
         queue.sync { writePending() }
     }
 
+    // MARK: Forgetting (privacy)
+
+    /// Drops records not opened within `maximumAge` of `now`, and the oldest
+    /// beyond `maximumDocuments`.
+    public func prune(now: Date = Date()) {
+        let newestFirst = loadedIndex().sorted { $0.value.lastOpened > $1.value.lastOpened }
+        var doomed = Set<UUID>()
+        for (position, (id, entry)) in newestFirst.enumerated()
+        where position >= maximumDocuments || now.timeIntervalSince(entry.lastOpened) > maximumAge {
+            doomed.insert(id)
+        }
+        remove(doomed)
+    }
+
+    /// Forgets everything stored for these files: positions, history,
+    /// settings, paths and bookmarks. Used when the user clears Open Recent.
+    public func forget(fileURLs urls: [URL]) {
+        let paths = Set(urls.map(Self.path(of:)))
+        guard !paths.isEmpty else { return }
+        let doomed = Set(loadedIndex().compactMap { id, entry -> UUID? in
+            if paths.contains(entry.identity.lastKnownPath) { return id }
+            if let resolved = entry.identity.bookmark.flatMap(bookmarks.resolve), paths.contains(Self.path(of: resolved)) {
+                return id
+            }
+            return nil
+        })
+        remove(doomed)
+    }
+
+    private func remove(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        shared.withLock { shared in
+            for id in ids {
+                shared.index?[id] = nil
+                shared.states[id] = nil
+                shared.dirty.remove(id)
+                shared.removed.insert(id)
+            }
+            shared.indexIsDirty = true
+        }
+        scheduleWrite(after: debounce)
+    }
+
     // MARK: Internals
 
     private func save(_ state: DocumentState, for id: UUID) {
         _ = loadedIndex()
-        let shouldSchedule = shared.withLock { shared -> Bool in
-            let previous = shared.states[id]
-            guard previous != state else { return false }
+        let changed = shared.withLock { shared -> Bool in
+            guard shared.states[id] != state else { return false }
             shared.states[id] = state
             shared.dirty.insert(id)
+            shared.removed.remove(id)
             let entry = IndexEntry(identity: state.identity, lastOpened: state.lastOpened)
             if shared.index?[id] != entry {
                 shared.index?[id] = entry
                 shared.indexIsDirty = true
             }
+            return true
+        }
+        if changed { scheduleWrite(after: debounce) }
+    }
+
+    private func scheduleWrite(after delay: Duration) {
+        let shouldSchedule = shared.withLock { shared -> Bool in
             guard !shared.writeIsScheduled else { return false }
             shared.writeIsScheduled = true
             return true
         }
         guard shouldSchedule else { return }
-        let components = debounce.components
+        let components = delay.components
         let seconds = Double(components.seconds) + Double(components.attoseconds) / 1e18
         queue.asyncAfter(deadline: .now() + seconds) { [weak self] in
             self?.writePending()
         }
     }
 
+    /// The index, read once. A missing index is rebuilt from the state files
+    /// (normally there are none); one that can't be read or decoded is moved
+    /// aside first, so nothing on record is lost.
     private func loadedIndex() -> [UUID: IndexEntry] {
         if let index = shared.withLock({ $0.index }) { return index }
         var loaded: [UUID: IndexEntry] = [:]
-        if let data = try? Data(contentsOf: indexURL) {
-            do {
-                let file = try Self.decoder.decode(IndexFile.self, from: data)
-                for (key, entry) in file.documents {
-                    if let id = UUID(uuidString: key) { loaded[id] = entry }
-                }
-            } catch {
-                Self.log.error("index.json is unreadable and will be rebuilt: \(error.localizedDescription, privacy: .public)")
+        var needsWriting = false
+        do {
+            let data = try Data(contentsOf: indexURL)
+            let file = try Self.decoder.decode(IndexFile.self, from: data)
+            for (key, entry) in file.documents {
+                if let id = UUID(uuidString: key) { loaded[id] = entry }
             }
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            loaded = rebuiltIndex()
+            needsWriting = !loaded.isEmpty
+        } catch {
+            Self.log.error("index.json is unreadable and is rebuilt from the state files: \(error.localizedDescription, privacy: .public)")
+            moveAsideUnreadableIndex()
+            loaded = rebuiltIndex()
+            needsWriting = true
         }
-        return shared.withLock { shared in
+        let result = shared.withLock { shared -> [UUID: IndexEntry] in
             if let index = shared.index { return index }
             shared.index = loaded
+            if needsWriting { shared.indexIsDirty = true }
             return loaded
         }
+        if needsWriting { scheduleWrite(after: debounce) }
+        return result
+    }
+
+    /// Every readable state file's identity and last-opened date.
+    private func rebuiltIndex() -> [UUID: IndexEntry] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: documentsDirectory, includingPropertiesForKeys: nil)) ?? []
+        var index: [UUID: IndexEntry] = [:]
+        for file in files where file.pathExtension == "json" {
+            guard let id = UUID(uuidString: file.deletingPathExtension().lastPathComponent),
+                  let data = try? Data(contentsOf: file),
+                  let state = try? Self.decoder.decode(DocumentState.self, from: data)
+            else { continue }
+            index[id] = IndexEntry(identity: state.identity, lastOpened: state.lastOpened)
+        }
+        return index
+    }
+
+    private func moveAsideUnreadableIndex() {
+        guard FileManager.default.fileExists(atPath: indexURL.path) else { return }
+        let aside = directory.appending(path: "index.unreadable-\(Int(Date().timeIntervalSince1970)).json")
+        try? FileManager.default.moveItem(at: indexURL, to: aside)
     }
 
     private func loadedState(for id: UUID) -> DocumentState? {
@@ -239,30 +353,62 @@ public final class DocumentStateStore: Sendable {
         }
     }
 
-    /// Runs on `queue` only, so writes never interleave.
+    /// Runs on `queue` only, so writes never interleave. State files go
+    /// first and the index last; if any state file fails, the index waits
+    /// too, and everything that failed is tried again later.
     private func writePending() {
-        let (states, index) = shared.withLock { shared -> ([UUID: DocumentState], [UUID: IndexEntry]?) in
+        let (states, removed, index) = shared.withLock { shared -> ([UUID: DocumentState], Set<UUID>, [UUID: IndexEntry]?) in
             let states = shared.dirty.reduce(into: [UUID: DocumentState]()) { result, id in result[id] = shared.states[id] }
+            let removed = shared.removed
             shared.dirty.removeAll()
+            shared.removed.removeAll()
             let index = shared.indexIsDirty ? shared.index : nil
             shared.indexIsDirty = false
             shared.writeIsScheduled = false
-            return (states, index)
+            return (states, removed, index)
         }
-        guard !states.isEmpty || index != nil else { return }
+        guard !states.isEmpty || !removed.isEmpty || index != nil else { return }
         let encoder = Self.encoder
-        do {
-            try FileManager.default.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
-            for (id, state) in states {
+        var failed = Set<UUID>()
+        try? FileManager.default.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
+        for (id, state) in states {
+            do {
                 try encoder.encode(state).write(to: stateURL(for: id), options: .atomic)
+            } catch {
+                failed.insert(id)
+                Self.log.error("Couldn't write state \(id.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
-            if let index {
-                let file = IndexFile(documents: Dictionary(uniqueKeysWithValues: index.map { ($0.key.uuidString, $0.value) }))
-                try encoder.encode(file).write(to: indexURL, options: .atomic)
-            }
-        } catch {
-            Self.log.error("Couldn't write document state: \(error.localizedDescription, privacy: .public)")
         }
+        var removalsFailed = Set<UUID>()
+        for id in removed {
+            let url = stateURL(for: id)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            do { try FileManager.default.removeItem(at: url) } catch { removalsFailed.insert(id) }
+        }
+        var indexFailed = false
+        if let index {
+            if failed.isEmpty {
+                do {
+                    let file = IndexFile(documents: Dictionary(uniqueKeysWithValues: index.map { ($0.key.uuidString, $0.value) }))
+                    try encoder.encode(file).write(to: indexURL, options: .atomic)
+                } catch {
+                    indexFailed = true
+                    Self.log.error("Couldn't write index.json: \(error.localizedDescription, privacy: .public)")
+                }
+            } else {
+                indexFailed = true
+            }
+        }
+        guard !failed.isEmpty || !removalsFailed.isEmpty || indexFailed else { return }
+        shared.withLock { shared in
+            // Anything changed or removed again meanwhile is already pending.
+            for id in failed where shared.states[id] != nil && !shared.removed.contains(id) {
+                shared.dirty.insert(id)
+            }
+            shared.removed.formUnion(removalsFailed.filter { shared.index?[$0] == nil })
+            if indexFailed { shared.indexIsDirty = true }
+        }
+        scheduleWrite(after: retryDelay)
     }
 
     static var encoder: JSONEncoder {

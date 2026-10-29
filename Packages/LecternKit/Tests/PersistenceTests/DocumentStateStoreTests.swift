@@ -220,13 +220,125 @@ private struct BrokenBookmarks: FileBookmarking {
         #expect(reopened.state.anchor == anchor(2))
     }
 
-    @Test func anUnreadableIndexStartsAfresh() throws {
+    @Test func aCorruptIndexIsRebuiltFromTheStateFiles() throws {
         let sandbox = try Sandbox()
-        try FileManager.default.createDirectory(at: sandbox.storeDirectory, withIntermediateDirectories: true)
-        try Data("not json".utf8).write(to: sandbox.storeDirectory.appending(path: "index.json"))
-        let data = pdf(pages: 1)
-        let opened = sandbox.store().open(url: try sandbox.write(data, to: "a.pdf"), data: data, pageCount: 1)
-        #expect(opened.match == .new)
+        let store = sandbox.store()
+        var ids: [String: UUID] = [:]
+        for (name, id) in [("a.pdf", "AA"), ("b.pdf", "BB")] {
+            let data = pdf(pages: 8, id: id)
+            let opened = store.open(url: try sandbox.write(data, to: name), data: data, pageCount: 8)
+            store.update(opened.id) { $0.anchor = anchor(name == "a.pdf" ? 3 : 5) }
+            ids[name] = opened.id
+        }
+        store.flush()
+        try Data("{".utf8).write(to: store.indexURL)
+
+        let reopened = sandbox.store()
+        let a = pdf(pages: 8, id: "AA")
+        let opened = reopened.open(url: sandbox.file("a.pdf"), data: a, pageCount: 8)
+        #expect(opened.id == ids["a.pdf"])
+        #expect(opened.state.anchor == anchor(3))
+        // Every record survives, not only the one opened this session.
+        reopened.flush()
+        let third = sandbox.store()
+        #expect(third.storedDocumentIDs == Set(ids.values))
+        #expect(third.state(for: try #require(ids["b.pdf"]))?.anchor == anchor(5))
+        // The unreadable index is kept aside, not deleted.
+        let names = try FileManager.default.contentsOfDirectory(atPath: sandbox.storeDirectory.path)
+        #expect(names.contains { $0.hasPrefix("index.unreadable-") })
+    }
+
+    @Test func aMissingIndexIsRebuiltToo() throws {
+        let sandbox = try Sandbox()
+        let store = sandbox.store()
+        let data = pdf(pages: 4)
+        let url = try sandbox.write(data, to: "a.pdf")
+        let first = store.open(url: url, data: data, pageCount: 4)
+        store.update(first.id) { $0.anchor = anchor(2) }
+        store.flush()
+        try FileManager.default.removeItem(at: store.indexURL)
+        let reopened = sandbox.store().open(url: url, data: data, pageCount: 4)
+        #expect(reopened.id == first.id)
+        #expect(reopened.state.anchor == anchor(2))
+    }
+
+    @Test func aFailedWriteIsKeptAndRetried() throws {
+        let sandbox = try Sandbox()
+        let store = sandbox.store()
+        let data = pdf(pages: 6)
+        let first = store.open(url: try sandbox.write(data, to: "a.pdf"), data: data, pageCount: 6)
+        store.update(first.id) { $0.anchor = anchor(1) }
+        store.flush()
+
+        let documents = store.documentsDirectory.path
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: documents)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: documents) }
+        store.update(first.id) { $0.anchor = anchor(4) }
+        // A record that can't be written must not appear in the index.
+        let other = pdf(pages: 2, id: "BB")
+        let second = store.open(url: try sandbox.write(other, to: "b.pdf"), data: other, pageCount: 2)
+        store.flush()
+        #expect(sandbox.store().state(for: first.id)?.anchor == anchor(1))
+        #expect(!sandbox.store().storedDocumentIDs.contains(second.id))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: documents)
+        store.flush()
+        let after = sandbox.store()
+        #expect(after.state(for: first.id)?.anchor == anchor(4))
+        #expect(after.storedDocumentIDs.contains(second.id))
+    }
+
+    // MARK: Pruning and forgetting (privacy)
+
+    @Test func recordsNotOpenedForSixMonthsArePruned() throws {
+        let sandbox = try Sandbox()
+        let store = sandbox.store()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let old = pdf(pages: 1, id: "01")
+        let oldID = store.open(url: try sandbox.write(old, to: "old.pdf"), data: old, pageCount: 1, now: start).id
+        let recent = pdf(pages: 1, id: "02")
+        let later = start.addingTimeInterval(DocumentStateStore.defaultMaximumAge + 60)
+        let recentID = store.open(url: try sandbox.write(recent, to: "recent.pdf"), data: recent, pageCount: 1, now: later).id
+        store.flush()
+        #expect(store.storedDocumentIDs == [recentID])
+        #expect(!FileManager.default.fileExists(atPath: store.stateURL(for: oldID).path))
+        #expect(sandbox.store().storedDocumentIDs == [recentID])
+    }
+
+    @Test func theStoreKeepsOnlyTheNewestDocuments() throws {
+        let sandbox = try Sandbox()
+        let store = DocumentStateStore(directory: sandbox.storeDirectory, debounce: .seconds(60), maximumDocuments: 3)
+        var ids: [UUID] = []
+        for index in 0..<5 {
+            let data = pdf(pages: 1, id: String(format: "%02X", index + 1))
+            let url = try sandbox.write(data, to: "\(index).pdf")
+            ids.append(store.open(url: url, data: data, pageCount: 1, now: Date(timeIntervalSinceNow: Double(index))).id)
+        }
+        store.flush()
+        #expect(store.storedDocumentIDs == Set(ids.suffix(3)))
+        let files = try FileManager.default.contentsOfDirectory(atPath: store.documentsDirectory.path)
+        #expect(files.count == 3)
+    }
+
+    @Test func forgettingFilesRemovesTheirStateAndBookmarks() throws {
+        let sandbox = try Sandbox()
+        let store = sandbox.store()
+        let a = pdf(pages: 2, id: "AA")
+        let b = pdf(pages: 2, id: "BB")
+        let aURL = try sandbox.write(a, to: "a.pdf")
+        let aID = store.open(url: aURL, data: a, pageCount: 2).id
+        let bID = store.open(url: try sandbox.write(b, to: "b.pdf"), data: b, pageCount: 2).id
+        store.flush()
+
+        store.forget(fileURLs: [aURL])
+        store.update(aID) { $0.anchor = anchor(1) }
+        store.flush()
+        #expect(store.storedDocumentIDs == [bID])
+        #expect(!FileManager.default.fileExists(atPath: store.stateURL(for: aID).path))
+        let index = try String(contentsOf: store.indexURL, encoding: .utf8)
+        #expect(!index.contains("a.pdf"))
+        // Opening it again starts afresh.
+        #expect(sandbox.store().open(url: aURL, data: a, pageCount: 2).match == .new)
     }
 
     @Test func stateWithMissingFieldsStillLoads() throws {
