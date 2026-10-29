@@ -31,6 +31,16 @@ enum Tools {
 
     static func has(_ names: String...) -> Bool { names.allSatisfy { path($0) != nil } }
     static var venv: Bool { FileManager.default.isExecutableFile(atPath: Repo.venvPython.path) }
+
+    /// Set by scripts/test.sh: a missing tool fails the external checks instead of skipping them.
+    static var required: Bool { ProcessInfo.processInfo.environment["LECTERN_REQUIRE_TOOLS"] == "1" }
+    /// Whether a gated test runs: when its tools are present, or always when tools are required.
+    static func gate(_ available: Bool) -> Bool { available || required }
+
+    static var qpdfCheck: Bool { has("qpdf", "python3") }
+    static var objectsCheck: Bool { venv && has("qpdf") }
+    static var mupdfCheck: Bool { venv && has("mutool") }
+    static var popplerCheck: Bool { venv && has("pdftoppm") }
     /// pdf.js listing and rendering: node, pdfjs-dist, its optional canvas backend, and Pillow from the venv.
     static var pdfjs: Bool {
         let canvas = Repo.root.appending(path: "scripts/corpus/node_modules/@napi-rs/canvas")

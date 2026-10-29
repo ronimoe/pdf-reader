@@ -42,8 +42,10 @@ enum StreamDecoder {
         let hasHeader = cmf & 0x0F == 8 && (UInt16(cmf) << 8 | UInt16(flg)) % 31 == 0
         let body = hasHeader ? Array(input[2...]) : input
         if hasHeader, flg & 0x20 != 0 { throw .unsupported("Flate stream with preset dictionary") }
+        let limit = outputLimit(forInput: input.count)
 
         var output: [UInt8] = []
+        var exceeded = false
         let ok: Bool = body.withUnsafeBufferPointer { src in
             let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
             defer { streamPointer.deallocate() }
@@ -62,6 +64,7 @@ enum StreamDecoder {
                 let status = compression_stream_process(streamPointer, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
                 let produced = chunk - streamPointer.pointee.dst_size
                 output.append(contentsOf: UnsafeBufferPointer(start: dst, count: produced))
+                if output.count > limit { exceeded = true; return false }
                 switch status {
                 case COMPRESSION_STATUS_END: return true
                 case COMPRESSION_STATUS_OK:
@@ -71,8 +74,17 @@ enum StreamDecoder {
                 }
             }
         }
+        if exceeded { throw .malformed("Flate stream inflates past \(limit) bytes") }
         guard ok else { throw .malformed("corrupt Flate stream") }
         return output
+    }
+
+    /// Structural streams (cross-reference and object streams) never need much expansion; a
+    /// bigger ratio is a decompression bomb. 64× the input with a 1 MB floor, at most 256 MB.
+    static func outputLimit(forInput count: Int) -> Int {
+        let ceiling = 256 << 20
+        let (scaled, overflow) = count.multipliedReportingOverflow(by: 64)
+        return overflow ? ceiling : min(ceiling, max(scaled, 1 << 20))
     }
 
     static func unpredict(_ data: [UInt8], parms: PDFDictionary?) throws(PDFSaveError) -> [UInt8] {
@@ -80,9 +92,17 @@ enum StreamDecoder {
         let colors = parms["Colors"]?.intValue ?? 1
         let bpc = parms["BitsPerComponent"]?.intValue ?? 8
         let columns = parms["Columns"]?.intValue ?? 1
-        guard colors > 0, bpc > 0, columns > 0 else { throw .malformed("bad predictor parameters") }
+        guard [1, 2, 4, 8, 16].contains(bpc), (1...32).contains(colors), (1...(1 << 20)).contains(columns) else {
+            throw .malformed("bad predictor parameters /Colors \(colors) /BitsPerComponent \(bpc) /Columns \(columns)")
+        }
         let bpp = max(1, colors * bpc / 8)
-        let rowLength = (colors * bpc * columns + 7) / 8
+        let (bits, o1) = (colors * bpc).multipliedReportingOverflow(by: columns)
+        let (padded, o2) = bits.addingReportingOverflow(7)
+        guard !o1, !o2 else { throw .malformed("predictor row length overflows") }
+        let rowLength = padded / 8
+        guard rowLength <= data.count || data.isEmpty else {
+            throw .malformed("predictor row of \(rowLength) bytes is longer than the data")
+        }
 
         if predictor == 2 {
             guard bpc == 8 else { throw .unsupported("TIFF predictor with \(bpc) bits per component") }

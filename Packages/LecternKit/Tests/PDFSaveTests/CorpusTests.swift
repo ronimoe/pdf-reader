@@ -117,7 +117,11 @@ import Testing
 
     struct VerifyReport: Decodable { let results: [String: [String: String]] }
 
-    func runVerify(_ check: String) throws {
+    func runVerify(_ check: String, available: Bool, mustApply: Set<String> = []) throws {
+        guard available else {
+            Issue.record("LECTERN_REQUIRE_TOOLS=1 but the tools for '\(check)' are missing (scripts/corpus/bootstrap)")
+            return
+        }
         _ = try Corpus.outcomes()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
@@ -133,6 +137,7 @@ import Testing
         let report = try #require(try? JSONDecoder().decode(VerifyReport.self, from: out),
                                   "verify produced no report (exit \(process.terminationStatus)): \(String(decoding: err, as: UTF8.self))")
         #expect(!report.results.isEmpty)
+        for name in mustApply { #expect(report.results[name] != nil, "\(name) missing from the verify report") }
         for (name, checks) in report.results.sorted(by: { $0.key < $1.key }) {
             for (criterion, status) in checks {
                 if status.hasPrefix("skip") {
@@ -142,34 +147,44 @@ import Testing
                     // "info" is a measurement (rendering of the no-/AP variant), not a criterion.
                     #expect(status.hasPrefix("pass") || status.hasPrefix("n/a") || status.hasPrefix("info"),
                             "\(name) \(criterion): \(status)")
+                    if mustApply.contains(name) {
+                        #expect(status.hasPrefix("pass"), "\(name) \(criterion) must be checked, got: \(status)")
+                    }
                 }
             }
         }
     }
 
+    // Each external check is gated on its tools. A missing tool shows up as a skipped test with
+    // the reason; with LECTERN_REQUIRE_TOOLS=1 (scripts/test.sh) the test runs and fails instead.
+
     // 2. Independent structural check.
-    @Test(.enabled(if: Tools.has("qpdf", "python3"), "qpdf or python3 not installed"))
-    func qpdfCheckPasses() throws { try runVerify("qpdf") }
+    @Test(.enabled(if: Tools.gate(Tools.qpdfCheck), "qpdf or python3 not installed"))
+    func qpdfCheckPasses() throws { try runVerify("qpdf", available: Tools.qpdfCheck) }
 
     // 2b. Every object of the original is unchanged in the new revision except the ones we rewrote.
-    @Test(.enabled(if: Tools.venv && Tools.has("qpdf"), "qpdf or repo .venv with pikepdf missing (scripts/corpus/bootstrap)"))
-    func untouchedObjectsUnchanged() throws { try runVerify("objects") }
+    @Test(.enabled(if: Tools.gate(Tools.objectsCheck), "qpdf or repo .venv with pikepdf missing (scripts/corpus/bootstrap)"))
+    func untouchedObjectsUnchanged() throws { try runVerify("objects", available: Tools.objectsCheck) }
 
-    // 4. Form field values byte-identical (A5).
-    @Test(.enabled(if: Tools.venv, "repo .venv with pikepdf missing (scripts/corpus/bootstrap)"))
-    func formFieldsUnchanged() throws { try runVerify("fields") }
+    // 4. Form field values byte-identical (A5). The form and the signed file must actually be checked.
+    @Test(.enabled(if: Tools.gate(Tools.venv), "repo .venv with pikepdf missing (scripts/corpus/bootstrap)"))
+    func formFieldsUnchanged() throws {
+        try runVerify("fields", available: Tools.venv, mustApply: ["acroform-filled", "signed-approval"])
+    }
 
-    // 5. Signature intact.
-    @Test(.enabled(if: Tools.venv, "repo .venv with pyHanko missing (scripts/corpus/bootstrap)"))
-    func signatureStillIntact() throws { try runVerify("signature") }
+    // 5. Signature intact; "n/a" is not acceptable for the signed file.
+    @Test(.enabled(if: Tools.gate(Tools.venv), "repo .venv with pyHanko missing (scripts/corpus/bootstrap)"))
+    func signatureStillIntact() throws {
+        try runVerify("signature", available: Tools.venv, mustApply: ["signed-approval"])
+    }
 
     // 6. Other readers: MuPDF, Poppler and pdf.js.
-    @Test(.enabled(if: Tools.has("mutool") && Tools.venv, "mutool or .venv missing"))
-    func mupdfShowsAndDrawsAnnotations() throws { try runVerify("mupdf") }
+    @Test(.enabled(if: Tools.gate(Tools.mupdfCheck), "mutool or .venv missing"))
+    func mupdfShowsAndDrawsAnnotations() throws { try runVerify("mupdf", available: Tools.mupdfCheck) }
 
-    @Test(.enabled(if: Tools.has("pdftoppm") && Tools.venv, "pdftoppm (poppler) or .venv missing"))
-    func popplerRendersHighlights() throws { try runVerify("poppler") }
+    @Test(.enabled(if: Tools.gate(Tools.popplerCheck), "pdftoppm (poppler) or .venv missing"))
+    func popplerRendersHighlights() throws { try runVerify("poppler", available: Tools.popplerCheck) }
 
-    @Test(.enabled(if: Tools.pdfjs, "node, pdfjs-dist, @napi-rs/canvas or .venv missing (scripts/corpus/bootstrap)"))
-    func pdfjsShowsAnnotations() throws { try runVerify("pdfjs") }
+    @Test(.enabled(if: Tools.gate(Tools.pdfjs), "node, pdfjs-dist, @napi-rs/canvas or .venv missing (scripts/corpus/bootstrap)"))
+    func pdfjsShowsAnnotations() throws { try runVerify("pdfjs", available: Tools.pdfjs) }
 }

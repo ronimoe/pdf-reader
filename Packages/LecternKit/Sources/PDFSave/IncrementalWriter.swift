@@ -20,6 +20,16 @@ public struct IncrementalWriter: Sendable {
             self.date = date
             self.verify = verify
         }
+
+        /// Test-only fault injection, so tests can prove the post-write check catches damage.
+        var testHooks = TestHooks()
+    }
+
+    struct TestHooks: Sendable {
+        /// Runs on the objects to write after the expected state is fixed, before serialising.
+        var mutateWritten: (@Sendable (inout [ObjectRef: PDFObject]) -> Void)?
+        /// Runs on the complete output before verification.
+        var mutateOutput: (@Sendable (inout [UInt8]) -> Void)?
     }
 
     public var options: Options
@@ -48,6 +58,7 @@ private struct Session {
     /// Working copies of `/Annots` for pages we touched.
     var pageAnnots: [Int: [PDFObject]] = [:]
     var annotationPage: [ObjectRef: Int]?
+    var edited = Set<ObjectRef>()
 
     init(doc: PDFSaveDocument, options: IncrementalWriter.Options) {
         self.doc = doc
@@ -59,7 +70,8 @@ private struct Session {
         dateString = String(format: "D:%04d%02d%02d%02d%02d%02dZ", c.year!, c.month!, c.day!, c.hour!, c.minute!, c.second!)
     }
 
-    mutating func allocate() -> ObjectRef {
+    mutating func allocate() throws(PDFSaveError) -> ObjectRef {
+        guard nextNumber < PDFSaveDocument.maxObjects else { throw .unsupported("object numbers exhausted") }
         defer { nextNumber += 1 }
         return ObjectRef(nextNumber, 0)
     }
@@ -109,12 +121,12 @@ private struct Session {
             let minX = points.map(\.x).min()!, maxX = points.map(\.x).max()!
             let minY = points.map(\.y).min()!, maxY = points.map(\.y).max()!
             let rect = PDFRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-            let ref = allocate()
+            let ref = try allocate()
             var d = common(subtype: "Highlight", page: pageRef, rect: rect, color: h.color,
                            contents: h.contents, author: h.author, flags: 4)
             d["QuadPoints"] = .array(points.flatMap { [PDFObject.number($0.x), .number($0.y)] })
             if options.appearanceStreams {
-                let ap = allocate()
+                let ap = try allocate()
                 written[ap] = .stream(AppearanceStreams.highlight(quads: h.quads, color: h.color, bbox: rect))
                 d["AP"] = .dictionary(["N": .reference(ap)])
             }
@@ -126,14 +138,14 @@ private struct Session {
             let pageRef = try doc.pageRef(at: n.pageIndex)
             let size = 20.0
             let rect = PDFRect(x: n.origin.x, y: n.origin.y, width: size, height: size)
-            let ref = allocate()
+            let ref = try allocate()
             // Print | NoZoom | NoRotate, as Acrobat and Preview write sticky notes.
             var d = common(subtype: "Text", page: pageRef, rect: rect, color: n.color,
                            contents: n.contents, author: n.author, flags: 28)
             d["Name"] = .name("Comment")
             d["Open"] = .bool(false)
             if options.appearanceStreams {
-                let ap = allocate()
+                let ap = try allocate()
                 written[ap] = .stream(AppearanceStreams.note(size: size, color: n.color))
                 d["AP"] = .dictionary(["N": .reference(ap)])
             }
@@ -148,20 +160,33 @@ private struct Session {
             guard case .dictionary(var d) = current, d["Subtype"] != nil else {
                 throw .unsupported("\(ref) is not an annotation dictionary")
             }
+            guard !d.hasDuplicateKeys else { throw .unsupported("annotation \(ref) has duplicate keys") }
             d["Contents"] = .text(text)
             d["M"] = .text(dateString)
+            if d["Subtype"]?.nameValue == "FreeText" {
+                // A FreeText appearance (and its rich text) draws the old text. Drop both so viewers
+                // regenerate the appearance from /Contents and /DA.
+                d["AP"] = nil
+                d["RC"] = nil
+            }
             written[ref] = .dictionary(d)
             rewritten.insert(ref)
+            edited.insert(ref)
 
         case .delete(let ref):
             let page = try page(of: ref)
-            var targets: Set<ObjectRef> = [ref]
             let infos = try doc.annotations(onPage: page)
-            if let popup = infos.first(where: { $0.ref == ref })?.popup { targets.insert(popup) }
-            // Replies (/IRT) to the deleted annotation go with it, as in Acrobat.
-            for info in infos where info.inReplyTo == ref {
-                targets.insert(info.ref)
-                if let p = info.popup { targets.insert(p) }
+            // Replies (/IRT) go with the annotation, as in Acrobat, and so do replies to replies.
+            var targets: Set<ObjectRef> = [ref]
+            var queue = [ref]
+            while let current = queue.popLast() {
+                for info in infos where info.inReplyTo == current && !targets.contains(info.ref) {
+                    targets.insert(info.ref)
+                    queue.append(info.ref)
+                }
+            }
+            for info in infos where targets.contains(info.ref) {
+                if let popup = info.popup { targets.insert(popup) }
             }
             let before = try annots(page)
             let after = before.filter { item in item.referenceValue.map { !targets.contains($0) } ?? true }
@@ -175,19 +200,24 @@ private struct Session {
         for (page, items) in pageAnnots.sorted(by: { $0.key < $1.key }) {
             let location = try doc.annots(ofPage: page)
             guard items != location.items else { continue }
-            switch location {
-            case .indirect(let r, _):
+            // An indirect array that only this page uses is rewritten in place. One shared with
+            // other pages must not be, or the change would appear on every page: this page gets
+            // its own direct array instead.
+            if case .indirect(let r, _) = location, try doc.pagesSharing(annotsArray: r) == 1 {
                 let ref = try existingRef(r.number)
                 written[ref] = .array(items)
                 rewritten.insert(ref)
-            case .absent, .direct:
+            } else {
                 let pageRef = try existingRef(try doc.pageRef(at: page).number)
                 guard var dict = try doc.dictionary(pageRef) else { throw .malformed("page \(pageRef) is not a dictionary") }
+                guard !dict.hasDuplicateKeys else { throw .unsupported("page \(pageRef) has duplicate keys") }
                 dict["Annots"] = .array(items)
                 written[pageRef] = .dictionary(dict)
                 rewritten.insert(pageRef)
             }
         }
+        // An annotation can't be both edited and deleted (or removed as a popup or reply) in one save.
+        if let clash = edited.first(where: { removed.contains($0) }) { throw .annotationNotFound(clash) }
         // Edits were keyed with the caller's reference; normalise their generations too.
         for ref in rewritten where written[ref] != nil {
             let fixed = try existingRef(ref.number)
@@ -213,11 +243,13 @@ private struct Session {
         if let last = original.last, last != 0x0A, last != 0x0D { out.append(0x0A) }
         var offsets: [ObjectRef: Int] = [:]
         var session = self
-        let ordered = written.keys.sorted()
+        var toWrite = written
+        options.testHooks.mutateWritten?(&toWrite)
+        let ordered = toWrite.keys.sorted()
         for ref in ordered {
             offsets[ref] = original.count + out.count
             out += Array("\(ref.number) \(ref.generation) obj\n".utf8)
-            PDFSerializer.write(written[ref]!, to: &out)
+            PDFSerializer.write(toWrite[ref]!, to: &out)
             out += Array("\nendobj\n".utf8)
         }
 
@@ -249,7 +281,7 @@ private struct Session {
             PDFSerializer.write(trailer, to: &out)
             out += Array("\n".utf8)
         case .stream:
-            let xref = session.allocate()
+            let xref = try session.allocate()
             offsets[xref] = xrefOffset
             let all = (ordered + [xref]).sorted()
             let maxOffset = offsets.values.max() ?? 0
@@ -280,39 +312,61 @@ private struct Session {
         }
         out += Array("startxref\n\(xrefOffset)\n%%EOF\n".utf8)
 
-        let output = original + out
+        var output = original + out
+        options.testHooks.mutateOutput?(&output)
         if options.verify { try verify(output: output, originalCount: original.count) }
         return SaveResult(
             data: Data(output), originalLength: original.count, xrefKind: kind,
             addedAnnotations: added, rewrittenObjects: rewritten.sorted(),
-            writtenObjects: session.written.keys.sorted(), removedAnnotations: removed
+            writtenObjects: Set(toWrite.keys).union(session.written.keys).sorted(), removedAnnotations: removed
         )
     }
 
     /// Post-write check: the output re-parses with our own reader, the chain points back at the
-    /// original, and every object we wrote reads back identically.
+    /// original, every object we wrote reads back identically, and every page we didn't touch
+    /// still resolves to exactly what it was (same page objects, same /Annots, same annotations).
     func verify(output: [UInt8], originalCount: Int) throws(PDFSaveError) {
-        guard output.count > originalCount, Array(output[0..<originalCount]) == Array(doc.bytes) else {
+        do {
+            try verifyChecks(output: output, originalCount: originalCount)
+        } catch .verificationFailed(let reason) {
+            throw .verificationFailed(reason)
+        } catch {
+            throw .verificationFailed("output does not resolve: \(error)")
+        }
+    }
+
+    private func verifyChecks(output: [UInt8], originalCount: Int) throws(PDFSaveError) {
+        guard output.count > originalCount, Array(output[0..<originalCount]) == doc.bytes else {
             throw .verificationFailed("original bytes are not a prefix of the output")
         }
-        let reread: PDFSaveDocument
-        do { reread = try PDFSaveDocument(bytes: output) } catch {
-            throw .verificationFailed("output does not re-parse: \(error)")
-        }
+        let reread = try PDFSaveDocument(bytes: output)
         guard reread.sections.count == doc.sections.count + 1,
               reread.sections[0].trailer["Prev"]?.intValue == doc.startXRef else {
             throw .verificationFailed("new section does not chain to the original")
         }
-        guard reread.pageCount == doc.pageCount else { throw .verificationFailed("page count changed") }
+        guard reread.pageRefs == doc.pageRefs else { throw .verificationFailed("page tree changed") }
         for (ref, object) in written {
             let back = try reread.object(ref)
             guard PDFSerializer.bytes(back) == PDFSerializer.bytes(object) else {
                 throw .verificationFailed("object \(ref) does not read back identically")
             }
         }
-        for (page, items) in pageAnnots {
-            guard try reread.annots(ofPage: page).items == items else {
-                throw .verificationFailed("page \(page) /Annots does not read back as written")
+        func same(_ ref: ObjectRef) throws(PDFSaveError) -> Bool {
+            PDFSerializer.bytes(try reread.object(ref)) == PDFSerializer.bytes(try doc.object(ref))
+        }
+        for (page, pageRef) in doc.pageRefs.enumerated() {
+            let expected: [PDFObject]
+            if let touched = pageAnnots[page] { expected = touched } else { expected = try doc.annots(ofPage: page).items }
+            let actual = try reread.annots(ofPage: page).items
+            guard actual == expected else {
+                throw .verificationFailed("page \(page + 1) /Annots does not read back as expected")
+            }
+            if written[pageRef] == nil, !(try same(pageRef)) {
+                throw .verificationFailed("untouched page \(page + 1) changed")
+            }
+            for item in actual {
+                guard let ref = item.referenceValue, written[ref] == nil else { continue }
+                guard try same(ref) else { throw .verificationFailed("annotation \(ref) on page \(page + 1) changed") }
             }
         }
     }

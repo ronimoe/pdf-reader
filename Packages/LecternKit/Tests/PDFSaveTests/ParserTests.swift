@@ -165,7 +165,8 @@ import Testing
 
     @Test func refusesStaleXRef() {
         let data = Self.minimalPDF(corruptOffset: true)
-        #expect(throws: PDFSaveError.self) {
+        // Object 3's entry points 5 bytes early, into the previous object's "endobj".
+        #expect(throws: PDFSaveError.malformed("expected integer at offset 114")) {
             try IncrementalWriter().save(original: data, changes: [
                 .addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 10, y: 10), contents: "x")),
             ])

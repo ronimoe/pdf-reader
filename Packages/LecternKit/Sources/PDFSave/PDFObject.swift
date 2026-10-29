@@ -98,6 +98,9 @@ public struct PDFDictionary: Equatable, Sendable {
     }
 
     public private(set) var entries: [Entry]
+    /// True when the source dictionary repeated a key. Readers disagree on such files, so the
+    /// writer refuses to rewrite them.
+    public internal(set) var hasDuplicateKeys = false
 
     public init(_ entries: [Entry] = []) { self.entries = entries }
 
@@ -170,7 +173,7 @@ public indirect enum PDFObject: Equatable, Sendable {
     public var intValue: Int? {
         switch self {
         case .integer(let i): i
-        case .real(let r): Double(r).map { Int($0) }
+        case .real(let r): Double(r).flatMap { Int(exactly: $0.rounded(.towardZero)) }
         default: nil
         }
     }

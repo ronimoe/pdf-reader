@@ -216,7 +216,6 @@ struct PDFParser {
     mutating func parseDictionary(depth: Int) throws(PDFSaveError) -> PDFDictionary {
         pos += 2  // '<<'
         var dict = PDFDictionary()
-        var seen = Set<PDFName>()
         while true {
             skipWhitespace()
             guard pos + 1 < bytes.count else { throw fail("unterminated dictionary") }
@@ -224,8 +223,11 @@ struct PDFParser {
             guard bytes[pos] == UInt8(ascii: "/") else { throw fail("dictionary key is not a name") }
             let key = parseName()
             let value = try parseObject(depth: depth + 1)
-            // Duplicate keys: the first one wins, as in most readers; keep it out of the rewrite.
-            if seen.insert(key).inserted { dict[key] = value }
+            // Duplicate keys: the last value wins, as in qpdf, MuPDF and Poppler. The dictionary is
+            // flagged so the writer never rewrites it (re-serialising would drop the earlier value,
+            // and readers that keep the first one would then see a different object).
+            if dict[key] != nil { dict.hasDuplicateKeys = true }
+            dict[key] = value
         }
         return dict
     }
@@ -285,16 +287,17 @@ struct PDFParser {
             default: length = nil
             }
             var dataEnd: Int?
-            if let length, length >= 0, dataStart + length <= bytes.count {
+            if let length {
+                // A /Length we could read must be exact; a wrong one means the file is damaged.
+                guard length >= 0, length <= bytes.count - dataStart else { throw fail("stream /Length \(length) out of range") }
                 var p = PDFParser(bytes: bytes, pos: dataStart + length)
                 p.skipWhitespace()
-                if p.peekKeyword("endstream") {
-                    dataEnd = dataStart + length
-                    pos = p.pos + "endstream".utf8.count
-                }
+                guard p.peekKeyword("endstream") else { throw fail("stream /Length \(length) does not end at endstream") }
+                dataEnd = dataStart + length
+                pos = p.pos + "endstream".utf8.count
             }
             if dataEnd == nil {
-                // /Length is wrong or unresolvable: fall back to the endstream keyword.
+                // /Length is missing or an unresolvable reference: fall back to the endstream keyword.
                 guard let found = PDFParser.find(Array("endstream".utf8), in: bytes, from: dataStart) else {
                     throw fail("stream without endstream")
                 }

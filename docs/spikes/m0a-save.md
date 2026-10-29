@@ -45,17 +45,28 @@ deletes can address them.
 **What a save writes**
 - New annotation objects and their appearance streams, numbered from the old `/Size`.
 - Edited annotation objects. Each keeps its number and generation, and gets new `/Contents` and `/M`.
-- For each touched page, its **indirect `/Annots` array** if there is one. Otherwise it rewrites the
-  **page object**, and only its `/Annots` changes. Deleting an annotation also removes its `/Popup` and
-  any `/IRT` replies.
+  A FreeText annotation also loses its `/AP` and `/RC`, so viewers redraw it from the new text.
+- For each touched page, its **indirect `/Annots` array** if only that page uses it. Otherwise it
+  rewrites the **page object** with a direct array, so an array shared by several pages is never
+  changed for all of them. Only `/Annots` changes on the page.
+- Deleting an annotation also removes its `/Popup` and all its `/IRT` replies, including replies to
+  replies. Editing an annotation that the same save deletes throws `.annotationNotFound`.
+- **Refusals.** The writer never rewrites a dictionary that repeats a key (`.unsupported`). Readers
+  keep the last value, as the parser now does, but re-serialising would drop the earlier one.
 - A classic table if the latest section is a table (hybrid files count as tables), or an unfiltered
   cross-reference stream if the latest section is a stream.
 - A trailer with every key of the previous trailer, plus `/Prev`, `/Size`, `/Root`, `/Info` and `/ID`.
   `/ID` keeps the first element and gets a new second element.
-- **Post-write self-check.** Before returning, the writer re-parses its own output and checks four
-  things. The original is a prefix. The new section chains to the old `startxref`. The page count is
-  unchanged. Every written object and every page's `/Annots` reads back identically. If any check
-  fails, it throws `.verificationFailed`.
+- **Post-write self-check.** Before returning, the writer re-parses its own output and checks:
+  - the original is a prefix;
+  - the new section chains to the old `startxref`;
+  - the page tree resolves to the same page objects;
+  - every written object reads back identically;
+  - every page's `/Annots` resolves to what was written, or, on untouched pages, to exactly the
+    original. Every untouched page and annotation object is also unchanged.
+
+  If any check fails, it throws `.verificationFailed`. The self-check shares the parser with the
+  writer, so it can't catch the parser's own misreadings; the external checks below cover that.
 
 **Corpus and tooling**
 - `scripts/corpus/generate` produces the files in `Tests/Corpus/public/`. Each file's source and licence
@@ -69,12 +80,21 @@ deletes can address them.
   - parser unit tests: escapes, names, references, Flate, all five PNG predictors and generation
     numbers above 0;
   - writer error paths: encrypted, a stale cross-reference and unknown targets;
+  - review fixes: shared `/Annots` arrays, duplicate keys, transitive reply deletion, edit-and-delete,
+    FreeText edits, hybrid precedence (table entry wins; a free table entry hides the `/XRefStm` entry,
+    as in qpdf and MuPDF), indirect `/Length`, and fault injection proving `.verificationFailed` fires;
+  - malformed input: oversized or negative `/Size`, `/Length`, `/XRefStm`, `/Index`, subsection and
+    object-stream offsets, bad predictor parameters and a Flate bomb all throw `.malformed`;
+  - a deterministic fuzz test: 2,000 seeded mutations and truncations of the corpus, each of which must
+    throw a `PDFSaveError` or save and pass verification.
   - the corpus run, where criteria 1, 3 and 7 and the PDFKit render are checked in Swift.
-- Seven tests each call `verify` for one external criterion. Each is gated with `.enabled(if:)` on its
-  tool, so a missing tool is reported as a skipped test with a reason. If a tool is present but `verify`
-  still reports `skip`, the test records an issue.
-- `scripts/test.sh` passes in full: 26 PDFSave tests, the existing ReaderCore and Persistence tests, and
-  the 3 app tests.
+- Seven tests each call `verify` for one external criterion.
+  - Each is gated with `.enabled(if:)` on its tool, so a missing tool shows as a skipped test with a
+    reason.
+  - With `LECTERN_REQUIRE_TOOLS=1`, the tests run anyway and fail on a missing tool.
+  - A `skip` from `verify` while the tool is present is recorded as an issue.
+  - The signed and form files must report `pass`, not `n/a`.
+- `swift test` passes: 57 PDFSave tests plus the existing ReaderCore and Persistence tests.
 
 ## Results
 
@@ -204,15 +224,14 @@ Every refusal is a typed error that routes the document to Save a Copy.
 - **Annotations the writer can't address:**
   - Direct (inline) annotation dictionaries in `/Annots` have no object reference, so they can't be
     edited or deleted.
-  - An indirect `/Annots` array shared between pages would be changed for every page that shares it.
 
 **What's missing from saves**
 - **Deletion leaves the object in place.** A deleted annotation is unlinked, not freed, so its object
   stays in the file, which is valid. This matches what most tools do.
 - **No `/Popup`** is created for new annotations.
 - **Tagged PDFs.** New annotations get no `/StructParent` or structure element.
-- **Editing third-party annotations** changes `/Contents` and `/M` only. It doesn't regenerate their
-  `/AP`, so a FreeText annotation would still draw the old text.
+- **Editing third-party annotations** changes `/Contents` and `/M` only. FreeText loses its `/AP` and
+  `/RC` so viewers regenerate it; no other subtype's appearance is regenerated.
 - **Uncompressed output.** Appearance and cross-reference streams are written unfiltered. That's a few
   hundred bytes per save.
 
@@ -221,8 +240,11 @@ Every refusal is a typed error that routes the document to Save a Copy.
 - **Acrobat Reader** isn't installed, so it is unverified.
 - **The corpus is generated only.** No real-world files were tried, because `Tests/Corpus/private/` is
   empty on this machine.
-- **Robustness against malformed input.** Swift bounds checks turn an out-of-range index into a trap
-  rather than memory corruption, but the parser hasn't been fuzzed.
+- **Robustness against malformed input** is covered by a targeted test suite and a 2,000-iteration
+  seeded fuzz test, not by long-running coverage-guided fuzzing.
+- **Stricter than readers.** A stream `/Length` that's readable but wrong now makes the file
+  `.malformed`, where readers would search for `endstream`. This only affects the streams the writer
+  reads: cross-reference streams and object streams.
 
 ## What the production writer still needs (M4)
 
@@ -238,8 +260,8 @@ Every refusal is a typed error that routes the document to Save a Copy.
    streams that match PDFKit's look.
 3. **Editing existing third-party annotations.**
    - Colour and quads need editing, not just `Contents`.
-   - Regenerate `/AP` for subtypes that draw their text, such as FreeText. Keep the existing `/AP` for
-     the others.
+   - Generate a proper `/AP` for edited FreeText (today it is dropped for the viewer to regenerate).
+     Keep the existing `/AP` for the others.
 4. **Wiring into the save path.**
    - Snapshot the annotation changes.
    - Run `IncrementalWriter` off the main thread. Its built-in self-check runs as part of the save.
@@ -248,7 +270,7 @@ Every refusal is a typed error that routes the document to Save a Copy.
    - On any `PDFSaveError`, or for a signed, encrypted or `/Perms` file, offer Save a Copy (A1).
 5. **Scale and safety.**
    - Avoid copying the file twice: use `Data` or memory-mapped input instead of `[UInt8]`.
-   - Fuzz `PDFParser` and `PDFSaveDocument`.
+   - Coverage-guided fuzzing of `PDFParser` and `PDFSaveDocument` beyond the seeded test.
    - Run the writer over the private real-world corpus.
    - Decide whether to write new objects into a compressed object stream (optional).
 6. **Encrypted documents.** Decide whether encrypting the new objects is worth it. The other option is

@@ -36,6 +36,10 @@ public struct AnnotationInfo: Sendable, Equatable {
 /// A read-only, structural view of a PDF file: its cross-reference chain, objects and pages.
 /// It reads only what the incremental writer needs and never repairs a damaged file.
 public final class PDFSaveDocument {
+    /// Upper bound on object numbers and cross-reference entries. Anything larger is treated as
+    /// damage rather than allocated.
+    static let maxObjects = 10_000_000
+
     let bytes: [UInt8]
     private(set) var entries: [Int: XRefEntry] = [:]
     private(set) var sections: [XRefSection] = []
@@ -102,7 +106,10 @@ public final class PDFSaveDocument {
                 let (e, trailerDict) = try readTable(at: offset)
                 sectionEntries = e
                 var hybrid: Int?
-                if let x = trailerDict["XRefStm"]?.intValue {
+                if let stm = trailerDict["XRefStm"] {
+                    guard let x = stm.intValue, x > 0, x < bytes.count, x != offset else {
+                        throw .malformed("/XRefStm out of range in section at \(offset)")
+                    }
                     // Hybrid file: the table's own entries win; the stream fills in the rest.
                     let (streamEntries, _) = try readXRefStream(at: x)
                     for (num, entry) in streamEntries where sectionEntries[num] == nil {
@@ -119,10 +126,20 @@ public final class PDFSaveDocument {
             // Newer sections win, including their free entries.
             for (num, entry) in sectionEntries where entries[num] == nil { entries[num] = entry }
             sections.append(section)
-            size = max(size, section.trailer["Size"]?.intValue ?? 0)
-            next = section.trailer["Prev"]?.intValue
+            guard let sectionSize = section.trailer["Size"]?.intValue, sectionSize >= 0,
+                  sectionSize <= Self.maxObjects else {
+                throw .malformed("missing or out-of-range /Size in section at \(offset)")
+            }
+            size = max(size, sectionSize)
+            switch section.trailer["Prev"] {
+            case nil: next = nil
+            case let prev?:
+                guard let p = prev.intValue else { throw .malformed("non-integer /Prev in section at \(offset)") }
+                next = p
+            }
         }
         size = max(size, (entries.keys.max() ?? 0) + 1)
+        guard size <= Self.maxObjects else { throw .malformed("more than \(Self.maxObjects) objects") }
         // The update trailer copies the newest trailer's keys; fall back to older ones for
         // /Root, /Info and /ID if a sloppy writer left them out of the newest.
         trailer = sections[0].trailer
@@ -140,7 +157,9 @@ public final class PDFSaveDocument {
             if p.peekKeyword("trailer") { break }
             let start = try p.readInteger()
             let count = try p.readInteger()
-            guard start >= 0, count >= 0, count < 10_000_000 else { throw p.fail("bad xref subsection") }
+            guard start >= 0, count >= 0, start <= Self.maxObjects, count <= Self.maxObjects - start else {
+                throw p.fail("bad xref subsection \(start) \(count)")
+            }
             for i in 0..<count {
                 let field1 = try p.readInteger()
                 let field2 = try p.readInteger()
@@ -187,6 +206,9 @@ public final class PDFSaveDocument {
         }
         for pair in stride(from: 0, to: index.count, by: 2) {
             let first = index[pair], count = index[pair + 1]
+            guard first >= 0, count >= 0, first <= Self.maxObjects, count <= Self.maxObjects - first else {
+                throw .malformed("bad /Index entry \(first) \(count) in cross-reference stream")
+            }
             for i in 0..<count {
                 guard cursor + rowWidth <= data.count else { throw .malformed("cross-reference stream too short") }
                 let type = field(w[0], default: 1)
@@ -243,14 +265,14 @@ public final class PDFSaveDocument {
                 throw .malformed("object \(streamNumber) is not an object stream")
             }
             guard let n = stream.dictionary["N"]?.intValue, let first = stream.dictionary["First"]?.intValue,
-                  n >= 0, first >= 0 else { throw .malformed("object stream \(streamNumber) lacks /N or /First") }
+                  n >= 0, first >= 0, n <= Self.maxObjects else { throw .malformed("object stream \(streamNumber) lacks /N or /First") }
             let data = try StreamDecoder.decode(stream)
             var header = PDFParser(bytes: data)
             var pairs: [(Int, Int)] = []
             for _ in 0..<n { pairs.append((try header.readInteger(), try header.readInteger())) }
             var objects: [Int: PDFObject] = [:]
             for (num, off) in pairs {
-                guard first + off < data.count else { throw .malformed("object stream \(streamNumber) offset out of range") }
+                guard off >= 0, num >= 0, first < data.count, off < data.count - first else { throw .malformed("object stream \(streamNumber) offset out of range") }
                 var p = PDFParser(bytes: data, pos: first + off)
                 objects[num] = try p.parseObject()
             }
@@ -341,6 +363,15 @@ public final class PDFSaveDocument {
             }
         default: throw .malformed("/Annots of page \(ref) is not an array")
         }
+    }
+
+    /// How many pages point at this indirect `/Annots` array object.
+    func pagesSharing(annotsArray ref: ObjectRef) throws(PDFSaveError) -> Int {
+        var count = 0
+        for pageRef in pageRefs {
+            if try dictionary(pageRef)?["Annots"]?.referenceValue?.number == ref.number { count += 1 }
+        }
+        return count
     }
 
     /// The annotations listed on a page, in `/Annots` order. Direct (inline) annotation
