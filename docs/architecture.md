@@ -31,6 +31,12 @@ This document answers the technical questions that [product-spec.md](product-spe
 - the empty state,
 - the password prompt.
 
+**The empty state and untitled documents** *(Amended 2026-10-29, M1)*
+- A reader has no untitled documents. `ReaderDocumentController`, an `NSDocumentController` subclass, refuses to make one, and New opens the Open panel instead.
+- The subclass must be created in `main.swift` before `NSApplicationMain`, because the first instance becomes `.shared`.
+- AppKit asks for an untitled document at launch when nothing was opened or restored, and on a Dock click with no windows. `applicationOpenUntitledFile` answers both by showing the empty-state window.
+- The document controller reports every add and remove, one run-loop turn later. The empty state is shown whenever the count reaches zero and hidden otherwise.
+
 **Why not SwiftUI throughout?** SwiftUI's document architecture (`DocumentGroup`) doesn't give enough control over four things this app depends on:
 - saving (A1),
 - reacting when the file changes on disk (B7),
@@ -131,6 +137,9 @@ App (AppKit shell)
 PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's author all change the `PDFDocument` itself. So:
 
 - **Rotation (B9)** is applied with `PDFPage.rotation` in the shared model, because PDFKit offers no separate per-view rotation [verify]. The original value of every page is recorded when the document opens.
+  - *(Amended 2026-10-29, M1)* For an encrypted document, "opens" means the moment it is first unlocked, because the pages aren't readable before then. `ReaderDocument.originalPageRotations` and `originalRotation(ofPageAt:)` give the save path these values.
+  - The view rotation is applied as `original + ViewSettings.rotation` on every page.
+  - Printing uses the on-screen model, so a rotated view prints rotated, as in Preview.
 - **Form fields (A5)** stay non-editable because `ReaderPDFView` catches mouse and keyboard events aimed at them. Their `isReadOnly` flag is never set. Prototype check [verify]: whether keyboard focus can still reach a field.
 - **The author (B4)** is set only on new annotations, from Settings, where the default is empty.
 
@@ -177,6 +186,13 @@ The pane captures the anchor before any of these, and restores it afterwards:
 
 The same type is stored as the reading position (A2) and used for history entries (B2).
 
+**Zoom and fit modes** *(Amended 2026-10-29, M1)*
+- `ReaderPDFView` turns PDFKit's `autoScales` off and owns the zoom mode itself.
+- **Fit Page and Fit Width** are computed from `rowSize(for:)`, which accounts for two-up spreads, cover-page layout, page margins and rotation. They are measured against the area below the toolbar (the safe area, because the window uses a full-size content view).
+- A fit mode is recomputed on every frame or safe-area change, and after every layout or rotation change.
+- A pinch or other direct zoom turns the mode into a fixed scale.
+- Until M2's anchors land, layout and rotation changes keep the current page in view but not the exact point on it.
+
 ### 4.6 Concurrency
 
 **Main thread:** all UI, and the `PDFDocument` shared by the panes.
@@ -199,7 +215,10 @@ The same type is stored as the reading position (A2) and used for history entrie
 | `ReadingAnchor` | ReaderCore | `pageIndex`, `pointInPage`, `scale`. Used for keeping your place, the stored position, and history entries |
 | `HistoryStack` | ReaderCore | Back and forward lists of `ReadingAnchor`, one per pane. A search session adds one entry (B2) |
 | `DocumentIdentity` | ReaderCore | File bookmark data, the PDF's internal `/ID` pair, page count, file size, last known path (A2) |
-| `ViewSettings` | ReaderCore | Pages, Scrolling, cover-page and right-to-left overrides (B1), rotation (B9), zoom mode, sidebar section |
+| `ViewSettings` | ReaderCore | Pages, Scrolling, cover-page and right-to-left overrides (B1), rotation (B9), zoom mode. The sidebar section is added with the sidebar in M2 *(Amended 2026-10-29, M1)* |
+| `DocumentLayoutHints` | ReaderCore | The catalog's `/PageLayout` (`TwoPageRight`/`TwoColumnRight` puts the cover page alone) and `/ViewerPreferences /Direction /R2L`, read through `CGPDFDocument` once the document is unlocked. These are the defaults the `ViewSettings` overrides replace (B1) *(Added 2026-10-29, M1)* |
+| `DocumentKey` | ReaderCore | `id:` plus the trailer's first `/ID` element as hex. Encrypted files add `;enc:` plus a SHA-256 of the encryption dictionary's `/O` and `/U` entries, because the `/ID` survives re-encryption with another password. Files with no `/ID`, or an unreadable encryption dictionary, get `sha256:` plus a hash of the first 64 KB. Readable while the document is locked. Keys remembered passwords (B6) *(Added 2026-10-29, M1)* |
+| `DocumentPasswordStore` | Persistence | Protocol for remembered passwords, keyed by `DocumentKey`. `KeychainPasswordStore` in the app, `InMemoryPasswordStore` in tests *(Added 2026-10-29, M1)* |
 | `DocumentState` | Persistence | Identity, last anchor, per-pane history, reader bookmarks, view settings. Written to disk as JSON |
 | `AnnotationChange` | PDFSave | Add, edit or delete of one annotation, with its full properties. Feeds the crash journal and the writer |
 | `LinkTarget` | ReaderKit | A link's destination or action, classified for routing (§4.4) |
@@ -222,6 +241,10 @@ The same type is stored as the reading position (A2) and used for history entrie
 - **Session restore:** AppKit window restoration, which brings back windows, tabs, splits and each pane's anchor (B3).
 - **Settings:** `UserDefaults`.
 - **Passwords:** Keychain, only when "Remember in Keychain" is ticked (B6).
+  - *(Amended 2026-10-29, M1)* These are generic-password items in the file-based login keychain: service `io.github.ronimoe.Lectern.document-password`, with the `DocumentKey` as the account.
+  - The data-protection keychain would need a `keychain-access-groups` entitlement, which needs a team-signed build.
+  - A remembered password is tried when the document opens. It unlocks a locked document, and a remembered owner password also lifts a restricted document's limits. A remembered password that no longer gains access is deleted; because the key includes the encryption entries, the entry can only be this file's own. On an open document only the owner password counts as gaining access, since PDFKit's `unlock` then accepts any string.
+  - **Known limitation while builds are ad-hoc signed:** each build has a different code signature, so a new build reading an item saved by an older one may get a Keychain access prompt. This is unverified.
 
 **Sandbox: on.** The App Sandbox is optional for direct DMG distribution, but turning it on limits the damage a hostile PDF could do through the rendering engine. It means:
 
@@ -230,6 +253,7 @@ The same type is stored as the reading position (A2) and used for history entrie
 | Read-write access to files the user chooses | Opening and saving documents |
 | Security-scoped file bookmarks | `DocumentIdentity`, so state survives restarts (A2) |
 | Outgoing network connections | Only so the opt-in update checks can work (A4) |
+| Printing | `com.apple.security.print`, so Print works inside the sandbox *(Added 2026-10-29, M1)* |
 | Sparkle's `mach-lookup` temporary exception | Sparkle's installer service runs outside the sandbox (A4) |
 | `com.apple.security.cs.disable-library-validation` | Needed for as long as the app is signed ad-hoc. Without it the hardened runtime refuses to load the embedded Sparkle framework |
 

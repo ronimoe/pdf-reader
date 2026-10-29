@@ -70,3 +70,27 @@ A running log of the unattended v1 build. Each milestone records what landed, ho
 - Clicking Open Anyway.
 - Sparkle's standard UI, updates over HTTPS, and its scheduled updates.
 - Whether a GitHub-hosted tap needs `brew trust`.
+
+## M1: Reader shell (branch `m1-shell`, PR #3)
+
+**Landed**
+- **Windows and tabs:** native tabs and multiple windows, full screen, drag-and-drop, and an already-open file brings its tab forward.
+- **Empty state:** Open Document and the recent files only.
+- **Layouts (B1):** Pages and Scrolling, plus cover-page and right-to-left defaults read from the catalog.
+- **Zoom:** fit modes that survive resizes.
+- **Rotation (B9):** view-only, with the original rotations recorded for the save path.
+- **Passwords and permissions (B6):** the password sheet, opt-in Keychain, a document key that hashes `/O` and `/U` for encrypted files, permission gating with explanations, and the owner-password unlock.
+- **Printing, toolbar, View menu.**
+- **Context menu:** our own, so text-sharing items can't leak copy-restricted text.
+
+**Review:** the code-reviewer found one blocker, the context menu sharing restricted text through Look Up, Translate and Search with Google, plus four should-fix items. All are fixed.
+
+**Verified**
+- `scripts/test.sh`: 38 package tests and 68 app-hosted tests.
+- The app launches with a PDF and quits cleanly.
+
+**Not verified**
+- The on-screen look: you declined screen access, so this is checked offscreen only.
+- Real drag-and-drop.
+- VoiceOver.
+- That AppKit adds exactly the expected text-sharing items to the context menu.
