@@ -8,7 +8,7 @@ Lectern 1.0 is a reader first, with highlights and notes. This page lists what i
 - **Not signed with an Apple Developer ID, and not notarised.** The app has an ad-hoc signature only. macOS blocks a downloaded copy the first time you open it, and you allow it once in **System Settings ▸ Privacy & Security ▸ Open Anyway**, or install it with Homebrew, or build it yourself. [INSTALL.md](INSTALL.md) has the steps.
 - **Control-click ▸ Open doesn't get past that block.** It hasn't since macOS 15.
 - **Remembered PDF passwords may need permission again after an update.** Every build has a different signature, so when a new version first reads a password an older one saved in the Keychain, macOS may ask whether to allow it. If you decline, Lectern asks for the document's password instead. Passwords are saved only if you tick "Remember in Keychain".
-- **Updates are off unless you turn them on.** With them off, Lectern never goes online; update with Homebrew or a new download instead.
+- **Updates are off unless you turn them on.** With them off, Lectern goes online only when you choose Check for Updates; you can also update with Homebrew or a new download.
 
 ## Reading
 
