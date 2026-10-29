@@ -320,7 +320,7 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
         let other = ReaderPane(id: .secondary)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: true)
         window.contentView = other.view
-        other.view.document = harness.pdfView.document
+        other.view.show(harness.pdfView.document)
         #expect(other.view.document === harness.pdfView.document)
 
         harness.pane.jump(toPageAt: 2)
