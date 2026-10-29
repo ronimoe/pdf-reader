@@ -77,7 +77,14 @@ PDFKit (system framework) is used for rendering, text extraction and selection, 
 
 ### 3.2 Saving annotations: **decided: candidate 1, our own incremental writer** *(Amended 2026-10-29)*
 
-The M0a prototype passed every applicable pass criterion on the whole generated test collection. Full results are in [spikes/m0a-save.md](spikes/m0a-save.md). Encrypted files are refused with `PDFSaveError.encrypted` and go to Save a Copy. Signed files also still go to Save a Copy (A1).
+The M0a prototype passed every applicable pass criterion on the whole generated test collection. Full results are in [spikes/m0a-save.md](spikes/m0a-save.md). Encrypted files are refused with `PDFSaveError.encrypted`. In v1, annotations can't be saved into encrypted files at all (see §4.3).
+
+*(Amended 2026-10-29, M4a.)* `Saveability.evaluate` reports one of three outcomes:
+- `inPlace`,
+- `copyOnly`, for signed, certified (DocMDP) and Reader-extended (UR3) files, and files in a read-only location,
+- `unsupported`, for encrypted or malformed files.
+
+Copy-only files are saved with `saveCopy`, which is the original bytes plus the appended update, written to a new file. The production API is described in [spikes/m4a-save-engine.md](spikes/m4a-save-engine.md).
 
 **Open work for production (M4)**
 - Map each `PDFAnnotation` to its object in the file. Our own annotations are matched by `/NM`; third-party ones by page and `/Rect`.

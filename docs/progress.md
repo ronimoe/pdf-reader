@@ -152,3 +152,22 @@ The automated security review flagged the same parser problems. Fixes include a 
 - Real-world files: linearized, certified and Reader-extended.
 - Fuzzing.
 - How each `PDFAnnotation` maps to its object in the file. This is M4 work.
+
+## M4a: Production save engine (branch `m4a-save-engine`, PR #7)
+
+**Landed**
+- **Describing and matching annotations:** annotation descriptors plus a pure, one-to-one `AnnotationMatcher`. It matches on `/NM` first, then page, subtype and rect, with the contents at open time breaking ties. Anything it can't settle comes back ambiguous, never guessed.
+- **Changes:** highlight, underline and strike-out, each with generated appearance streams; sticky note; edit contents and colour; delete, which cascades to replies and verified popups.
+- **No hidden metadata (B4):** each new annotation gets an `/NM`. `/T`, `/M` and dates are written only if the caller passes them.
+- **`Saveability`:** one of `inPlace`, `copyOnly` (signed, certified, Reader-extended, read-only location) or `unsupported` (encrypted, malformed), plus `saveCopy`.
+- **Real-world test PDFs:** five arXiv CC papers, linearized NASA reports, Reader-extended IRS forms, and a generated certified and a generated linearized file.
+
+**Review:** the code-reviewer found two blockers, in which signed files could still be saved in place: through `try?` error swallowing, and through signature widgets missing from `/Fields`. It also found five should-fixes. All are fixed, with mutation-killing tests.
+
+**Verified**
+- All pass criteria hold on the real-world files.
+- 3,523 PDFKit annotations matched, with none ambiguous or missing.
+- One highlight on a 1,000-page file takes 0.015 s in a release build.
+- 96 PDFSave tests pass.
+
+**Not verified:** Acrobat Reader and Preview by hand.

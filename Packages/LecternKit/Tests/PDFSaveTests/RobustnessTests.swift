@@ -4,7 +4,7 @@ import Testing
 
 private func save(_ data: Data, _ changes: [AnnotationChange] = [.testNote],
                   options: IncrementalWriter.Options = .init()) throws(PDFSaveError) -> SaveResult {
-    try IncrementalWriter(options: options).save(original: data, changes: changes)
+    try IncrementalWriter(options: options).saveInPlace(original: data, changes: changes)
 }
 
 /// Malformed input must come back as a `PDFSaveError`, never a trap.
@@ -109,33 +109,58 @@ private func save(_ data: Data, _ changes: [AnnotationChange] = [.testNote],
             .filter { $0.pathExtension == "pdf" && !$0.lastPathComponent.hasPrefix("encrypted") }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .map { try [UInt8](Data(contentsOf: $0)) }
+        try Self.fuzz(files, iterations: 2000, seed: 0x4C45_4354_4552_4E00, label: "generated")
+    }
+
+    /// The same over the real-world files (MB-sized, so fewer iterations). Mutations also hit the
+    /// head, where linearized files keep their first-page cross-reference section.
+    @Test func fuzzRealWorldMutations() throws {
+        let files = try FileManager.default.contentsOfDirectory(at: Repo.realWorld, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "pdf" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { try [UInt8](Data(contentsOf: $0)) }
+        try #require(files.count >= 9)
+        try Self.fuzz(files, iterations: 600, seed: 0x5245_414C_574F_524C, label: "real-world")
+    }
+
+    static func fuzz(_ files: [[UInt8]], iterations: Int, seed: UInt64, label: String) throws {
         try #require(!files.isEmpty)
-        var rng = SplitMix64(seed: 0x4C45_4354_4552_4E00)
+        var rng = SplitMix64(seed: seed)
         var succeeded = 0, refused = 0
-        for _ in 0..<2000 {
+        let alphabet = Array("0123456789 -/<>[]R".utf8)
+        let start = ContinuousClock.now
+        for _ in 0..<iterations {
             var bytes = files[Int(rng.next() % UInt64(files.count))]
-            switch rng.next() % 4 {
+            switch rng.next() % 5 {
             case 0:  // truncate
                 bytes = Array(bytes.prefix(1 + Int(rng.next() % UInt64(bytes.count))))
             case 1:  // random bytes anywhere
                 for _ in 0..<(1 + rng.next() % 4) { bytes[Int(rng.next() % UInt64(bytes.count))] = UInt8(truncatingIfNeeded: rng.next()) }
+            case 2:  // digits and delimiters in the head (linearization dictionary, first-page xref)
+                let head = min(bytes.count, 4096)
+                for _ in 0..<(1 + rng.next() % 3) {
+                    bytes[Int(rng.next() % UInt64(head))] = alphabet[Int(rng.next() % UInt64(alphabet.count))]
+                }
             default:  // digits and delimiters in the structural tail, where the xref and trailer live
                 let tail = min(bytes.count, 600)
-                let alphabet = Array("0123456789 -/<>[]R".utf8)
                 for _ in 0..<(1 + rng.next() % 3) {
                     let at = bytes.count - 1 - Int(rng.next() % UInt64(tail))
                     bytes[at] = alphabet[Int(rng.next() % UInt64(alphabet.count))]
                 }
             }
+            // Neither the pre-check nor the save may trap; the copy path exercises the writer on
+            // signed and Reader-extended inputs too.
+            _ = Saveability.evaluate(Data(bytes))
             do {
-                let result = try save(Data(bytes))
+                let result = try IncrementalWriter().saveCopy(original: Data(bytes), changes: [.testNote])
                 #expect(result.data.prefix(bytes.count) == Data(bytes))
                 succeeded += 1
             } catch {
                 refused += 1
             }
         }
-        #expect(succeeded + refused == 2000)
+        print("fuzz \(label): \(iterations) mutations, \(succeeded) saved, \(refused) refused, \(ContinuousClock.now - start)")
+        #expect(succeeded + refused == iterations)
         #expect(succeeded > 0 && refused > 0, "fuzz should hit both outcomes (\(succeeded) saved, \(refused) refused)")
     }
 }

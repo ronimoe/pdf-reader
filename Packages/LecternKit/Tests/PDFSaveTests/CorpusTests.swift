@@ -7,8 +7,8 @@ import Testing
 /// Criteria 1, 3 and 7 are checked here in Swift; 2, 4, 5 and 6 are checked by
 /// scripts/corpus/verify, which each external test below calls for one criterion.
 @Suite struct CorpusTests {
-    static let writable = Corpus.cases.filter { $0.expectError == nil }
-    static let refused = Corpus.cases.filter { $0.expectError != nil }
+    static let writable = Corpus.cases.filter { !$0.isRefused }
+    static let refused = Corpus.cases.filter { $0.isRefused }
 
     func outcome(_ c: CorpusCase) throws -> CorpusOutcome {
         let all = try Corpus.outcomes()
@@ -46,8 +46,10 @@ import Testing
         }
     }
 
-    /// Mean blue channel inside `rect` (PDF user space) after PDFKit draws the page at 72 dpi.
-    static func meanBlue(_ page: PDFPage, in rect: PDFRect) throws -> Double {
+    /// Pixel statistics inside `rect` (PDF user space) after PDFKit draws the page at 72 dpi:
+    /// the mean blue channel (2 px inset), and the number of strongly tinted pixels (red minus
+    /// blue at least 50), which a thin red or yellow line raises even when antialiased over two pixel rows but black text doesn't.
+    static func pixels(_ page: PDFPage, in rect: PDFRect) throws -> (meanBlue: Double, tinted: Int) {
         let box = page.bounds(for: .mediaBox)
         let width = Int(box.width.rounded()), height = Int(box.height.rounded())
         let ctx = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
@@ -57,20 +59,26 @@ import Testing
         ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
         page.draw(with: .mediaBox, to: ctx)
         let data = try #require(ctx.data).assumingMemoryBound(to: UInt8.self)
+        func px(_ x: Int, _ y: Int) -> (r: Int, b: Int) {
+            let row = height - 1 - y  // bitmap row 0 is the top of the page
+            let i = row * width * 4 + x * 4
+            return (Int(data[i]), Int(data[i + 2]))
+        }
         var sum = 0.0, count = 0.0
         let x0 = Int(rect.x - box.minX) + 2, x1 = Int(rect.maxX - box.minX) - 2
         let y0 = Int(rect.y - box.minY) + 2, y1 = Int(rect.maxY - box.minY) - 2
         for y in y0..<max(y0 + 1, y1) {
-            let row = height - 1 - y  // bitmap row 0 is the top of the page
-            for x in x0..<max(x0 + 1, x1) {
-                sum += Double(data[row * width * 4 + x * 4 + 2]); count += 1
-            }
+            for x in x0..<max(x0 + 1, x1) { sum += Double(px(x, y).b); count += 1 }
         }
-        return sum / count
+        var tinted = 0
+        for y in max(0, y0 - 2)..<min(height, max(y0 - 1, y1 + 2)) {
+            for x in max(0, x0 - 2)..<min(width, max(x0 - 1, x1 + 2)) where px(x, y).r - px(x, y).b >= 50 { tinted += 1 }
+        }
+        return (sum / count, tinted)
     }
 
-    // 6 (Apple). PDFKit, the engine behind Preview, draws each new highlight.
-    @Test(arguments: writable) func pdfKitDrawsHighlights(_ c: CorpusCase) throws {
+    // 6 (Apple). PDFKit, the engine behind Preview, draws each new highlight, underline and strike-out.
+    @Test(arguments: writable) func pdfKitDrawsMarkup(_ c: CorpusCase) throws {
         let o = try outcome(c)
         let result = try #require(o.result)
         let before = try #require(PDFDocument(url: o.inputURL))
@@ -79,23 +87,52 @@ import Testing
             let pageBefore = try #require(before.page(at: probe.page))
             let pageAfter = try #require(after.page(at: probe.page))
             guard pageAfter.rotation == 0 else { continue }  // pixel mapping assumes an unrotated page
-            let b = try Self.meanBlue(pageBefore, in: probe.rect)
-            let a = try Self.meanBlue(pageAfter, in: probe.rect)
-            let drawn = b - a >= 40
+            let b = try Self.pixels(pageBefore, in: probe.rect)
+            let a = try Self.pixels(pageAfter, in: probe.rect)
+            let drawn: Bool
+            let detail: String
+            switch probe.kind {
+            case .fill:
+                drawn = b.meanBlue - a.meanBlue >= 40
+                detail = "blue \(Int(b.meanBlue)) -> \(Int(a.meanBlue))"
+            case .line:
+                drawn = a.tinted - b.tinted >= max(5, Int(probe.rect.width * 0.3))
+                detail = "tinted px \(b.tinted) -> \(a.tinted)"
+            }
             if c.appearanceStreams {
-                #expect(drawn, "page \(probe.page + 1): blue \(Int(b)) -> \(Int(a))")
+                #expect(drawn, "page \(probe.page + 1) \(probe.kind): \(detail)")
             } else {
-                // Measurement only: does PDFKit draw a highlight that has no /AP?
-                print("PDFKit, highlight without /AP on page \(probe.page + 1): \(drawn ? "drawn" : "NOT drawn") (blue \(Int(b)) -> \(Int(a)))")
+                // Measurement only: does PDFKit draw markup that has no /AP?
+                print("PDFKit, \(probe.kind) without /AP on page \(probe.page + 1): \(drawn ? "drawn" : "NOT drawn") (\(detail))")
             }
         }
     }
 
-    // 7. Encrypted input fails with the typed error, so the app can route it to Save a Copy.
+    // 7. Encrypted input can't be saved at all, in place or as a copy (v1).
     @Test(arguments: refused) func encryptedInputIsRefused(_ c: CorpusCase) throws {
         let o = try outcome(c)
         #expect(o.result == nil)
-        #expect(o.error == c.expectError)
+        #expect(o.error == .encrypted)
+        let data = try Data(contentsOf: o.inputURL)
+        #expect(throws: PDFSaveError.encrypted) { try IncrementalWriter().saveCopy(original: data, changes: [.testNote]) }
+    }
+
+    // Saveability: every input is classified as expected, and the writer's in-place guard agrees.
+    @Test(arguments: Corpus.cases) func saveabilityIsAsExpected(_ c: CorpusCase) throws {
+        let o = try outcome(c)
+        let data = try Data(contentsOf: o.inputURL)
+        #expect(Saveability.evaluate(data) == c.saveability)
+        switch c.saveability {
+        case .inPlace:
+            #expect(Saveability.evaluate(data, readOnlyLocation: true) == .copyOnly([.readOnlyLocation]))
+        case .copyOnly(let reasons):
+            #expect(throws: PDFSaveError.copyOnly(reasons)) {
+                try IncrementalWriter().saveInPlace(original: data, changes: [.testNote])
+            }
+            #expect(Saveability.evaluate(data, readOnlyLocation: true) == .copyOnly(reasons + [.readOnlyLocation]))
+        case .unsupported:
+            #expect(Saveability.evaluate(data, readOnlyLocation: true) == c.saveability)
+        }
     }
 
     @Test func outputsOnlyRewriteWhatTheyMust() throws {
@@ -107,7 +144,7 @@ import Testing
                 let object = try doc.object(ref)
                 let isAnnotsArray = object.arrayValue != nil
                 let isPage = pages.contains(ref.number)
-                let isEditedAnnot = o.editedInfo.contains { $0.ref.number == ref.number }
+                let isEditedAnnot = o.editedInfo.contains { $0.ref?.number == ref.number }
                 #expect(isAnnotsArray || isPage || isEditedAnnot, "\(o.testCase.name): unexpected rewrite of \(ref)")
             }
         }
@@ -169,13 +206,14 @@ import Testing
     // 4. Form field values byte-identical (A5). The form and the signed file must actually be checked.
     @Test(.enabled(if: Tools.gate(Tools.venv), "repo .venv with pikepdf missing (scripts/corpus/bootstrap)"))
     func formFieldsUnchanged() throws {
-        try runVerify("fields", available: Tools.venv, mustApply: ["acroform-filled", "signed-approval"])
+        try runVerify("fields", available: Tools.venv,
+                      mustApply: ["acroform-filled", "signed-approval", "certified-docmdp", "irs-fw9", "irs-f1040"])
     }
 
-    // 5. Signature intact; "n/a" is not acceptable for the signed file.
+    // 5. Signature intact; "n/a" is not acceptable for the signed and certified files.
     @Test(.enabled(if: Tools.gate(Tools.venv), "repo .venv with pyHanko missing (scripts/corpus/bootstrap)"))
     func signatureStillIntact() throws {
-        try runVerify("signature", available: Tools.venv, mustApply: ["signed-approval"])
+        try runVerify("signature", available: Tools.venv, mustApply: ["signed-approval", "certified-docmdp"])
     }
 
     // 6. Other readers: MuPDF, Poppler and pdf.js.

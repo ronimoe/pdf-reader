@@ -11,7 +11,10 @@ Each case gets one status per check:
   info: detail     measured, not a pass/fail criterion (rendering without /AP)
 
 Readers that quietly repair damaged files are watched: qpdf warnings, MuPDF and Poppler
-stderr, and pdf.js warnings all count as failures.
+stderr, and pdf.js warnings all count as failures, unless the same message (with the file path
+removed) also appears for the unmodified input. Real-world files often trigger warnings before
+anything is saved (broken linearization hints, font quirks, structure trees); only messages the
+save introduced count.
 """
 from __future__ import annotations
 
@@ -64,15 +67,44 @@ def check_prefix(case):
     return f"pass: +{len(output) - len(original)} bytes"
 
 
+def messages(text: str, *paths: str) -> list[str]:
+    """Non-empty output lines with the file paths removed, so input and output can be compared."""
+    out = []
+    for line in text.splitlines():
+        for p in paths:
+            line = line.replace(p, "<file>")
+        if line.strip():
+            out.append(line.strip())
+    return out
+
+
+def new_messages(before: list[str], after: list[str]) -> list[str]:
+    """Messages for the output that the input didn't already produce.
+
+    Real-world files often make readers complain before we touch them (broken linearization
+    hints, odd fonts, structure trees). Only complaints the save introduced count."""
+    seen = set(before)
+    return [m for m in after if m not in seen]
+
+
 def check_qpdf(case):
     if not shutil.which("qpdf"):
         return "skip: qpdf not installed"
-    r = subprocess.run(["qpdf", "--check", case["output"]], capture_output=True, text=True)
-    text = r.stdout + r.stderr
-    if r.returncode != 0 or "WARNING" in text.upper() and "WARNING" in text:
-        lines = [l for l in text.splitlines() if "WARNING" in l or "error" in l.lower()]
-        return f"fail: exit {r.returncode}: {'; '.join(lines[:3])}"
-    return "pass"
+
+    def run_check(path):
+        r = subprocess.run(["qpdf", "--check", path], capture_output=True, text=True)
+        lines = [m for m in messages(r.stdout + r.stderr, path) if "WARNING" in m or "ERROR" in m]
+        return r.returncode, lines
+
+    code_out, out = run_check(case["output"])
+    if code_out == 0 and not out:
+        return "pass"
+    code_in, before = run_check(case["input"])
+    added = new_messages(before, out)
+    # Exit 3 means "warnings"; it passes only when every warning was already there in the input.
+    if code_out not in (0, 3) or added:
+        return f"fail: exit {code_out}: {'; '.join((added or out)[:3])}"
+    return f"pass: {len(out)} warning(s), all already in the input"
 
 
 def u(obj, resolved=False) -> str:
@@ -290,7 +322,7 @@ def to_pixels(rect, box, rotate):
     return min(ax, bx), min(ay, by), max(ax, bx), max(ay, by)
 
 
-def mean_rgb(png, box):
+def pixels(png, box):
     from PIL import Image
 
     with Image.open(png) as im:
@@ -298,12 +330,19 @@ def mean_rgb(png, box):
         x0, y0, x1, y1 = (int(round(v)) for v in box)
         crop = im.crop((x0 + 2, y0 + 2, max(x0 + 3, x1 - 2), max(y0 + 3, y1 - 2)))
         px = list(crop.get_flattened_data() if hasattr(crop, "get_flattened_data") else crop.getdata())
+        wide = im.crop((max(0, x0 - 2), max(0, y0 - 2), x1 + 2, y1 + 2))
+        wpx = list(wide.get_flattened_data() if hasattr(wide, "get_flattened_data") else wide.getdata())
     n = len(px)
-    return tuple(sum(p[i] for p in px) / n for i in range(3))
+    mean = tuple(sum(p[i] for p in px) / n for i in range(3))
+    # Strongly tinted pixels (red minus blue at least 50): a thin red or yellow line raises the
+    # count even when it is antialiased across two pixel rows; black text and white paper don't.
+    tinted = sum(1 for p in wpx if p[0] - p[2] >= 50)
+    return mean, tinted
 
 
 def render_probes(case, render):
-    """Renders each highlight probe's page before and after; the highlight must tint it yellow."""
+    """Renders each probe's page before and after. A highlight must tint its whole area; an
+    underline or strike-out ("line") must add strongly tinted pixels along the quad."""
     results = []
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -313,27 +352,33 @@ def render_probes(case, render):
             px = to_pixels(probe["rect"], box, rotate)
             before = tmp / f"b{i}.png"
             after = tmp / f"a{i}.png"
-            for src, dst in ((case["input"], before), (case["output"], after)):
-                err = render(src, page, dst)
-                if err:
-                    return False, f"renderer complained: {err}"
-            rb, gb, bb = mean_rgb(before, px)
-            ra, ga, ba = mean_rgb(after, px)
-            drawn = (bb - ba) >= 40 and ra >= ba + 40
-            results.append((drawn, f"p{page + 1} blue {bb:.0f}->{ba:.0f}"))
+            err_before = render(case["input"], page, before)
+            err_after = render(case["output"], page, after)
+            added = new_messages(err_before or [], err_after or [])
+            if added:
+                return False, f"renderer complained: {'; '.join(added[:3])}"
+            (rb, gb, bb), tb = pixels(before, px)
+            (ra, ga, ba), ta = pixels(after, px)
+            if probe.get("kind", "highlight") == "line":
+                width = abs(px[2] - px[0])
+                drawn = ta - tb >= max(5, int(width * 0.3))
+                results.append((drawn, f"p{page + 1} line tinted px {tb}->{ta}"))
+            else:
+                drawn = (bb - ba) >= 40 and ra >= ba + 40
+                results.append((drawn, f"p{page + 1} blue {bb:.0f}->{ba:.0f}"))
     ok = all(d for d, _ in results)
     return ok, ", ".join(s for _, s in results)
 
 
 def render_status(case, render):
     if not case["probes"]:
-        return "n/a: no highlight"
+        return "n/a: no markup added"
     ok, detail = render_probes(case, render)
     if detail.startswith("renderer complained"):
         return "fail: " + detail
     if not case.get("appearanceStreams", True):
         return f"info: {'drawn' if ok else 'NOT drawn'} without /AP ({detail})"
-    return ("pass: highlight drawn (" if ok else "fail: highlight not drawn (") + detail + ")"
+    return ("pass: markup drawn (" if ok else "fail: markup not drawn (") + detail + ")"
 
 
 def check_mupdf(case):
@@ -345,14 +390,17 @@ def check_mupdf(case):
 
     def listing(path):
         r = subprocess.run(["mutool", "run", str(HERE / "mupdf-annots.js"), path], capture_output=True, text=True)
-        if r.returncode != 0 or r.stderr.strip():
-            raise RuntimeError(f"mutool: {r.stderr.strip()[:200]}")
-        return json.loads(r.stdout)
+        if r.returncode != 0:
+            raise RuntimeError(f"mutool exit {r.returncode}: {r.stderr.strip()[:200]}")
+        return json.loads(r.stdout), messages(r.stderr, path)
 
     try:
-        before, after = listing(case["input"]), listing(case["output"])
+        (before, warn_before), (after, warn_after) = listing(case["input"]), listing(case["output"])
     except RuntimeError as e:
         return f"fail: {e}"
+    added = new_messages(warn_before, warn_after)
+    if added:
+        return f"fail: mutool: {'; '.join(added[:3])}"
     diff = compare_listing(expected_listing(before, case, "Popup"), actual_listing(after, "Popup"))
     if diff:
         return f"fail: annotations differ: {diff}"
@@ -360,7 +408,7 @@ def check_mupdf(case):
     def render(src, page, dst):
         r = subprocess.run(["mutool", "draw", "-q", "-r", "72", "-o", str(dst), src, str(page + 1)],
                            capture_output=True, text=True)
-        return (r.stderr.strip() or None) if r.returncode == 0 else f"exit {r.returncode} {r.stderr.strip()}"
+        return messages(r.stderr, src) if r.returncode == 0 else [f"exit {r.returncode} {r.stderr.strip()}"]
 
     status = render_status(case, render)
     if status.startswith("fail"):
@@ -379,7 +427,7 @@ def check_poppler(case):
         prefix = str(dst)[:-4]
         r = subprocess.run(["pdftoppm", "-r", "72", "-f", str(page + 1), "-l", str(page + 1), "-png", "-singlefile",
                             src, prefix], capture_output=True, text=True)
-        return (r.stderr.strip() or None) if r.returncode == 0 else f"exit {r.returncode} {r.stderr.strip()}"
+        return messages(r.stderr, src) if r.returncode == 0 else [f"exit {r.returncode} {r.stderr.strip()}"]
 
     status = render_status(case, render)
     if status.startswith("n/a"):
@@ -398,15 +446,16 @@ def check_pdfjs(case):
         if r.returncode != 0:
             raise RuntimeError(f"node exit {r.returncode}: {r.stderr.strip()[:300]}")
         data = json.loads(r.stdout)
-        if data["warnings"]:
-            raise RuntimeError(f"pdf.js warnings: {data['warnings'][:3]}")
         return [{"page": a["page"], "ref": a["ref"], "type": a["subtype"], "contents": a["contents"],
-                 "hasAP": a["hasAppearance"]} for a in data["annotations"]]
+                 "hasAP": a["hasAppearance"]} for a in data["annotations"]], data["warnings"]
 
     try:
-        before, after = listing(case["input"]), listing(case["output"])
+        (before, warn_before), (after, warn_after) = listing(case["input"]), listing(case["output"])
     except RuntimeError as e:
         return f"fail: {e}"
+    added = new_messages(warn_before, warn_after)
+    if added:
+        return f"fail: pdf.js warnings: {added[:3]}"
     diff = compare_listing(expected_listing(before, case, "Popup"), actual_listing(after, "Popup"))
     if diff:
         return f"fail: annotations differ: {diff}"
@@ -420,9 +469,8 @@ def check_pdfjs(case):
         r = subprocess.run(["node", str(HERE / "pdfjs-annots.mjs"), src, "--render", str(page), str(dst)],
                            capture_output=True, text=True)
         if r.returncode != 0:
-            return f"node exit {r.returncode}: {r.stderr.strip()[:200]}"
-        w = json.loads(r.stdout)["warnings"]
-        return "; ".join(w[:3]) if w else None
+            return [f"node exit {r.returncode}: {r.stderr.strip()[:200]}"]
+        return json.loads(r.stdout)["warnings"]
 
     status = render_status(case, render)
     if status.startswith("fail"):
