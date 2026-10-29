@@ -66,7 +66,11 @@ enum AppEnvironment {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let emptyState = EmptyStateController()
+    /// While hosting tests the empty state never reads the recent documents. That read
+    /// (`NSDocumentController.recentDocumentURLs`) waits on an operation, and when the empty state
+    /// reappears inside a test's nested run loop it deadlocks the main thread: the intermittent
+    /// 5-minute test hang first seen in M3 (sampled in M5, see architecture §9).
+    let emptyState = AppEnvironment.isHostingTests ? EmptyStateController(recentURLs: { [] }) : EmptyStateController()
     private(set) lazy var settings = SettingsWindowController()
     private(set) lazy var keyboardShortcuts = KeyboardShortcutsWindowController()
     /// Last session's windows and tabs (B3). Never used while hosting tests.
