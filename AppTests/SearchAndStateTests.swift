@@ -129,6 +129,39 @@ private func waitForSearch(_ harness: NavigationHarness) {
         #expect(!harness.controller.settings.sidebar.isVisible)
     }
 
+    @Test func escapeInTheReadingAreaReachesTheWindow() throws {
+        let harness = try NavigationHarness(FixturePDF.book())
+        defer { harness.close() }
+        harness.controller.startSearch("needle")
+        waitForSearch(harness)
+        let window = try #require(harness.controller.window)
+        window.makeFirstResponder(harness.pdfView)
+        // What Escape sends, through the real responder chain.
+        #expect(harness.pdfView.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: nil))
+        #expect(!harness.controller.isSearching)
+
+        // And the key itself, which PDFView would otherwise keep.
+        harness.controller.startSearch("needle")
+        let escape = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53
+        ))
+        harness.pdfView.keyDown(with: escape)
+        #expect(!harness.controller.isSearching)
+    }
+
+    @Test func findPutsTheSearchFieldBackIfTheToolbarLostIt() throws {
+        let harness = try NavigationHarness(FixturePDF.prose(pages: 2))
+        defer { harness.close() }
+        let toolbar = try #require(harness.controller.window?.toolbar)
+        if let index = toolbar.items.firstIndex(where: { $0.itemIdentifier == .search }) {
+            toolbar.removeItem(at: index)
+        }
+        harness.controller.focusSearchField(nil)
+        #expect(toolbar.items.contains { $0.itemIdentifier == .search })
+        #expect(harness.controller.searchField != nil)
+    }
+
     @Test func aDocumentWithoutTextSaysSo() async throws {
         let harness = try NavigationHarness(FixturePDF.make(pageTexts: [nil, nil, nil]))
         defer { harness.close() }

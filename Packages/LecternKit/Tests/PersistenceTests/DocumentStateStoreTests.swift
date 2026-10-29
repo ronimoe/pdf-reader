@@ -238,6 +238,14 @@ private struct BrokenBookmarks: FileBookmarking {
         #expect(state.viewSettings == ViewSettings())
     }
 
+    @Test func pathsThroughSymlinksCompareEqual() throws {
+        let sandbox = try Sandbox()
+        let url = try sandbox.write(pdf(pages: 1), to: "a.pdf")
+        // The temporary folder lives under /var, a symlink to /private/var.
+        let other = url.path.hasPrefix("/private/") ? String(url.path.dropFirst("/private".count)) : "/private" + url.path
+        #expect(DocumentStateStore.path(of: url) == DocumentStateStore.path(of: URL(fileURLWithPath: other)))
+    }
+
     @Test func theDefaultDirectoryIsApplicationSupportForTheBundle() {
         let directory = DocumentStateStore.defaultDirectory(bundleIdentifier: "io.example.Test")
         #expect(directory.path.hasSuffix("Application Support/io.example.Test"))

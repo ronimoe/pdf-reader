@@ -278,7 +278,14 @@ public final class DocumentStateStore: Sendable {
         return decoder
     }
 
+    /// One spelling per file, so a path from a bookmark and a path from an
+    /// open panel compare equal. Inside the sandbox `resolvingSymlinksInPath`
+    /// leaves `/tmp` unresolved while bookmarks resolve to `/private/tmp`
+    /// (seen on macOS 26), so the canonical path is preferred.
     static func path(of url: URL) -> String {
-        url.standardizedFileURL.resolvingSymlinksInPath().path
+        if let canonical = (try? url.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath {
+            return canonical
+        }
+        return url.standardizedFileURL.resolvingSymlinksInPath().path
     }
 }

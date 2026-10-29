@@ -402,6 +402,16 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
         #expect(outline.outlineView.accessibilityLabel() == "Table of contents")
     }
 
+    @Test func showingASectionPutsKeyboardFocusInIt() throws {
+        let harness = try NavigationHarness(FixturePDF.book())
+        defer { harness.close() }
+        let window = try #require(harness.controller.window)
+        harness.controller.showTableOfContents(nil)
+        #expect(window.firstResponder === harness.controller.outlineSection.outlineView)
+        harness.controller.showThumbnails(nil)
+        #expect(window.firstResponder === harness.controller.thumbnailsSection.tableView)
+    }
+
     @Test func aDocumentWithoutAnOutlineSaysSo() throws {
         let harness = try NavigationHarness(FixturePDF.prose(pages: 3))
         defer { harness.close() }

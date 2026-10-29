@@ -102,6 +102,11 @@ final class ReaderWindowController: NSWindowController {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(pageDidChange(_:)), name: .PDFViewPageChanged, object: pdfView)
         pdfView.onVisibleAreaChange = { [weak self] in self?.saveAnchorSoon() }
+        pdfView.onCancel = { [weak self] in
+            guard let self, isSearching else { return false }
+            endSearch()
+            return true
+        }
         window.delegate = self
         showContentIfReadable()
     }
@@ -269,10 +274,13 @@ final class ReaderWindowController: NSWindowController {
     @objc func showThumbnails(_ sender: Any?) { showSidebarSection(.thumbnails) }
     @objc func showTableOfContents(_ sender: Any?) { showSidebarSection(.outline) }
 
+    /// Shows a section and moves keyboard focus into it, so the outline or
+    /// thumbnails can be used from the keyboard.
     func showSidebarSection(_ section: SidebarSection) {
         sidebar.show(section)
         if section != .search { settings.sidebar.section = section }
         setSidebarVisible(true)
+        sidebar.focusVisibleSection()
     }
 
     private func sidebarCollapsedDidChange(_ collapsed: Bool) {
@@ -323,7 +331,13 @@ final class ReaderWindowController: NSWindowController {
     /// ⌘F: puts the cursor in the search field.
     @objc func focusSearchField(_ sender: Any?) {
         guard isShowingContent, let window else { return }
-        if window.toolbar?.isVisible == false { window.toolbar?.isVisible = true }
+        if let toolbar = window.toolbar {
+            if !toolbar.isVisible { toolbar.isVisible = true }
+            // A customised toolbar may have lost the field; ⌘F brings it back.
+            if !toolbar.items.contains(where: { $0.itemIdentifier == .search }) {
+                toolbar.insertItem(withItemIdentifier: .search, at: toolbar.items.count)
+            }
+        }
         if let searchItem {
             searchItem.beginSearchInteraction()
         } else if let searchField {
@@ -502,11 +516,12 @@ final class ReaderWindowController: NSWindowController {
     /// Followed through file coordination: the window title updates itself,
     /// and the stored identity learns the new place.
     func documentDidMove(to url: URL) {
-        refreshStoredIdentity()
+        // NSDocument may not have updated fileURL yet; the new URL is known.
+        refreshStoredIdentity(at: url)
     }
 
-    private func refreshStoredIdentity() {
-        guard let stateStore, let storedDocumentID, let readerDocument, let url = readerDocument.fileURL,
+    private func refreshStoredIdentity(at newURL: URL? = nil) {
+        guard let stateStore, let storedDocumentID, let readerDocument, let url = newURL ?? readerDocument.fileURL,
               let pdf = readerDocument.pdfDocument
         else { return }
         let identity = stateStore.identity(for: url, data: readerDocument.originalData, pageCount: pdf.pageCount)

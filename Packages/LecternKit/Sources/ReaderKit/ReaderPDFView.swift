@@ -41,6 +41,9 @@ public final class ReaderPDFView: PDFView {
     /// Called whenever the visible part of the document moves, for saving
     /// the reading position. Never a history entry.
     public var onVisibleAreaChange: (() -> Void)?
+    /// Called for Escape in the reading area. Returns true if it was used
+    /// (ending a search, say).
+    public var onCancel: (() -> Bool)?
 
     /// The place to keep: the anchor last restored, or where the user last
     /// scrolled to. Keeping it, rather than measuring again before every
@@ -494,6 +497,22 @@ public final class ReaderPDFView: PDFView {
               !arrival.isSamePlace(as: departure)
         else { return }
         onLinkJump?(departure)
+    }
+
+    // MARK: Escape
+
+    /// PDFView consumes Escape itself, so it never reaches the window's
+    /// commands; hand it to the owner first.
+    public override func cancelOperation(_ sender: Any?) {
+        if onCancel?() == true { return }
+        super.cancelOperation(sender)
+    }
+
+    public override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty, onCancel?() == true {
+            return
+        }
+        super.keyDown(with: event)
     }
 
     // MARK: Copy (B6)
