@@ -4,8 +4,10 @@ import Foundation
 /// bytes the writer produced, they re-parse, and the annotations they contain are the original's
 /// plus the added ones minus the removed ones, with every added `/NM` on the expected object.
 public enum SavedFileCheck {
-    /// Throws `.verificationFailed` with a reason a person can read.
-    public static func verify(_ written: Data, original: Data, against result: SaveResult) throws(PDFSaveError) {
+    /// Throws `.verificationFailed` with a reason a person can read. Returns the saved file's
+    /// annotations, which the app matches against from now on.
+    @discardableResult
+    public static func verify(_ written: Data, original: Data, against result: SaveResult) throws(PDFSaveError) -> [AnnotationDescriptor] {
         guard written == result.data else {
             throw .verificationFailed("the file on disk differs from the bytes that were written (\(written.count) bytes read, \(result.data.count) expected)")
         }
@@ -34,5 +36,6 @@ public enum SavedFileCheck {
         if let stray = after.first(where: { $0.ref.map(removed.contains) ?? false }) {
             throw .verificationFailed("deleted annotation \(stray.ref.map(String.init(describing:)) ?? "?") is still listed")
         }
+        return after
     }
 }

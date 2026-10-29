@@ -93,6 +93,40 @@ public final class ReaderPDFView: PDFView {
     private var lastUserInput: TimeInterval = -.infinity
     private var inputMonitor: Any?
 
+    // MARK: Annotations (B4) and forms (A5)
+
+    /// The annotation the user selected in this view: outlined over the page, and what Delete,
+    /// Change Colour and Edit act on.
+    public internal(set) var selectedAnnotation: PDFAnnotation?
+    /// Called when the selected annotation changes (a click, Escape, a re-bind).
+    public var onAnnotationSelectionChange: ((PDFAnnotation?) -> Void)?
+    /// Called after a click on an annotation selected it, with the click count (2 edits it).
+    public var onAnnotationClick: ((PDFAnnotation, Int) -> Void)?
+    /// Called when ⌫ or ⌦ is pressed with an annotation selected. Returns true if it was used.
+    public var onDeleteKey: (() -> Bool)?
+    /// The selection control's actions and colour, handled by the window.
+    public var onMarkupAction: ((MarkupAction) -> Void)? {
+        didSet { selectionBar.onAction = onMarkupAction }
+    }
+    public var onMarkupColor: ((AnnotationColorPreset) -> Void)? {
+        didSet { selectionBar.onColor = onMarkupColor }
+    }
+    /// The colour new markup gets; shown on the selection control.
+    public var markupColor: AnnotationColorPreset = .default {
+        didSet { selectionBar.markupColor = markupColor }
+    }
+    /// Whether the selection control appears for selected text.
+    public var showsSelectionBar = true
+    /// Items for the context menu over an annotation (it is selected first) or, with nil, over
+    /// the page; supplied by the window.
+    public var annotationContextMenuItems: (PDFAnnotation?) -> [NSMenuItem] = { _ in [] }
+    /// Where the last context menu was opened, for Add Note Here.
+    public internal(set) var contextClickLocation: (page: PDFPage, point: CGPoint)?
+    var pendingAnnotationClick: PendingAnnotationClick?
+    var formFieldsKnown: Bool?
+    let annotationOutline = AnnotationOutlineView()
+    public let selectionBar = SelectionActionBar()
+
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         Self.disableAutomaticAnalysis(of: self)
@@ -119,6 +153,11 @@ public final class ReaderPDFView: PDFView {
         removeImmediateActionRecognizers()
         addSubview(targetMarkerView)
         addSubview(focusRing)
+        addSubview(annotationOutline)
+        addSubview(selectionBar)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(selectionDidChange(_:)), name: .PDFViewSelectionChanged, object: self
+        )
     }
 
     @available(*, unavailable)
@@ -136,6 +175,10 @@ public final class ReaderPDFView: PDFView {
     /// field from PDFKit's form-detection queue).
     public func show(_ document: PDFDocument?) {
         self.document = document
+        formFieldsKnown = nil
+        pendingAnnotationClick = nil
+        hideSelectionBar()
+        if selectedAnnotation != nil { selectAnnotation(nil) }
         keptAnchor = nil
         fitReferencePageIndex = 0
         endLinkFocus()
@@ -288,6 +331,7 @@ public final class ReaderPDFView: PDFView {
             if let keptAnchor { restore(keptAnchor) }
         }
         updateLinkOverlays()
+        updateAnnotationOverlays()
     }
 
     /// The window's content runs under the toolbar (full-size content view).
@@ -437,8 +481,10 @@ public final class ReaderPDFView: PDFView {
         // back the page the fit modes measured, so pages of other sizes don't
         // change the zoom on every annotation change.
         let reference = fitReferencePageIndex
+        let selected = selectedAnnotation
         show(nil)
         show(document)
+        if let selected, selected.page?.document === document { selectAnnotation(selected) }
         if reference != fitReferencePageIndex {
             fitReferencePageIndex = reference
             applyZoom()
@@ -529,6 +575,8 @@ public final class ReaderPDFView: PDFView {
     @objc private func clipBoundsDidChange(_ notification: Notification) {
         onVisibleAreaChange?()
         updateLinkOverlays()
+        updateAnnotationOverlays()
+        if isSelectionBarVisible { showSelectionBarIfNeeded() }
         guard !isAdjustingGeometry else { return }
         if isUserScrolling {
             keptAnchor = visibleAnchor
@@ -590,13 +638,27 @@ public final class ReaderPDFView: PDFView {
             endLinkFocus()
             return
         }
+        if isSelectionBarVisible {
+            hideSelectionBar()
+            return
+        }
+        if selectedAnnotation != nil {
+            selectAnnotation(nil)
+            return
+        }
         if onCancel?() == true { return }
         super.cancelOperation(sender)
     }
 
     public override func keyDown(with event: NSEvent) {
         if handleLinkFocusKey(event) { return }
-        if event.keyCode == 53, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty, onCancel?() == true {
+        if handleFormKey(event) { return }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if event.keyCode == 51 || event.keyCode == 117, modifiers.isEmpty, selectedAnnotation != nil, onDeleteKey?() == true {
+            return
+        }
+        if event.keyCode == 53, modifiers.isEmpty {
+            cancelOperation(nil)
             return
         }
         super.keyDown(with: event)
@@ -667,6 +729,15 @@ public final class ReaderPDFView: PDFView {
     /// Resize…) bypass the view settings.
     public override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu(title: "")
+        let point = convert(event.locationInWindow, from: nil)
+        if let page = page(for: point, nearest: true) {
+            contextClickLocation = (page, convert(point, to: page))
+        }
+        let annotation = selectableAnnotation(at: point)
+        if let annotation { selectAnnotation(annotation) }
+        let annotationItems = annotationContextMenuItems(annotation)
+        annotationItems.forEach(menu.addItem)
+        if !annotationItems.isEmpty { menu.addItem(.separator()) }
         let copy = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
         copy.target = self
         menu.addItem(copy)

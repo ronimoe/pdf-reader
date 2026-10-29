@@ -86,6 +86,28 @@ public struct PendingChanges: Sendable, Equatable, Codable {
         }
     }
 
+    /// Withdraws a pending colour edit (the colour is back to the file's). Returns false if none.
+    @discardableResult
+    public mutating func cancelColorEdit(of ref: ObjectRef) -> Bool {
+        guard let index = changes.firstIndex(where: { if case .editColor(ref, _) = $0 { true } else { false } }) else { return false }
+        changes.remove(at: index)
+        return true
+    }
+
+    /// Withdraws a pending `/Contents` edit (the text is back to the file's). Returns false if none.
+    @discardableResult
+    public mutating func cancelContentsEdit(of ref: ObjectRef) -> Bool {
+        guard let index = changes.firstIndex(where: { if case .editContents(ref, _) = $0 { true } else { false } }) else { return false }
+        changes.remove(at: index)
+        return true
+    }
+
+    /// The pending colour of an existing annotation, if it was changed since the last save.
+    public func pendingColor(of ref: ObjectRef) -> PDFRGBColor? {
+        for change in changes { if case .editColor(ref, let color) = change { return color } }
+        return nil
+    }
+
     /// Records the deletion of an existing annotation.
     public mutating func delete(_ ref: ObjectRef) {
         guard !hasPendingDelete(of: ref) else { return }
