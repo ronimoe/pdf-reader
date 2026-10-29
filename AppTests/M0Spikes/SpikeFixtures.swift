@@ -132,6 +132,24 @@ nonisolated enum SpikeFixtures {
         return RawPDF.build(objects: objects, root: 1).data
     }
 
+    // MARK: Q3 form fields
+
+    /// Two text fields and a checkbox (with real On/Off appearances).
+    static func form() -> Data {
+        var objects: [Int: String] = [:]
+        objects[1] = "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [20 0 R 21 0 R 22 0 R] /DA (/Helv 12 Tf 0 g) /DR << /Font << /Helv 10 0 R >> >> >> >>"
+        objects[2] = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
+        objects[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 10 0 R >> >> /Annots [20 0 R 21 0 R 22 0 R] >>"
+        objects[4] = RawPDF.textContent(["Form probe"], top: 760)
+        objects[10] = RawPDF.helvetica
+        objects[20] = "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (Alice) /Rect [72 650 300 680] /P 3 0 R /F 4 /DA (/Helv 12 Tf 0 g) >>"
+        objects[21] = "<< /Type /Annot /Subtype /Widget /FT /Tx /T (city) /V (Paris) /Rect [72 600 300 630] /P 3 0 R /F 4 /DA (/Helv 12 Tf 0 g) >>"
+        objects[22] = "<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /V /Off /AS /Off /Rect [72 550 92 570] /P 3 0 R /F 4 /MK << /CA (4) >> /DA (/ZaDb 12 Tf 0 g) /AP << /N << /Yes 30 0 R /Off 31 0 R >> >> >>"
+        objects[30] = RawPDF.stream("0 0 0 rg 4 4 12 12 re f", dict: "/Type /XObject /Subtype /Form /BBox [0 0 20 20]")
+        objects[31] = RawPDF.stream("", dict: "/Type /XObject /Subtype /Form /BBox [0 0 20 20]")
+        return RawPDF.build(objects: objects, root: 1).data
+    }
+
     // MARK: Q6 incremental update
 
     static let originalID = "0123456789ABCDEF0123456789ABCDEF"
