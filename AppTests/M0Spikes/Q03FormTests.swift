@@ -78,7 +78,7 @@ extension M0bSpikes {
             #expect(h.field("agree").buttonWidgetState == .onState)
         }
 
-        @Test func stockPDFViewTabMovesFocusIntoFields() throws {
+        @Test func tabFromPDFViewDoesNotEnterFields() throws {
             let h = try host(PDFView(frame: .zero))
             defer { h.host.close() }
             #expect(h.responder == "PDFView")
@@ -93,7 +93,7 @@ extension M0bSpikes {
             #expect(values == ["name": "Alice", "city": "Paris"])
         }
 
-        @Test func stockPDFViewTabInsideAFieldMovesToTheNextField() throws {
+        @Test func syntheticTabInsideAFieldStaysInThatField() throws {
             let h = try host(PDFView(frame: .zero))
             defer { h.host.close() }
             Synth.click(at: h.view.windowPoint(centerOf: h.field("name")), in: h.host.window)

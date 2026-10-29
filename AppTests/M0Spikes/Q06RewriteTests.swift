@@ -85,6 +85,30 @@ extension M0bSpikes {
             #expect(header.hasPrefix("%PDF-1.3"))
         }
 
+        /// Which link actions survive a rewrite (relevant to any Save a Copy
+        /// that goes through PDFKit).
+        @Test func linkActionsAfterRewrite() throws {
+            let out = try #require(PDFDocument(data: SpikeFixtures.links())?.dataRepresentation())
+            let reloaded = try #require(PDFDocument(data: out))
+            var after: [String: String] = [:]
+            for annotation in reloaded.page(at: 0)?.annotations ?? [] where annotation.type == "Link" {
+                after[annotation.contents ?? "?"] = annotation.action?.type ?? "none"
+            }
+            SpikeLog.note("Q6", "link actions after rewrite: \(after.sorted { $0.key < $1.key })")
+            #expect(after.count == SpikeFixtures.linkSpecs.count)
+            // Action types PDFKit models survive; Launch, SubmitForm and
+            // JavaScript (exposed only as bare types) are dropped.
+            for tag in ["launch", "submit", "javascript"] { #expect(after[tag] == "none", "\(tag)") }
+            for tag in ["uri-custom", "uri-https"] { #expect(after[tag] == "URI", "\(tag)") }
+            for tag in ["goto-explicit", "goto-named", "dest-fit", "dest-named", "goto-xyz-null", "goto-fith", "goto-fitr", "goto-xyz-zoom"] {
+                #expect(after[tag] == "GoTo", "\(tag)")
+            }
+            #expect(after["gotor"] == "GoToR")
+            #expect(after["named-next"] == "Named")
+            #expect(after["reset-form"] == "ResetForm")
+            Q6Results.linkActions.withLock { $0 = after }
+        }
+
         /// Form structure after a rewrite: /Fields no longer points at the
         /// widgets on the page (separate copies are written).
         @Test func rewriteDetachesWidgetsFromAcroFormFields() throws {
@@ -122,4 +146,8 @@ extension M0bSpikes {
             #expect(PDFBytes.contains("/NeedAppearances true", in: out))
         }
     }
+}
+
+nonisolated enum Q6Results {
+    static let linkActions = Locked<[String: String]>([:])
 }
