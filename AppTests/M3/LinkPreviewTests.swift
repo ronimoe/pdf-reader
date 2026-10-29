@@ -16,7 +16,7 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             harness.showFirstPage()
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             #expect(ReaderPDFView.hoverDelay == 0.5)
             harness.view.handleHover(at: harness.center(of: harness.link("Figure 3")))
             #expect(harness.view.isHoverPreviewPending)
@@ -26,7 +26,7 @@ extension M3Tests {
             let preview = try #require(harness.previews.current)
             #expect(preview.trigger == .hover)
             #expect(preview.previewView.visibleAnchor?.pageIndex == 3)
-            #expect(harness.view.currentAnchor == place)
+            expectUnmoved(place, in: harness.view)
             #expect(harness.primary.history.isEmpty)
         }
 
@@ -94,7 +94,7 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             harness.showFirstPage()
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             let point = harness.windowPoint(of: harness.link("Section 2"))
             harness.view.mouseDown(with: Synth.mouse(.leftMouseDown, at: point, in: harness.window))
             harness.view.handlePressureStage(1, at: harness.view.convert(point, from: nil))
@@ -104,7 +104,7 @@ extension M3Tests {
             #expect(preview.trigger == .forceClick)
             #expect(preview.previewView.visibleAnchor?.pageIndex == 4)
             harness.view.mouseUp(with: Synth.mouse(.leftMouseUp, at: point, in: harness.window))
-            #expect(harness.view.currentAnchor == place)
+            expectUnmoved(place, in: harness.view)
             #expect(harness.primary.history.isEmpty)
             // A firm press on a web link neither previews nor opens.
             #expect(!harness.view.previewLink(at: harness.center(of: harness.link("Website")), trigger: .forceClick))
@@ -136,7 +136,7 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             harness.showFirstPage()
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             harness.window.makeFirstResponder(harness.view)
             harness.key("\t", 48, .option)
             harness.key("\t", 48)
@@ -154,7 +154,7 @@ extension M3Tests {
             let preview = try #require(harness.previews.current)
             #expect(preview.trigger == .keyboard)
             #expect(preview.previewView.visibleAnchor?.pageIndex == 3)
-            #expect(harness.view.currentAnchor == place)
+            expectUnmoved(place, in: harness.view)
             harness.controller.dismissPreview()
             // Escape leaves link focus.
             harness.key("\u{1b}", 53)
@@ -249,7 +249,7 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             let preview = try preview("Section 2", in: harness)
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             #expect(preview.backButton.isHidden)
             let view = preview.previewView
             let back = try #require(view.document?.page(at: 4)?.annotations.first { $0.bounds.minY == 100 })
@@ -267,7 +267,7 @@ extension M3Tests {
             #expect(view.visibleAnchor?.pageIndex == 4)
             #expect(preview.backButton.isHidden)
             // The reader's pane and its history never moved.
-            #expect(harness.view.currentAnchor == place)
+            expectUnmoved(place, in: harness.view)
             #expect(harness.primary.history.isEmpty)
         }
 
@@ -275,14 +275,14 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             let preview = try preview("Table 1", in: harness)
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             #expect(preview.goButton.keyEquivalent == "\r", "Return is Go")
             preview.go(nil)
             #expect(preview.isClosed)
             #expect(harness.view.visibleAnchor?.pageIndex == 5)
             #expect(harness.primary.history.backList.count == 1)
             harness.controller.navigateBack(nil)
-            #expect(harness.view.currentAnchor?.isSamePlace(as: place) == true)
+            expectUnmoved(place, in: harness.view, resized: true)
         }
 
         @Test func dismissingLeavesThePlaceExactlyWhereItWas() throws {
@@ -290,7 +290,7 @@ extension M3Tests {
             defer { harness.close() }
             harness.showFirstPage()
             harness.view.restore(ReadingAnchor(pageIndex: 0, pointInPage: CGPoint(x: 0, y: 620), scale: 1))
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             harness.view.beginLinkFocus()
             harness.view.previewFocusedLink()
             harness.view.endLinkFocus()
@@ -299,7 +299,7 @@ extension M3Tests {
             preview.previewView.cancelOperation(nil)
             #expect(preview.isClosed)
             #expect(harness.controller.linkPreview == nil)
-            #expect(harness.view.currentAnchor == place)
+            expectUnmoved(place, in: harness.view)
             #expect(harness.primary.history.isEmpty)
         }
 

@@ -105,8 +105,20 @@ extension ReaderPDFView {
     }
 
     static func target(for url: URL) -> LinkTarget {
-        let scheme = url.scheme?.lowercased()
-        return scheme == "http" || scheme == "https" ? .web(url) : .otherScheme(url)
+        LinkClassifier.target(of: url)
+    }
+
+    /// Look Up (Force Click, three-finger tap) over any link is ours: an
+    /// internal link previews, and nothing else reaches PDFKit, whose own
+    /// handling could show a web page preview (A4). Returns true when the
+    /// event was handled here.
+    @discardableResult
+    public func handleLookUpOverLink(at point: CGPoint) -> Bool {
+        guard let link = link(at: point) else { return false }
+        if link.target.isInternal {
+            requestPreview(of: link.annotation, target: link.target, trigger: .forceClick)
+        }
+        return true
     }
 
     // MARK: Clicks

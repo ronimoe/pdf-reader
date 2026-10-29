@@ -39,7 +39,7 @@ final class ReaderWindowController: NSWindowController {
     private var preferencesObserver: (any NSObjectProtocol)?
     /// The layout, zoom, rotation and sidebar of this document (B1, B9),
     /// stored per document.
-    private(set) var settings = ViewSettings() {
+    var settings = ViewSettings() {
         didSet {
             if settings != oldValue { updateStoredState { $0.viewSettings = self.settings } }
         }
@@ -147,7 +147,7 @@ final class ReaderWindowController: NSWindowController {
     func configure(_ pane: ReaderPane) {
         let view = pane.view
         let id = pane.id
-        view.onUserZoom = { [weak self] scale in self?.settings.zoom = .scale(scale) }
+        view.onUserZoom = { [weak self] scale in self?.paneZoomDidChange(.scale(scale), in: id) }
         view.onCopyBlocked = { [weak self] in self?.explainBlocked(.copy) }
         view.onOpenFiles = { urls in ReaderDocumentController.openDocuments(at: urls) }
         view.contextMenuItems = {
@@ -260,10 +260,11 @@ final class ReaderWindowController: NSWindowController {
         readerDocument.applyViewRotation(settings.rotation)
         primaryPane.view.show(pdf)
         primaryPane.view.apply(settings, hints: readerDocument.layoutHints)
-        if let anchor = stored?.anchor {
-            // Restore once the view has its real size; the anchor then holds
-            // through any later resize until the user scrolls.
-            splitViewController.view.layoutSubtreeIfNeeded()
+        // Restore once the view has its real size; the anchor then holds
+        // through any later resize until the user scrolls. A document seen
+        // for the first time starts at the top of page 1, below the toolbar.
+        splitViewController.view.layoutSubtreeIfNeeded()
+        if let anchor = stored?.anchor ?? primaryPane.view.topAnchor(forPageAt: 0) {
             primaryPane.view.restore(anchor)
         }
         if let split = stored?.split {
@@ -315,7 +316,9 @@ final class ReaderWindowController: NSWindowController {
         anchorSave?.cancel()
         anchorSave = nil
         guard isShowingContent, let anchor = primaryPane.view.currentAnchor else { return }
-        let split = secondaryPane.map { SplitState(secondaryAnchor: $0.view.currentAnchor, focusedPane: focusedPaneID) }
+        let split = secondaryPane.map {
+            SplitState(secondaryAnchor: $0.view.currentAnchor, focusedPane: focusedPaneID, secondaryZoom: $0.view.zoomMode)
+        }
         updateStoredState {
             $0.anchor = anchor
             $0.split = split
@@ -737,13 +740,15 @@ final class ReaderWindowController: NSWindowController {
     // MARK: Reading commands
 
     @objc func increaseZoom(_ sender: Any?) {
-        settings.zoomIn(from: pdfView.scaleFactor)
-        pdfView.setZoomMode(settings.zoom)
+        var stepped = settings
+        stepped.zoomIn(from: pdfView.scaleFactor)
+        setZoom(stepped.zoom)
     }
 
     @objc func decreaseZoom(_ sender: Any?) {
-        settings.zoomOut(from: pdfView.scaleFactor)
-        pdfView.setZoomMode(settings.zoom)
+        var stepped = settings
+        stepped.zoomOut(from: pdfView.scaleFactor)
+        setZoom(stepped.zoom)
     }
 
     @objc func zoomToActualSize(_ sender: Any?) { setZoom(.actualSize) }
@@ -778,9 +783,20 @@ final class ReaderWindowController: NSWindowController {
         first.view.preservingAnchor { preservingEveryAnchor(panes.dropFirst(), body) }
     }
 
+    /// Zoom acts on the focused pane only; each pane keeps its own.
     private func setZoom(_ mode: ZoomMode) {
-        settings.zoom = mode
         pdfView.setZoomMode(mode)
+        paneZoomDidChange(mode, in: focusedPaneID)
+    }
+
+    /// The first pane's zoom is the document's `ViewSettings.zoom`; the
+    /// second pane's is stored with the split.
+    func paneZoomDidChange(_ mode: ZoomMode, in id: PaneID) {
+        if id == .primary {
+            settings.zoom = mode
+        } else {
+            saveAnchorSoon()
+        }
     }
 
     /// Applies a layout or rotation change to every pane, keeping each
@@ -825,9 +841,9 @@ final class ReaderWindowController: NSWindowController {
 
     private func isChecked(_ action: Selector?) -> Bool {
         switch action {
-        case #selector(zoomToActualSize(_:)): settings.zoom == .actualSize
-        case #selector(zoomToFitPage(_:)): settings.zoom == .fitPage
-        case #selector(zoomToFitWidth(_:)): settings.zoom == .fitWidth
+        case #selector(zoomToActualSize(_:)): pdfView.zoomMode == .actualSize
+        case #selector(zoomToFitPage(_:)): pdfView.zoomMode == .fitPage
+        case #selector(zoomToFitWidth(_:)): pdfView.zoomMode == .fitWidth
         case #selector(showSinglePage(_:)): settings.pages == .single
         case #selector(showTwoPages(_:)): settings.pages == .twoUp
         case #selector(scrollContinuously(_:)): settings.scrolling == .continuous

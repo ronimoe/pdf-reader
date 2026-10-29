@@ -91,8 +91,7 @@ public enum LinkClassifier {
             return target(of: destination)
         case "URI":
             guard let url = (action as? PDFActionURL)?.url else { return .blocked(actionType: "URI") }
-            let scheme = url.scheme?.lowercased()
-            return scheme == "http" || scheme == "https" ? .web(url) : .otherScheme(url)
+            return target(of: url)
         case "Named":
             guard let named = action as? PDFActionNamed else { return .blocked(actionType: "Named") }
             return .named(named.name)
@@ -101,6 +100,20 @@ public enum LinkClassifier {
             // GoToE, Hide, Rendition, Sound, Movie, Thread…
             return .blocked(actionType: action.type)
         }
+    }
+
+    /// Schemes that open a file, a mounted volume or an app on this Mac
+    /// rather than a resource elsewhere: following one is a Launch action
+    /// (A4), so it is blocked, not offered for confirmation.
+    public static let localSchemes: Set<String> = ["file", "afp", "smb", "nfs", "cifs", "ftp", "ftps", "vnc", "ssh", "telnet", "x-man-page", "applescript", "x-apple-systempreferences"]
+
+    /// A URI link: `http` and `https` are web links; a URL with no scheme, or
+    /// one in `localSchemes`, is a Launch in disguise; anything else asks.
+    public static func target(of url: URL) -> LinkTarget {
+        guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return .blocked(actionType: "Launch") }
+        if scheme == "http" || scheme == "https" { return .web(url) }
+        if localSchemes.contains(scheme) || url.isFileURL { return .blocked(actionType: "Launch") }
+        return .otherScheme(url)
     }
 
     public static func target(of destination: PDFDestination) -> LinkTarget {

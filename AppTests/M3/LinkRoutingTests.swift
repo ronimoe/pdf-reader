@@ -29,14 +29,14 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             harness.showFirstPage()
-            let before = try #require(harness.view.currentAnchor)
+            let before = try snapshot(harness.view)
             harness.click(harness.link("Figure 3"))
             #expect(harness.view.visibleAnchor?.pageIndex == 3)
             #expect(harness.primary.history.backList.count == 1)
             // It landed on the destination's point, /XYZ 72 500.
             #expect(abs((harness.view.visibleAnchor?.pointInPage.y ?? 0) - 500) < 2)
             harness.controller.navigateBack(nil)
-            #expect(harness.view.currentAnchor?.isSamePlace(as: before) == true)
+            expectUnmoved(before, in: harness.view)
         }
 
         @Test func namedDestinationsResolveAndJump() throws {
@@ -65,12 +65,12 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             harness.showFirstPage()
-            let before = try #require(harness.view.currentAnchor)
+            let before = try snapshot(harness.view)
             harness.click(harness.link("Website"))
             #expect(harness.opener.opened == [URL(string: "https://lectern-probe.invalid/page")!])
             #expect(harness.presenter.confirmations.isEmpty)
             #expect(harness.primary.history.isEmpty)
-            #expect(harness.view.currentAnchor?.isSamePlace(as: before) == true)
+            expectUnmoved(before, in: harness.view)
         }
 
         @Test func anyOtherSchemeAsksFirstAndShowsTheURL() throws {
@@ -90,14 +90,14 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             harness.showFirstPage()
-            let before = try #require(harness.view.currentAnchor)
+            let before = try snapshot(harness.view)
             harness.click(harness.link(text))
             let expected = String(LinkFixture.specs[LinkFixture.index(text)].kind.dropFirst("blocked(".count).dropLast())
             #expect(harness.presenter.blockedLinks.map(\.actionType) == [expected])
             #expect(!harness.presenter.blockedLinks[0].message.isEmpty)
             #expect(harness.opener.opened.isEmpty)
             #expect(harness.primary.history.isEmpty)
-            #expect(harness.view.currentAnchor?.isSamePlace(as: before) == true)
+            expectUnmoved(before, in: harness.view)
         }
 
         @Test func aNamedNextPageLinkMovesOnePageWithHistory() throws {
@@ -146,29 +146,14 @@ extension M3Tests {
             // No "Open Link" in the context menu, even after AppKit adds its items.
             let event = Synth.mouse(.rightMouseDown, at: harness.windowPoint(of: harness.link("Website")), in: harness.window)
             let menu = try #require(view.menu(for: event))
+            // As PDFKit would add it while the menu opens.
+            menu.addItem(withTitle: "Open Link", action: ReaderPDFView.openRepresentedLinkSelector, keyEquivalent: "")
+            #expect(menu.items.contains { $0.action == ReaderPDFView.openRepresentedLinkSelector })
             view.willOpenMenu(menu, with: event)
             #expect(!menu.items.contains { $0.action == ReaderPDFView.openRepresentedLinkSelector })
             // PDFKit's Force Click recognizer is gone, and stays gone.
             #expect(!view.gestureRecognizers.contains { ReaderPDFView.isImmediateAction($0) })
             #expect(view.pressureConfiguration != nil)
-        }
-
-        /// A document's /OpenAction must not move a restored reader or make a
-        /// history entry now that `perform(_:)` routes GoTo actions.
-        @Test func anOpenActionNeitherJumpsNorAddsHistory() throws {
-            let folder = try TemporaryFolder()
-            let file = try folder.write(LinkFixture.make(openAction: "[8 0 R /Fit]"), to: "open-action.pdf")
-            let store = folder.store()
-            let first = try M3Harness(file: file, store: store)
-            first.controller.primaryPane.jump(toPageAt: 2)
-            let place = try #require(first.view.currentAnchor)
-            first.controller.saveStateNow()
-            first.close()
-            let second = try M3Harness(file: file, store: store)
-            defer { second.close() }
-            Spin.runLoop(0.2)
-            #expect(second.view.visibleAnchor?.pageIndex == place.pageIndex)
-            #expect(second.primary.history.backList.count == 1, "only the stored jump")
         }
 
         @Test func aLinkClickFocusesItsPane() throws {

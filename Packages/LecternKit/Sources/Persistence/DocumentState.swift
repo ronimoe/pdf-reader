@@ -59,24 +59,30 @@ public struct DocumentState: Codable, Hashable, Sendable {
     }
 }
 
-/// A split tab's second pane (B3): its place, and which pane had focus.
-/// Its history is stored under `PaneID.secondary` in `DocumentState.history`.
+/// A split tab's second pane (B3): its place, its zoom, and which pane had
+/// focus. Its history is stored under `PaneID.secondary` in
+/// `DocumentState.history`; the first pane's zoom is `ViewSettings.zoom`.
 public struct SplitState: Codable, Hashable, Sendable {
     public var secondaryAnchor: ReadingAnchor?
     public var focusedPane: PaneID
+    /// Nil in state written before panes kept their own zoom: the second
+    /// pane then takes the first pane's.
+    public var secondaryZoom: ZoomMode?
 
-    public init(secondaryAnchor: ReadingAnchor?, focusedPane: PaneID = .primary) {
+    public init(secondaryAnchor: ReadingAnchor?, focusedPane: PaneID = .primary, secondaryZoom: ZoomMode? = nil) {
         self.secondaryAnchor = secondaryAnchor
         self.focusedPane = focusedPane
+        self.secondaryZoom = secondaryZoom
     }
 
     private enum CodingKeys: String, CodingKey {
-        case secondaryAnchor, focusedPane
+        case secondaryAnchor, focusedPane, secondaryZoom
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         secondaryAnchor = (try? container.decodeIfPresent(ReadingAnchor.self, forKey: .secondaryAnchor)) ?? nil
         focusedPane = (try? container.decodeIfPresent(PaneID.self, forKey: .focusedPane)) ?? .primary
+        secondaryZoom = (try? container.decodeIfPresent(ZoomMode.self, forKey: .secondaryZoom)) ?? nil
     }
 }

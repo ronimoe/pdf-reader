@@ -59,11 +59,7 @@ enum AppEnvironment {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// While hosting tests the empty state lists no recents: reading
-    /// `recentDocumentURLs` as a test closes its last document intermittently
-    /// blocked the main thread in AppKit (`waitUntilFinished`, seen in M3's
-    /// test runs), hanging the whole run.
-    let emptyState = AppEnvironment.isHostingTests ? EmptyStateController(recentURLs: { [] }) : EmptyStateController()
+    let emptyState = EmptyStateController()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         AppEnvironment.stateStore = DocumentStateStore(directory: AppEnvironment.stateDirectory)

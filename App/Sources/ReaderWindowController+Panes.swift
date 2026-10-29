@@ -92,6 +92,7 @@ extension ReaderWindowController {
     /// Restores a stored split: the second pane's place and history, and focus.
     func restoreSplit(_ split: SplitState, history: HistoryStack?) {
         guard let pane = openSplit(at: split.secondaryAnchor) else { return }
+        if let zoom = split.secondaryZoom { pane.view.setZoomMode(zoom) }
         if let anchor = split.secondaryAnchor { pane.view.restore(anchor) }
         pane.setHistory(history ?? HistoryStack())
         setFocusedPane(split.focusedPane)
@@ -108,6 +109,7 @@ extension ReaderWindowController {
             let anchor = secondary.view.currentAnchor
             primaryPane.setHistory(secondary.history)
             primaryPane.view.setZoomMode(secondary.view.zoomMode)
+            settings.zoom = secondary.view.zoomMode
             if let anchor { primaryPane.view.restore(anchor) }
         }
         secondary.view.endLinkFocus()

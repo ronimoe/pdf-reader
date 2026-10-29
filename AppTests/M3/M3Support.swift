@@ -230,6 +230,31 @@ final class M3Harness {
     }
 }
 
+/// Where the reader is: the kept anchor, and what is actually visible.
+struct PlaceSnapshot {
+    let kept: ReadingAnchor
+    let visible: ReadingAnchor
+}
+
+@MainActor
+func snapshot(_ view: ReaderPDFView, sourceLocation: SourceLocation = #_sourceLocation) throws -> PlaceSnapshot {
+    PlaceSnapshot(
+        kept: try #require(view.currentAnchor, sourceLocation: sourceLocation),
+        visible: try #require(view.visibleAnchor, sourceLocation: sourceLocation)
+    )
+}
+
+/// The reader didn't move: the kept point is on screen at the top of the
+/// area below the toolbar, and (unless the pane was resized, which changes
+/// the scale) the page point measured there is the same as before.
+@MainActor
+func expectUnmoved(_ before: PlaceSnapshot, in view: ReaderPDFView, resized: Bool = false, sourceLocation: SourceLocation = #_sourceLocation) {
+    expectKeptPlace(before.kept, in: view, sourceLocation: sourceLocation)
+    guard !resized else { return }
+    let now = view.visibleAnchor
+    #expect(now?.isSamePlace(as: before.visible, tolerance: 1) == true, "visible \(String(describing: now)) was \(before.visible)", sourceLocation: sourceLocation)
+}
+
 /// The annotation effect layers PDFKit draws under a view's page views: how
 /// many annotations the view shows (offscreen pixels don't include them,
 /// M0b Q11).

@@ -278,6 +278,7 @@ public final class ReaderPDFView: PDFView {
         // PDFKit may build or replace its scroll view after the document
         // changed notification; follow whichever clip view is current.
         observeClipView()
+        updateContentInsets()
         // Safe-area changes (toolbar shown or hidden, full screen) arrive as
         // layout passes without a frame change.
         refit(force: false)
@@ -287,6 +288,18 @@ public final class ReaderPDFView: PDFView {
             if let keptAnchor { restore(keptAnchor) }
         }
         updateLinkOverlays()
+    }
+
+    /// The window's content runs under the toolbar (full-size content view).
+    /// The scroll area still does, but the content starts below it: the
+    /// scroll view's insets follow the safe area, so the top of page 1 is
+    /// visible at the top of a document.
+    func updateContentInsets() {
+        guard let scrollView else { return }
+        let insets = safeAreaInsets
+        let wanted = NSEdgeInsets(top: insets.top, left: 0, bottom: insets.bottom, right: 0)
+        if scrollView.automaticallyAdjustsContentInsets { scrollView.automaticallyAdjustsContentInsets = false }
+        if !NSEdgeInsetsEqual(scrollView.contentInsets, wanted) { scrollView.contentInsets = wanted }
     }
 
     // MARK: Keeping your place (A3)
@@ -376,10 +389,17 @@ public final class ReaderPDFView: PDFView {
             } else {
                 origin.x = min(max(origin.x, documentFrame.minX), documentFrame.maxX - visible.width)
             }
-            if documentFrame.height <= visible.height {
+            // The content insets (the toolbar above, in document points) can
+            // be scrolled into, so the first page's top shows below the toolbar.
+            let ratio = clip.frame.height > 0 ? clip.bounds.height / clip.frame.height : 1
+            let top = scrollView.contentInsets.top * ratio
+            let bottom = scrollView.contentInsets.bottom * ratio
+            let lowest = documentFrame.minY - (clip.isFlipped ? top : bottom)
+            let highest = documentFrame.maxY - visible.height + (clip.isFlipped ? bottom : top)
+            if highest <= lowest {
                 origin.y = clip.bounds.origin.y
             } else {
-                origin.y = min(max(origin.y, documentFrame.minY), documentFrame.maxY - visible.height)
+                origin.y = min(max(origin.y, lowest), highest)
             }
         }
         clip.scroll(to: origin)
@@ -622,9 +642,9 @@ public final class ReaderPDFView: PDFView {
     }
 
     public override func quickLook(with event: NSEvent) {
-        // Force-click and three-finger tap Look Up. Over an internal link it
-        // previews the destination instead.
-        if previewLink(at: convert(event.locationInWindow, from: nil), trigger: .forceClick) { return }
+        // Force-click and three-finger tap Look Up. Over any link it never
+        // reaches PDFKit; an internal one previews instead.
+        if handleLookUpOverLink(at: convert(event.locationInWindow, from: nil)) { return }
         guard isCopyAllowed else { return }
         super.quickLook(with: event)
     }

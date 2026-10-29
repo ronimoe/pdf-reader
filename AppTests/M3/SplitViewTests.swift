@@ -57,7 +57,7 @@ extension M3Tests {
             let secondary = try #require(controller.secondaryPane)
             controller.focusOtherPane(nil)
             #expect(controller.focusedPaneID == .secondary)
-            let primaryPlace = try #require(harness.view.currentAnchor)
+            let primaryPlace = try snapshot(harness.view)
 
             // Outline (the sidebar) moves the focused pane only.
             controller.outlineSection.onJump?(try #require(harness.pdf.outlineRoot?.child(at: 1)))
@@ -72,7 +72,7 @@ extension M3Tests {
             // Back acts on the focused pane.
             controller.navigateBack(nil)
             #expect(secondary.view.visibleAnchor?.pageIndex == 3)
-            #expect(harness.view.currentAnchor == primaryPlace)
+            expectUnmoved(primaryPlace, in: harness.view)
             #expect(harness.primary.history.isEmpty)
             // Focus back on the first pane: its own, empty history.
             controller.focusOtherPane(nil)
@@ -102,7 +102,7 @@ extension M3Tests {
             let harness = try M3Harness()
             defer { harness.close() }
             harness.showFirstPage()
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             harness.view.beginLinkFocus()
             harness.view.previewFocusedLink()
             harness.view.endLinkFocus()
@@ -113,7 +113,7 @@ extension M3Tests {
             #expect(secondary.view.visibleAnchor?.pageIndex == 3)
             // The reader stays put, in the focused first pane (the pane is
             // narrower now, so only the scale differs).
-            #expect(harness.view.currentAnchor?.isSamePlace(as: place) == true)
+            expectUnmoved(place, in: harness.view, resized: true)
             #expect(harness.controller.focusedPaneID == .primary)
             #expect(harness.primary.history.isEmpty)
         }
@@ -125,11 +125,11 @@ extension M3Tests {
             let secondary = try #require(harness.controller.secondaryPane)
             secondary.view.restore(try #require(secondary.view.topAnchor(forPageAt: 6)))
             harness.showFirstPage()
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             try harness.preview(harness.link("Section 2")).openInSplit(nil)
             #expect(secondary.view.visibleAnchor?.pageIndex == 4)
             #expect(secondary.history.backList.map(\.pageIndex) == [6])
-            #expect(harness.view.currentAnchor == place)
+            expectUnmoved(place, in: harness.view)
             #expect(harness.primary.history.isEmpty)
             // From the second pane, the first one is "the other".
             harness.controller.focusOtherPane(nil)
@@ -273,7 +273,7 @@ extension M3Tests {
 
             // Preview a spread of them from where they sit, and follow one.
             harness.view.restore(try #require(harness.view.topAnchor(forPageAt: 0)))
-            let place = try #require(harness.view.currentAnchor)
+            let place = try snapshot(harness.view)
             let sample = stride(from: 0, to: linksInside.count, by: max(1, linksInside.count / 12)).map { linksInside[$0] }
             for (annotation, destination) in sample {
                 let request = LinkPreviewRequest(destination: destination, linkText: ReaderPDFView.text(of: annotation), sourceRect: .zero, trigger: .keyboard)
@@ -290,7 +290,7 @@ extension M3Tests {
                     #expect(preview.previewView.bounds.insetBy(dx: -2, dy: -2).contains(CGPoint(x: preview.previewView.bounds.midX, y: point.y)))
                 }
                 harness.controller.dismissPreview()
-                #expect(harness.view.currentAnchor == place)
+                expectUnmoved(place, in: harness.view)
             }
             #expect(harness.primary.history.isEmpty)
 
