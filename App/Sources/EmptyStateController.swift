@@ -57,6 +57,7 @@ final class EmptyStateController {
             // Tests show and hide it as documents come and go; it must never be seen.
             window.alphaValue = 0
             window.ignoresMouseEvents = true
+            window.animationBehavior = .none
         }
         // Document windows must never tab into this one.
         window.tabbingMode = .disallowed

@@ -43,6 +43,7 @@ final class OffscreenHost {
         window.isReleasedWhenClosed = false
         window.alphaValue = 0
         window.ignoresMouseEvents = true
+        window.animationBehavior = .none
         window.hasShadow = false
         window.acceptsMouseMovedEvents = true
         window.contentView = content

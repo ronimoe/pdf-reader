@@ -165,6 +165,8 @@ final class ReaderWindowController: NSWindowController {
         // Lectern restores sessions itself (SessionRestorer); AppKit's restoration would reopen
         // the same documents a second time.
         window.isRestorable = false
+        // Tests order hundreds of windows in and out; see TestWindows in AppTests.
+        if AppEnvironment.isHostingTests { window.animationBehavior = .none }
         super.init(window: window)
 
         configure(primaryPane)

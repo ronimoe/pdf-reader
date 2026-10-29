@@ -63,6 +63,7 @@ final class M5Harness {
         window.toolbar?.autosavesConfiguration = false
         window.alphaValue = 0
         window.ignoresMouseEvents = true
+        window.animationBehavior = .none
     }
 
     var window: NSWindow { controller.window! }
