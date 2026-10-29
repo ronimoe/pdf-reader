@@ -86,7 +86,7 @@ import Testing
         let listed = Set(Self.entries.map(\.path))
         #expect(onDisk.subtracting(listed).isEmpty, "PDFs with no regression entry: \(onDisk.subtracting(listed).sorted())")
         let missing = Set(Self.present.map(\.path)).subtracting(onDisk)
-        #expect(missing.isEmpty, "listed PDFs missing (fetched ones come from scripts/corpus/bootstrap): \(missing.sorted())")
+        #expect(missing.isEmpty, "listed PDFs missing (fetched ones come from scripts/corpus/bootstrap --fetch): \(missing.sorted())")
     }
 
     @Test func theWriterHasACaseForEveryFile() {

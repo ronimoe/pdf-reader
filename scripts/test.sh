@@ -7,6 +7,16 @@ result=0
 
 xcodegen generate --quiet || exit 1
 
+# The representative PDFs too large to commit (Tests/Corpus/public/fetched/): present ones are
+# checked against their SHA-256, missing ones are downloaded and checked. Without them the corpus
+# tests fail, so stop here with one clear message instead.
+echo "== corpus: fetched files"
+if ! scripts/corpus/bootstrap --fetch > build/logs/bootstrap-fetch.log 2>&1; then
+  echo "✘ The fetched test PDFs are missing and couldn't be downloaded (build/logs/bootstrap-fetch.log)."
+  echo "  Run scripts/corpus/bootstrap --fetch, then run this script again."
+  exit 1
+fi
+
 echo "== swift test (LecternKit)"
 (cd Packages/LecternKit && LECTERN_REQUIRE_TOOLS=1 swift test) > build/logs/swift-test.log 2>&1 || result=1
 grep -E "^✘|error:|Test run with" build/logs/swift-test.log
