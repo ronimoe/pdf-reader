@@ -10,7 +10,8 @@
   - It uses the same ad-hoc signing and hardened runtime, and the same PDF document type (rank Alternate).
   - It is headless. Each launch runs one mode (`--mode …`) and writes a JSON result into its container after every step.
 - **Builds.** "v1" and "v2" differ by a compiled code change (`PROBE_V2`) and `CFBundleVersion` 1 → 2. The CDHash therefore differs, and so does the ad-hoc designated requirement (`cdhash H"…"`), exactly as it will between two Lectern releases.
-- **Scripts.** `spikes/platform-probe/scripts/NN-*.sh`; raw output and per-run JSON are in `spikes/platform-probe/results/`.
+- **Scripts.** `spikes/platform-probe/scripts/NN-*.sh`; raw output and per-run JSON are in `spikes/platform-probe/results/`. `scripts/cleanup.sh` undoes everything the experiments leave behind.
+- **Steps that put a dialog on screen only run when asked.** Launching quarantined copies needs `GK_LAUNCH_QUARANTINED=1`, and interactive Keychain reads by v2 need `KC_INTERACTIVE=1`. The recorded runs had both set; reruns default to non-GUI checks.
 - **Dialog detection.** Each run checks for on-screen windows owned by SecurityAgent, UserNotificationCenter or CoreServicesUIAgent, using `scripts/onscreen-windows.swift`, and takes excerpts from the system log.
 - **Caveat on human input.** Someone was at the Mac during the run. They answered one Keychain prompt ("Always Allow"), chose "Move to Trash" on two Gatekeeper alerts, and reported the alert's text. Where that affected a result, it's noted below.
 
@@ -52,6 +53,8 @@ The EPERM control shows the sandbox really blocks the path, so access came from 
   - The container root can't be deleted (`rm` gets EPERM, and the kernel logs "System Policy … deny file-write-unlink"). Only `Data/` can be removed.
   - Creating `~/Library/Containers/<id>` by hand makes containermanagerd claim it immediately, so scripts must never pre-create it.
 - **Caveat.** This shell can read other apps' containers, which suggests a Full Disk Access–like grant. That doesn't affect the result, because the probe itself did the reads, but shell-side reads aren't representative of a user's Terminal.
+- **The probe's own identity was checked.** TCC credits the probe processes to themselves, not to this session (`results/logs-tcc-attribution.txt`, from `scripts/tcc-attribution.sh`: `accessing=io.github.ronimoe.PlatformProbe`, with no `responsible=` parent). So "no dialog" isn't borrowed from the shell's permissions.
+- **Independent corroboration.** In experiment 4, Sparkle relaunched v2 (not this shell), and v2 wrote into the existing container.
 
 **Consequence**
 - §6 storage (per-document JSON, the crash journal, `UserDefaults`) survives updates with no user-visible effect.
@@ -113,6 +116,8 @@ The EPERM control shows the sandbox really blocks the path, so access came from 
    - **The relaunched app.** It was v2 (`bundleVersion 2`), still sandboxed, at the original path, using the same container.
    - **On disk.** `CFBundleVersion 2`, and the CDHash equals the v2 build's. The signature is valid, and there is **no `com.apple.quarantine`**, so Gatekeeper never re-checks a Sparkle-installed update.
    - **Dialogs.** None appeared, and there was no App Management prompt, in either `~/PlatformProbeFixtures/Applications` or `/Applications`.
+   - **Not borrowed from this session.** TCC credits the probe and `org.sparkle-project.Sparkle.Updater` to themselves. During the `/Applications` update, the only `kTCCServiceSystemPolicyAppBundles` (App Management) request was about an unrelated app, Raycast (`results/logs-tcc-attribution.txt`).
+   - **Which run each file comes from.** `results/04-sparkle.txt` is the home-folder run, and `results/04b-sparkle-in-Applications.txt` is the `/Applications` run. The per-run files `sp-1-update-v1.json`, `sp-2-relaunched.json` and `logs-sp-1-update-v1.txt` were overwritten by the `/Applications` run.
 4. **Key handling.** `sign_update` hung on a Keychain prompt for the key `generate_keys` stored (experiment 3). Exporting the key once with `generate_keys -x` and signing with `sign_update --ed-key-file` avoids that. In CI, the key would be a secret file.
 
 **Not verified**
@@ -225,7 +230,7 @@ The EPERM control shows the sandbox really blocks the path, so access came from 
 >
 > Right-click → Open no longer bypasses this on macOS 15 and later. You only do this once: updates installed by Lectern's updater don't need it again.
 >
-> **Build from source** (needs Xcode 27 and XcodeGen)
+> **Build from source** (needs Xcode 27 and XcodeGen. The `xcodegen` and `xcodebuild` lines were run on `m0-skeleton` here and produced an ad-hoc, hardened-runtime `Lectern.app` with no quarantine. The clone only gives a usable app once the app is merged to `main`.)
 > ```sh
 > git clone https://github.com/ronimoe/pdf-reader && cd pdf-reader
 > brew install xcodegen && xcodegen generate
@@ -245,6 +250,8 @@ The EPERM control shows the sandbox really blocks the path, so access came from 
 - **The "Open Anyway" flow.** Never clicked, by instruction. The steps come from Apple's support page.
 - **Sparkle's standard UI path, and updates over HTTPS from GitHub Releases.** Untested; the headless driver and a localhost feed were used.
 - **Updating a copy that is still quarantined or translocated.** Not tested.
+- **Sparkle's scheduled background path.** The update was triggered with `checkForUpdates()` and an auto-accepting driver. `SUAutomaticallyUpdate` (silent download, install on quit) wasn't exercised.
+- **Hosting.** The Homebrew tap `ronimoe/homebrew-lectern` and the GitHub Releases DMG don't exist yet, so those install commands are templates.
 - **`brew trust` behaviour for a GitHub-hosted tap.** Not tested.
 - **Whether Lectern builds with Xcode 26.6** (the `macos-26` image). Not checked.
 - **Behaviour on other macOS 26.x or on macOS 27.** Only macOS 26.6.2 was tested.
