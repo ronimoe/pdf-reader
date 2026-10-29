@@ -1,4 +1,5 @@
 import AppKit
+import ReaderKit
 import Testing
 @testable import Lectern
 
@@ -42,11 +43,18 @@ import Testing
         #expect(actions.contains(#selector(NSWindow.toggleToolbarShown(_:))))
     }
 
-    @Test func shortcutsAreUnique() {
-        let shortcuts = allItems(menu)
-            .filter { !$0.keyEquivalent.isEmpty }
-            .map { "\($0.keyEquivalentModifierMask.rawValue)-\($0.keyEquivalent)" }
-        #expect(Set(shortcuts).count == shortcuts.count)
+    @Test func shortcutsAreUnique() throws {
+        // Both as built and as running, after AppKit adds its own items
+        // (full screen, tab bar) to the live menu.
+        for menu in [menu, try #require(NSApp.mainMenu)] {
+            let shortcuts = allItems(menu)
+                .filter { !$0.keyEquivalent.isEmpty }
+                .map { "\($0.keyEquivalentModifierMask.rawValue)-\($0.keyEquivalent)" }
+            #expect(Set(shortcuts).count == shortcuts.count, "\(shortcuts.sorted())")
+            let fullScreen = allItems(menu).filter { $0.action == #selector(NSWindow.toggleFullScreen(_:)) }
+            // On macOS 26 AppKit adds its own Globe-F item and keeps ⌃⌘F as a hidden alternate.
+            #expect(fullScreen.filter { !$0.isHidden }.count == 1)
+        }
     }
 
     @Test func fileMenuHasPrintAndOpenRecentButNoSave() throws {
@@ -91,6 +99,20 @@ import Testing
         controller.model.onOpenURLs([url])
         #expect(openPanels == 1)
         #expect(opened == [url])
+    }
+
+    @Test func dropsAcceptOnlyPDFFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+        let pdf = directory.appending(path: "Dropped-\(UUID().uuidString).pdf")
+        let text = directory.appending(path: "Dropped-\(UUID().uuidString).txt")
+        try #require(TestPDF.make(pageCount: 1)).write(to: pdf)
+        try Data("hello".utf8).write(to: text)
+        let pasteboard = NSPasteboard(name: .init("LecternTests-\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        pasteboard.writeObjects([pdf as NSURL, text as NSURL])
+        let urls = ReaderPDFView.pdfURLs(on: pasteboard).map(\.standardizedFileURL)
+        #expect(urls == [pdf.standardizedFileURL])
     }
 
     @Test func emptyStateWindowNeverTakesDocumentTabs() throws {

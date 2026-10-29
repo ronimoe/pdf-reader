@@ -7,6 +7,17 @@ import ReaderUI
 import Testing
 @testable import Lectern
 
+/// Whether Edit ▸ Copy would be enabled for `view`, through AppKit's own
+/// menu validation rather than a direct call.
+@MainActor
+private func isCopyEnabled(on view: NSView) -> Bool {
+    let menu = NSMenu()
+    let item = menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    item.target = view
+    menu.update()
+    return item.isEnabled
+}
+
 /// Drives a reader window in-process, without showing it.
 @MainActor
 private struct Harness {
@@ -332,6 +343,20 @@ private struct Harness {
         #expect(harness.controller.window?.isVisible != true)
     }
 
+    @Test func realSheetAppearsAndCancelClosesCleanly() throws {
+        let document = try ReaderDocument.loaded(try #require(TestPDF.encrypted(user: "user", owner: "owner")))
+        let controller = ReaderWindowController(document: document, passwordStore: InMemoryPasswordStore(), presenter: SheetPresenter())
+        document.addWindowController(controller)
+        controller.showWindow(nil)
+        let window = try #require(controller.window)
+        #expect(window.attachedSheet != nil)
+
+        controller.passwordPrompt?.cancel()
+        #expect(window.attachedSheet == nil)
+        #expect(!window.isVisible)
+        #expect(document.windowControllers.isEmpty)
+    }
+
     @Test func unencryptedDocumentsNeverConsultTheStore() throws {
         let harness = try Harness(try #require(TestPDF.make(pageCount: 1)))
         defer { harness.close() }
@@ -351,6 +376,23 @@ private struct Harness {
         harness.pdfView.copy(nil)
         #expect(harness.presenter.explained == [.copy])
         #expect(NSPasteboard.general.changeCount == changeCount)
+    }
+
+    @Test func copyStaysEnabledOnRestrictedDocumentsSoItCanExplain() throws {
+        let harness = try Harness(try #require(TestPDF.encrypted(user: nil, owner: "owner", allowsPrinting: true)))
+        defer { harness.close() }
+        // With and without a selection: PDFKit may refuse to select restricted text.
+        #expect(isCopyEnabled(on: harness.pdfView))
+        harness.pdfView.selectAll(nil)
+        #expect(isCopyEnabled(on: harness.pdfView))
+    }
+
+    @Test func unrestrictedDocumentsAllowCopyingTheSelection() throws {
+        let harness = try Harness(try #require(TestPDF.make(pageCount: 1)))
+        defer { harness.close() }
+        harness.pdfView.selectAll(nil)
+        #expect(isCopyEnabled(on: harness.pdfView))
+        #expect(harness.pdfView.isCopyAllowed)
     }
 
     @Test func blockedPrintIsExplainedNotIgnored() throws {
