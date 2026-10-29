@@ -171,7 +171,7 @@ extension ReaderPDFView {
         }
         let lineRect = convert(selection.selectionsByLine().first?.bounds(for: page) ?? selection.bounds(for: page), from: page)
         selectionBar.markupColor = markupColor
-        let size = selectionBar.fittingSize
+        let size = selectionBar.preferredSize
         let visible = unobscuredRect
         var origin = CGPoint(x: lineRect.minX, y: isFlipped ? lineRect.minY - size.height - 6 : lineRect.maxY + 6)
         let above = isFlipped ? origin.y >= visible.minY : origin.y + size.height <= visible.maxY
@@ -346,6 +346,9 @@ public final class SelectionActionBar: NSView {
         colorButton.menu = menu
         stack.addArrangedSubview(colorButton)
         updateColorButton()
+        // The bar is placed by its frame: start at the size its buttons need, so an empty frame
+        // never conflicts with them.
+        setFrameSize(preferredSize)
         setAccessibilityElement(true)
         setAccessibilityRole(.toolbar)
         setAccessibilityLabel("Annotate selection")
@@ -353,6 +356,9 @@ public final class SelectionActionBar: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// The size the buttons need.
+    public var preferredSize: NSSize { stack.fittingSize }
 
     public override var acceptsFirstResponder: Bool { false }
     // A click on the bar must not reach the page underneath, nor make the window key-cycle.
