@@ -222,8 +222,7 @@ final class SheetPresenter: ReaderPresenting {
 
     func editAnnotationText(heading: String, text: String, relativeTo rect: NSRect, of view: NSView, finished: @escaping (String?) -> Void) {
         let editor = AnnotationTextEditorController(heading: heading, text: text)
-        let popover = NSPopover()
-        popover.behavior = .transient
+        let popover = Self.makeEditorPopover()
         popover.contentViewController = editor
         editor.presentingPopover = popover
         editor.onFinish = finished
@@ -237,6 +236,14 @@ final class SheetPresenter: ReaderPresenting {
 // MARK: Bookmarks
 
 extension SheetPresenter {
+    /// The annotation text popover: transient, and still while Reduce Motion is on.
+    static func makeEditorPopover() -> NSPopover {
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = !Motion.isReduced
+        return popover
+    }
+
     func renameBookmark(currentName: String, on window: NSWindow, finished: @escaping (String?) -> Void) {
         let alert = NSAlert()
         alert.alertStyle = .informational

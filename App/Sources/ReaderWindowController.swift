@@ -358,6 +358,8 @@ final class ReaderWindowController: NSWindowController {
         window?.makeFirstResponder(focusedPane.view)
         annotationEditorDidChange()
         readerDocument.inspectForAnnotations()
+        // In the background: which pages have no text, for search (B8) and VoiceOver (spec §9.3).
+        loadTextInventoryIfNeeded()
     }
 
     // MARK: Stored state (A2)
@@ -669,7 +671,7 @@ final class ReaderWindowController: NSWindowController {
         startSearch(query)
     }
 
-    private func loadTextInventoryIfNeeded() {
+    func loadTextInventoryIfNeeded() {
         guard pagesWithoutText == nil, textInventoryTask == nil, let textInventory else { return }
         textInventoryTask = Task { [weak self] in
             let missing = await textInventory.pagesWithoutText()
@@ -684,6 +686,29 @@ final class ReaderWindowController: NSWindowController {
         textInventoryTask = nil
         pagesWithoutText = missing
         search?.pagesWithoutText = missing.count
+        for pane in panes { applyTextAccessibility(to: pane) }
+    }
+
+    /// Scanned pages aren't presented as readable text (spec §9.3): the reading view's
+    /// accessibility help says how many pages are only images, and the pane's value says so in
+    /// short. PDFKit exposes no per-page accessibility to change, so this is per document.
+    func applyTextAccessibility(to pane: ReaderPane) {
+        let pageCount = pane.view.document?.pageCount ?? 0
+        let missing = pagesWithoutText?.count ?? 0
+        let help: String?
+        let value: String?
+        if pageCount == 0 || missing == 0 {
+            help = nil
+            value = nil
+        } else if missing >= pageCount {
+            help = "This document has no text that VoiceOver can read. Its pages are images, such as scans."
+            value = "No readable text"
+        } else {
+            help = "\(missing) of \(pageCount) pages have no text that VoiceOver can read. They are images, such as scans."
+            value = "Some pages have no readable text"
+        }
+        pane.view.setAccessibilityHelp(help)
+        paneContainers[pane.id]?.readableTextNote = value
     }
 
     /// Waits for the text check in flight, for tests.

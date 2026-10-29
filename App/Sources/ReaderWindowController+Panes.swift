@@ -75,6 +75,7 @@ extension ReaderWindowController {
         let start = anchor ?? focusedPane.view.currentAnchor
         if let start { pane.view.restore(start) }
         updatePaneChrome()
+        applyTextAccessibility(to: pane)
         saveAnchor()
         return pane
     }

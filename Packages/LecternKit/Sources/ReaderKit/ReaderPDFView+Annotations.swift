@@ -327,7 +327,7 @@ public final class SelectionActionBar: NSView {
         background.wantsLayer = true
         background.layer?.cornerRadius = 8
         background.layer?.borderWidth = 0.5
-        background.layer?.borderColor = NSColor.separatorColor.cgColor
+        background.layer?.borderColor = resolvedCGColor(.separatorColor)
         addSubview(background)
         background.translatesAutoresizingMaskIntoConstraints = false
         stack.orientation = .horizontal
@@ -384,6 +384,11 @@ public final class SelectionActionBar: NSView {
 
     /// The size the buttons need.
     public var preferredSize: NSSize { stack.fittingSize }
+
+    public override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        background.layer?.borderColor = resolvedCGColor(.separatorColor)
+    }
 
     public override var acceptsFirstResponder: Bool { false }
     // A click on the bar must not reach the page underneath, nor make the window key-cycle.

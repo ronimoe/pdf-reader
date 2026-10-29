@@ -15,7 +15,7 @@ brew install --cask ronimoe/lectern/lectern
 
 - **If Homebrew refuses the tap as untrusted,** run `brew trust --cask ronimoe/lectern/lectern` and install again. Homebrew requires this for taps outside its own.
 - **No Gatekeeper step.** Homebrew marks what it installs as downloaded (quarantined). The cask removes that mark from `Lectern.app` right after installing, so you don't need the steps in the DMG section. This is why Lectern lives in its own tap: Homebrew's main cask repository doesn't accept apps that need it.
-- **Updating.** `brew upgrade` updates Lectern along with your other casks.
+- **Updating.** `brew upgrade` updates Lectern along with your other casks. Lectern's own update check (below) works too, but is off unless you turn it on.
 
 ## Download (DMG) (not yet published)
 
@@ -34,9 +34,19 @@ xattr -dr com.apple.quarantine /Applications/Lectern.app
 
 This removes the "downloaded from the internet" mark from the app, and macOS then opens it without asking.
 
-- **You do this once per downloaded copy.** Lectern has no built-in updater yet, so each new version you download needs it again.
+- **You do this once per downloaded copy.** Updates that Lectern installs itself (see [Updates](#updates)) arrive without the "downloaded" mark, so they don't need it again. A new DMG you download by hand does.
 - **Control-click → Open no longer works.** Since macOS 15 it doesn't bypass the check; use one of the routes above.
 - **The DMG includes `Read Me First.txt`** with the same steps.
+
+## Updates
+
+Lectern never goes online on its own unless you say so.
+
+- **On first launch** it asks once whether to check for updates automatically. The default answer is no. Change it any time in **Lectern ▸ Settings… ▸ Updates**.
+- **If you turn it on,** Lectern checks GitHub for a newer release at most once a day and asks before installing anything. **Check Now** in Settings (or **Lectern ▸ Check for Updates…**) checks once, whatever the setting.
+- **What is sent.** Only the request for the release feed. No analytics, crash reports or usage data, ever.
+- **How updates are trusted.** Every update is signed with the project's EdDSA key, and Lectern refuses one that isn't. The app's ad-hoc code signature changes with every build, so this signature is what identifies a real update.
+- **With Homebrew,** `brew upgrade --cask lectern` works whether or not this is on.
 
 ## Build from source
 
@@ -59,6 +69,10 @@ ditto build/DerivedData/Build/Products/Release/Lectern.app /Applications/Lectern
 
 - **`scripts/release/build-dmg`** makes a clean Release build, checks its ad-hoc signature and entitlements, and writes `build/release/Lectern-<version>.dmg` with its `.sha256`. The DMG appears only after `hdiutil verify` passes.
 - **`scripts/release/verify-dmg`** checks that DMG and test-launches a copy of the app. It refuses to run while Lectern is running. The test launch doesn't restore your saved windows, but it uses your real Lectern data: the temporary test PDF appears in **File ▸ Open Recent** and in Lectern's stored reading state. **File ▸ Open Recent ▸ Clear Menu** removes both.
+- **`scripts/release/build-dmg`** also writes `build/release/Lectern-<version>.zip`, the update archive for the in-app updater.
+- **`scripts/release/sign-update <zip>`** signs that archive with the EdDSA key in `~/.config/lectern/sparkle_ed25519_private.key` and adds it to `build/release/appcast.xml`. It refuses a key whose public half isn't the app's `SUPublicEDKey`. Upload the zip and `appcast.xml` to the GitHub release; the app reads `releases/latest/download/appcast.xml`. **Keep the key file backed up offline:** without it, installed copies can never be updated by the app again.
+- **`swift scripts/release/sparkle-key.swift generate <file>`** makes a new key file (mode 600) without using the Keychain, and prints the public key. It refuses to overwrite a key. Only needed once.
+- **`scripts/release/sparkle-e2e`** proves, without any window, that the updater installs one ad-hoc build over another and refuses an update signed with a different key. It builds a small headless test app and installs it in a temporary folder.
 - **`scripts/release/update-cask`** writes the version and checksum of a DMG into the cask. It refuses a DMG without a matching `.sha256`. **`scripts/release/check-cask`** runs `brew style` and `brew audit` on the cask in a throwaway local tap.
 
 ## Uninstall
@@ -72,7 +86,7 @@ Removing the app leaves your reading data behind. Lectern is sandboxed, so all o
 
 | Location | What's there |
 |---|---|
-| `~/Library/Containers/io.github.ronimoe.Lectern` | Everything Lectern stores: reading positions, reader bookmarks, history, view settings and preferences |
+| `~/Library/Containers/io.github.ronimoe.Lectern` | Everything Lectern stores: reading positions, reader bookmarks, history, view settings, the list of windows to reopen, and preferences |
 | `~/Library/Application Scripts/io.github.ronimoe.Lectern` | An empty folder macOS creates for every sandboxed app |
 
 - **Removing the data.** Quit Lectern first. Your reading data is in the `Data` folder inside the container. macOS protects the container folder itself, so it may refuse to delete it, and it may ask whether Terminal or Finder can access another app's data.

@@ -26,9 +26,7 @@ public final class PopoverPreviewPresenter: NSObject, LinkPreviewPresenting, NSP
 
     public func present(_ controller: LinkPreviewController, relativeTo rect: NSRect, of view: NSView) {
         if let current = self.controller { dismiss(current) }
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = animates
+        let popover = Self.makePopover(animates: animates)
         popover.contentViewController = controller
         popover.delegate = self
         self.popover = popover
@@ -41,6 +39,14 @@ public final class PopoverPreviewPresenter: NSObject, LinkPreviewPresenting, NSP
         popover?.performClose(nil)
         // performClose can be refused while animating; close for certain.
         if popover?.isShown == true { popover?.close() }
+    }
+
+    /// A transient popover that doesn't animate while Reduce Motion is on.
+    public static func makePopover(animates: Bool) -> NSPopover {
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = animates && !Motion.isReduced
+        return popover
     }
 
     /// The popover itself, for a smoke test.

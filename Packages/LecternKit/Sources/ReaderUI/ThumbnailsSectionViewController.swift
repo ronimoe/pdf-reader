@@ -144,14 +144,20 @@ final class ThumbnailCellView: NSTableCellView {
 
     var image: NSImage? { pageImageView.image }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        pageImageView.layer?.borderColor = resolvedCGColor(.separatorColor)
+    }
+
     init() {
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         pageImageView.imageScaling = .scaleProportionallyUpOrDown
         pageImageView.wantsLayer = true
+        // White in dark mode too: the page is the document's, not the app's (spec §4.2).
         pageImageView.layer?.backgroundColor = NSColor.white.cgColor
-        pageImageView.layer?.borderColor = NSColor.separatorColor.cgColor
+        pageImageView.layer?.borderColor = resolvedCGColor(.separatorColor)
         pageImageView.layer?.borderWidth = 1
         pageImageView.translatesAutoresizingMaskIntoConstraints = false
         label.alignment = .center

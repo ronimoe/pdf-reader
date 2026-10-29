@@ -98,7 +98,7 @@ struct KeyboardShortcutsView: View {
     var body: some View {
         List {
             ForEach(groups) { group in
-                Section(group.menu) {
+                Section {
                     ForEach(group.entries) { entry in
                         HStack {
                             Text(entry.title)
@@ -110,10 +110,15 @@ struct KeyboardShortcutsView: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("\(entry.title): \(Self.spoken(entry.keys))")
                     }
+                } header: {
+                    Text(group.menu)
+                        .accessibilityAddTraits(.isHeader)
                 }
+                .collapsible(false)
             }
         }
         .listStyle(.inset)
+        .accessibilityLabel("Keyboard shortcuts")
         .frame(minWidth: 380, idealWidth: 420, minHeight: 360, idealHeight: 560)
     }
 

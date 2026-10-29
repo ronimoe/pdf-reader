@@ -151,7 +151,10 @@ import Testing
         #expect(old.rotation == 90)
         #expect(old.zoom == .fitWidth)
         #expect(old.sidebar == SidebarSettings())
-        let future = try JSONDecoder().decode(SidebarSettings.self, from: Data(#"{"isVisible":true,"section":"bookmarks"}"#.utf8))
+        // A section a newer version added falls back to thumbnails.
+        let future = try JSONDecoder().decode(SidebarSettings.self, from: Data(#"{"isVisible":true,"section":"layers"}"#.utf8))
         #expect(future == SidebarSettings(isVisible: true, section: .thumbnails))
+        let bookmarks = try JSONDecoder().decode(SidebarSettings.self, from: Data(#"{"isVisible":true,"section":"bookmarks"}"#.utf8))
+        #expect(bookmarks == SidebarSettings(isVisible: true, section: .bookmarks))
     }
 }

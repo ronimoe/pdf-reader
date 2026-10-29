@@ -43,6 +43,11 @@ This document answers the technical questions that [product-spec.md](product-spe
 - AppKit asks for an untitled document at launch when nothing was opened or restored, and on a Dock click with no windows. `applicationOpenUntitledFile` answers both by showing the empty-state window.
 - The document controller reports every add and remove, one run-loop turn later. The empty state is shown whenever the count reaches zero and hidden otherwise.
 
+**Settings, the shortcut map and the bookmarks list** *(Amended 2026-10-29, M5)*
+- **Settings** (⌘,) is `SettingsView` (ReaderUI, SwiftUI) in an AppKit window owned by `SettingsWindowController`. Each control writes its preference at once; there is no Apply. Hover previews share one preference with the View menu.
+- **Help ▸ Keyboard Shortcuts** (⌘/) is a SwiftUI list built from the running `NSApp.mainMenu` every time it opens (`KeyboardShortcutCatalog`), so it can't drift from the menus. Visible items with a key equivalent are listed; hidden alternates (⌘= for Zoom In, AppKit's spare ⌃⌘F) work but aren't.
+- **Bookmarks** are a sidebar section (`BookmarksSectionViewController`, AppKit like the others), between the table of contents and the annotations.
+
 **Why not SwiftUI throughout?** SwiftUI's document architecture (`DocumentGroup`) doesn't give enough control over four things this app depends on:
 - saving (A1),
 - reacting when the file changes on disk (B7),
@@ -335,6 +340,12 @@ The same type is stored as the reading position (A2) and used for history entrie
 - **History and stored positions** use the same type. A jump to a page lands on the page's visual top-left corner, rotation included. A destination with unspecified coordinates (`/Fit`) does the same.
 - **Search results** are shown a third of the way down the area below the toolbar. PDFKit's `go(to: PDFSelection)` ignores the safe area.
 
+**Distraction-free mode** *(Added 2026-10-29, M5)*
+- View ▸ Enter Distraction-Free Mode (⇧⌘F) hides the toolbar, the sidebar and the split's focus bar and close buttons, inside every pane's anchor capture. Escape or ⇧⌘F leaves; ⌘F leaves too, because the search field is in the toolbar.
+- **The toolbar is detached, not hidden.** Toolbars that share an identifier share their visibility, and visibility is autosaved, so hiding one would hide every window's toolbar for good.
+- **Nothing is stored.** Collapsing the sidebar here isn't the user's choice, so the document's `ViewSettings.sidebar` is untouched. The mode belongs to the window for the session, and the session restore brings it back.
+- Settings ▸ General can make it enter full screen as well; leaving it then leaves full screen.
+
 ### 4.6 Concurrency
 
 **Main thread:** all UI, and the `PDFDocument` shared by the panes.
@@ -398,6 +409,11 @@ The same type is stored as the reading position (A2) and used for history entrie
 | `AnnotationColorPreset`, `AnnotationKindName` | ReaderCore | The six named colours (B4), names for other apps' colours, and which kinds are listed and can be recoloured *(Added 2026-10-29, M4b)* |
 | `AnnotationEditor` | App | One per `PDFDocument`. Applies each user action to `PendingChanges` and to PDFKit, matches file annotations page by page, and registers the inverse action for undo. So undo works across a save: undoing a saved add appends a delete, and undoing a saved delete recreates the annotation under a new `/NM` (markup and notes only) *(Added 2026-10-29, M4b)* |
 | `LinkTarget` | ReaderKit | A link's destination or action, classified for routing (§4.4) |
+| `ReaderBookmark`, `ReaderBookmarks`, `BookmarkExport` | ReaderCore | A named `ReadingAnchor` (A2), the rules for ⌘D (a bookmark "here" is one on the page being read, so ⌘D removes it), reading order, renaming, and the versioned JSON export ([bookmarks-export.md](bookmarks-export.md)) *(Added 2026-10-29, M5)* |
+| `SessionRestorePolicy` | ReaderCore | Reopen last session's documents: as macOS says, always, or never *(Added 2026-10-29, M5)* |
+| `SessionState`, `SessionRestorer` | App | The windows, tab order, selected tab, frames and distraction-free mode at quit, and reopening them (§6) *(Added 2026-10-29, M5)* |
+| `UpdateController` | App | The opt-in update flow (A4, §7): the first-launch question, the setting, Check Now. Creates Sparkle only when needed *(Added 2026-10-29, M5)* |
+| `KeyboardShortcutCatalog` | App | Help ▸ Keyboard Shortcuts, read from the main menu *(Added 2026-10-29, M5)* |
 
 ## 6. Storage
 
@@ -447,7 +463,14 @@ The same type is stored as the reading position (A2) and used for history entrie
 **Other storage**
 - **Recent documents:** the system recents list kept by `NSDocumentController`.
 - **Session restore:** AppKit window restoration, which brings back windows, tabs, splits and each pane's anchor (B3).
+  - *(Amended 2026-10-29, M5)* **Lectern's own state, not AppKit's restoration.** `SessionRestorer` writes `Session.json` beside `index.json`: the windows front to back, each with its tabs (a security-scoped bookmark and the path), the selected tab, the frame, and whether it was in distraction-free mode. Each pane's place, the split, zoom and sidebar aren't in it: they are the per-document state (A2), which reopening the document restores.
+  - **Why not AppKit's.** AppKit discards its state when macOS closes windows on quit, so Settings' "Always" couldn't work; a missing file would go through `NSDocumentController`'s error path; and none of it can be driven in a test. `isRestorable` is off on every Lectern window so the two never both reopen a document.
+  - **When.** Settings ▸ General ▸ Reopen documents on launch: "As set in System Settings" (the default: restore only when Desktop & Dock ▸ "Close windows when quitting an application" is off, `NSQuitAlwaysKeepsWindows`), Always, or Never. Never deletes the file, so no list of open files is kept.
+  - **Saving.** On every document open and close, so a crash still restores, and once at quit before the unsaved-changes review closes anything (`reviewUnsavedDocuments`), or at `applicationWillTerminate` when there was no review.
+  - **Restoring.** At launch, each window's documents open without display, then the first is shown with tabbing off (so it doesn't join another window) and the rest are added as tabs in order. The empty state waits until the restore ends. A file that is gone, or fails to open, is skipped without a message. An encrypted document asks for its password again unless the Keychain read succeeds; a failed or declined read counts as not remembered (B6).
+  - **Not done:** full screen isn't restored, and a tab dragged into another window is saved only at the next open, close or quit.
 - **Settings:** `UserDefaults`.
+  - *(Amended 2026-10-29, M5)* Keys: `ReopenDocumentsOnLaunch`, `PreviewLinksOnHover`, `DistractionFreeEntersFullScreen`, `annotationAuthor` (empty unless typed, B4), `AnnotationColor`, `CheckForUpdatesAutomatically` (absent until the first-launch question is answered). Sparkle keeps its own `SU*` keys, but only once the user has opted in or chosen Check Now.
 - **Passwords:** Keychain, only when "Remember in Keychain" is ticked (B6).
   - *(Amended 2026-10-29, M1)* These are generic-password items in the file-based login keychain: service `io.github.ronimoe.Lectern.document-password`, with the `DocumentKey` as the account.
   - The data-protection keychain would need a `keychain-access-groups` entitlement, which needs a team-signed build.
@@ -464,6 +487,8 @@ The same type is stored as the reading position (A2) and used for history entrie
 | Printing | `com.apple.security.print`, so Print works inside the sandbox *(Added 2026-10-29, M1)* |
 | Sparkle's `mach-lookup` temporary exception | Sparkle's installer service runs outside the sandbox (A4) |
 | `com.apple.security.cs.disable-library-validation` | Needed for as long as the app is signed ad-hoc. Without it the hardened runtime refuses to load the embedded Sparkle framework |
+
+*(Amended 2026-10-29, M5.)* Both Sparkle rows are now in `App/Lectern.entitlements`: the mach-lookup exception for `$(PRODUCT_BUNDLE_IDENTIFIER)-spks` and `-spki`, and `disable-library-validation`. `scripts/release/build-dmg` refuses a build without them or without the embedded framework. Sparkle's downloader service isn't used (`SUEnableDownloaderService` off), because the app already has `network.client`.
 
 *(Amended 2026-10-29, from the M0c prototype, [spikes/m0c-platform.md](spikes/m0c-platform.md).)*
 - **The sandbox stays on.** Bookmarks and the container both survived ad-hoc rebuilds in both directions.
@@ -484,6 +509,16 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 | qpdf | Generating test files and the structural check (§3.2) | Apache-2.0 | No, developer tool |
 | pyHanko | Generating signed test files | MIT | No, developer tool |
 
+*(Amended 2026-10-29, M5)* **Sparkle 2.10.1, pinned with `exactVersion` in `project.yml`.** It stays: Sparkle installs updates between ad-hoc signed builds, so the notify-only fallback isn't needed.
+- **Why it works.** An ad-hoc build's designated requirement is its CDHash, so the old and new builds never satisfy each other's, and Sparkle's code-signing check always fails between them. Sparkle's `SUUpdateValidator` (read in the 2.10.1 source for M0c) accepts an app update when *either* the EdDSA signature verifies against the old app's `SUPublicEDKey` *or* the code signatures match. The EdDSA signature alone carries it.
+- **Proof.** `scripts/release/sparkle-e2e` builds the M0c probe twice with `App/Lectern.entitlements` (two different CDHashes, no `get-task-allow`), serves an appcast from 127.0.0.1 and drives a headless `SPUUserDriver`. Run on 2026-10-29 (macOS 26.6.2); the output is in [spikes/platform-probe/results/m5-sparkle-e2e.txt](../spikes/platform-probe/results/m5-sparkle-e2e.txt):
+  - an archive signed with another key was refused ("improperly signed", `SUSparkleErrorDomain` 4005) and v1 stayed installed;
+  - the archive signed with v1's key installed, and Sparkle relaunched it as v2, still sandboxed, with v2's CDHash, a valid signature and no quarantine;
+  - no dialog window appeared. It installed into a temporary folder, not `/Applications`.
+- **How Lectern uses it.** `UpdateController` asks once at first launch (default: don't check) and keeps the answer in its own preference. Sparkle isn't created until the user opts in or chooses Check Now, so declining means Sparkle never runs and nothing goes over the network. Info.plist turns off Sparkle's own permission prompt (`SUEnableAutomaticChecks` false) and automatic installs; the system profile is never sent; scheduled checks are at most daily. Sparkle's standard windows show progress and ask before installing.
+- **The key.** An Ed25519 key in a file, `~/.config/lectern/sparkle_ed25519_private.key` (mode 600), made by `scripts/release/sparkle-key.swift` without the login Keychain. Sparkle's `generate_keys` keeps its key in the Keychain, which its ad-hoc signed `sign_update` can't read without a prompt (M0c, experiment 3). The public key is `SUPublicEDKey` in `App/Info.plist`. Losing the private key means installed copies can never be updated by the app again.
+- **Not verified:** Sparkle's standard windows, HTTPS from GitHub Releases (the test used plain HTTP on 127.0.0.1), scheduled checks firing, and an update in `/Applications` with this setup (M0c did `/Applications` with its own).
+
 ## 8. Build and distribution
 
 **Project setup** *(Amended 2026-10-29)*
@@ -501,6 +536,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 1. Archive a Release build: `xcodebuild archive`, signed ad-hoc with the hardened runtime on and no `get-task-allow`.
 2. Package the DMG and publish it on GitHub Releases.
 3. Sign the update archive with Sparkle's EdDSA key. The private key is kept off the repo and backed up offline.
+   - *(Amended 2026-10-29, M5)* `build-dmg` also writes `Lectern-<version>.zip`. `scripts/release/sign-update <zip>` signs it with `sign_update --ed-key-file` from the pinned Sparkle, checks the key's public half against `SUPublicEDKey`, verifies the signature, and adds an item to `build/release/appcast.xml` (an item for the same build number is replaced). Both files are uploaded to the release; the feed is `https://github.com/ronimoe/pdf-reader/releases/latest/download/appcast.xml`.
 4. Publish a Homebrew cask in our own tap, `ronimoe/lectern`.
    - The cask removes the download quarantine after installing, through `postflight`. The official `homebrew/cask` rejects apps that fail Gatekeeper, so it can't host this app.
    - *(Amended 2026-10-29, M6a)* It leaves `auto_updates` unset: the in-app updater is opt-in and off by default, so `brew upgrade` must handle upgrades.
@@ -525,6 +561,17 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 
 **User-interface tests (XCUITest)**
 - One script per journey in spec §10 (A–D), run against files from the collection.
+- *(Amended 2026-10-29, M5)* **Not used.** XCUITest drives real windows on the user's screen, which the user declined. The journeys are covered in-process instead: windows are made transparent and click-through, and the UI tripwire fails any test that tries to show an alert, sheet or panel.
+
+**Accessibility** *(Added 2026-10-29, M5)*
+- `AccessibilityAudit` (AppTests) walks a reader window's views, its toolbar, the popovers and every SwiftUI screen (through the accessibility tree). It fails on an interactive element with no name, a control that refuses first responder, a segment with no name, or a toolbar action with no menu equivalent. A test injects an unnamed button and an unreachable one to prove it fails. The selection bar is exempt from focus by design (it must not take focus from the page), and every action on it is in the Annotate menu with a shortcut.
+- It checks `refusesFirstResponder` rather than `canBecomeKeyView`, which depends on the Mac's Full Keyboard Access setting.
+- **Reduce Motion** turns off the popovers' animation (`Motion` in ReaderKit). Nothing else in the app animates; sidebar and distraction-free changes are immediate.
+- **Scanned pages.** The text check (`TextInventory`) runs in the background when a document opens. A document with no text, or some pages without it, says so in the reading view's accessibility help and the pane's value ("No readable text"), so VoiceOver doesn't present scanned pages as readable text.
+- **Not verified:** VoiceOver itself, and keyboard focus inside SwiftUI controls (the audit checks their names only).
+
+**Snapshots** *(Added 2026-10-29, M5)*
+- `SnapshotTests` render windows offscreen, never ordered on screen, in light and dark: the empty state, a document with the sidebar, the split, the annotation popover, Settings, the shortcut map and distraction-free mode. The sandboxed test host writes them to its temporary folder and `scripts/test.sh` copies them to `build/snapshots/`. PDFKit's annotations don't appear in offscreen captures (M0b Q11).
 
 **Performance**
 - XCTest metrics for open time, scroll frame pacing, search time to first result, and thumbnail throughput.
@@ -548,6 +595,8 @@ GPL-3.0. See [LICENSE](../LICENSE). Distribution is direct only (B5), so no App 
 
 *(Amended 2026-10-29, M4b.)* M4 was delivered in two parts: M4a, the save engine (PDFSave), and M4b, everything in the app. Journey C step 6 is checked automatically in PDFKit, MuPDF, Poppler and pdf.js (M4a), and by `qpdf --check` on every file the app tests save. Preview and Acrobat Reader by hand are still open. The author setting's UI moves to M5 with Settings; the `annotationAuthor` user default already works.
 
+*(Amended 2026-10-29, M5.)* Reader bookmarks and their export, session restore, Settings, opt-in updates with Sparkle, the accessibility audit, the shortcut map and distraction-free mode landed in M5. VoiceOver and XCUITest journeys remain unverified (the user declined screen access).
+
 Staffing and calendar dates aren't covered here.
 
 ## 12. Traceability
@@ -559,7 +608,7 @@ Every decision mapped to the component that implements it and the milestone that
 | A1 Explicit, safe save | `NSDocument` autosave off (§2); PDFSave writer and verification (§3.2); crash journal (§6) | M0 decision, M4 |
 | A2 Identity and local state | `DocumentIdentity`, `DocumentState` (§5); Persistence with security-scoped bookmarks (§6); bookmark export | M2, M5 |
 | A3 Link preview and keeping your place | ReaderKit link layer and popover (§4.4); `ReadingAnchor` capture and restore (§4.5) | M0 prototype, M2, M3 |
-| A4 Active content and network | Link routing table (§4.4); Sparkle opt-in; sandbox network entitlement (§6) | M0 check, M3, M5 |
+| A4 Active content and network | Link routing table (§4.4); Sparkle opt-in through `UpdateController` (§7); sandbox network entitlement (§6) | M0 check, M3, M5 |
 | A5 Forms read-only | Event interception, no `isReadOnly` changes (§4.3); writer leaves forms untouched (§3.2 #4) | M0 check, M4 |
 | A6 Platform and test PDFs | Deployment target macOS 26 on Apple Silicon (§1, §8); test PDF collection and performance tests (§9) | M0 onward, M6 |
 | B1 Layouts | `ViewSettings`, ReaderKit layout | M1 |
