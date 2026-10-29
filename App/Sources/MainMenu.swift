@@ -19,8 +19,15 @@ enum MainMenu {
 
         let fileMenu = NSMenu(title: "File")
         fileMenu.addItem(withTitle: "Open…", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
+        // NSDocumentController fills the submenu that holds Clear Menu.
+        let recentMenu = NSMenu(title: "Open Recent")
+        recentMenu.addItem(withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
+        fileMenu.addItem(submenu: recentMenu, title: "Open Recent")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileMenu.addItem(.separator())
+        // Save returns with the writer in M4.
+        fileMenu.addItem(withTitle: "Print…", action: #selector(NSDocument.printDocument(_:)), keyEquivalent: "p")
         main.addItem(submenu: fileMenu, title: "File")
 
         let editMenu = NSMenu(title: "Edit")
@@ -31,6 +38,17 @@ enum MainMenu {
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         main.addItem(submenu: editMenu, title: "Edit")
+
+        let viewMenu = NSMenu(title: "View")
+        ReaderCommands.zoomItems().forEach(viewMenu.addItem)
+        viewMenu.addItem(.separator())
+        ReaderCommands.readingOptionItems().forEach(viewMenu.addItem)
+        viewMenu.addItem(.separator())
+        let toolbar = viewMenu.addItem(withTitle: "Show Toolbar", action: #selector(NSWindow.toggleToolbarShown(_:)), keyEquivalent: "t")
+        toolbar.keyEquivalentModifierMask = [.command, .option]
+        let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+        fullScreen.keyEquivalentModifierMask = [.command, .control]
+        main.addItem(submenu: viewMenu, title: "View")
 
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
