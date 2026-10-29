@@ -24,7 +24,8 @@
 set -euo pipefail
 # Resolve the argument against the caller's directory before changing it.
 DMG_ARG=${1:+${1:A}}
-cd "${0:A:h:h:h}"
+ROOT=${0:A:h:h:h}
+cd $ROOT
 
 die() { print -r -- "verify-dmg: FAIL: $*" >&2; exit 1; }
 say() { print -r -- "== $*"; }
@@ -42,7 +43,7 @@ else
 fi
 [[ -f $DMG ]] || die "$DMG not found"
 VERSION=${${DMG:t:r}#Lectern-}
-TEST_PDF=${0:A:h:h:h}/Tests/Corpus/public/classic-xref.pdf
+TEST_PDF=$ROOT/Tests/Corpus/public/classic-xref.pdf
 [[ -f $TEST_PDF ]] || die "test PDF $TEST_PDF not found"
 REPORT=${DMG:h}/verify-$VERSION.txt
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
