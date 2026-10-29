@@ -160,7 +160,9 @@ import Testing
 
     @Test func refusesEncrypted() {
         let data = Self.minimalPDF(trailerExtra: "/Encrypt << /Filter /Standard /V 5 /R 6 >> ")
-        #expect(throws: PDFSaveError.encrypted) { try IncrementalWriter().saveInPlace(original: data, changes: []) }
+        #expect(throws: PDFSaveError.encrypted(.malformed("/P is missing or out of range"))) {
+            try IncrementalWriter().saveInPlace(original: data, changes: [])
+        }
     }
 
     @Test func refusesStaleXRef() {

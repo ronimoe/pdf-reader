@@ -37,6 +37,11 @@ public final class PDFSaveDocument {
     public private(set) var size = 0
     public private(set) var pageRefs: [ObjectRef] = []
 
+    /// The Standard security handler, authenticated, for an encrypted file; nil otherwise.
+    private(set) var security: StandardSecurity?
+    /// The password `init` was given, so the writer re-reads its own output the same way.
+    let password: String?
+
     private var cache: [Int: PDFObject] = [:]
     private var objectStreams: [Int: [Int: PDFObject]] = [:]
     private var resolving = Set<Int>()
@@ -46,12 +51,16 @@ public final class PDFSaveDocument {
     public var isHybrid: Bool { sections.contains { $0.hybridStreamOffset != nil } }
     public var revisionCount: Int { sections.count }
 
-    public convenience init(data: Data) throws(PDFSaveError) {
-        try self.init(bytes: [UInt8](data))
+    /// Reads `data`. An encrypted file is decrypted as it is read, with a key authenticated from
+    /// `password` (tried as the user password, then as the owner password) or else from the empty
+    /// user password, for files that open without one. Nil tries only the empty password.
+    public convenience init(data: Data, password: String? = nil) throws(PDFSaveError) {
+        try self.init(bytes: [UInt8](data), password: password)
     }
 
-    init(bytes: [UInt8]) throws(PDFSaveError) {
+    init(bytes: [UInt8], password: String? = nil) throws(PDFSaveError) {
         self.bytes = bytes
+        self.password = password
         guard let header = PDFParser.find(Array("%PDF-".utf8), in: Array(bytes.prefix(1024)), from: 0) else {
             throw .malformed("no %PDF- header")
         }
@@ -59,11 +68,57 @@ public final class PDFSaveDocument {
         guard header == 0 else { throw .unsupported("data before the %PDF- header") }
         startXRef = try Self.findStartXRef(bytes)
         try readChain()
-        if trailer["Encrypt"] != nil || sections.contains(where: { $0.trailer["Encrypt"] != nil }) {
-            throw .encrypted
+        if let handler = try readSecurityHandler(password: password) {
+            // Installed before anything else is resolved, and whatever was resolved to read
+            // /Encrypt is forgotten: from now on every object is decrypted as it is read.
+            security = handler
+            cache = [:]
+            objectStreams = [:]
         }
         guard trailer["Root"]?.referenceValue != nil else { throw .malformed("trailer has no /Root reference") }
         pageRefs = try collectPages()
+    }
+
+    /// Whether the file is encrypted (and so was decrypted as it was read).
+    public var isEncrypted: Bool { security != nil }
+
+    /// The file encryption key of an encrypted file. Kept in memory only; the app derives the
+    /// crash journal's key from it (architecture §6).
+    public var fileEncryptionKey: Data? { security.map { Data($0.fileKey) } }
+
+    /// Reads the newest trailer's `/Encrypt` and authenticates. Every revision must agree on it: a
+    /// file whose revisions differ in encryption is refused rather than guessed at.
+    private func readSecurityHandler(password: String?) throws(PDFSaveError) -> StandardSecurity? {
+        let all = sections.map { $0.trailer["Encrypt"] }
+        guard let newest = sections.first?.trailer["Encrypt"], newest != .null else {
+            if all.contains(where: { $0 != nil && $0 != .null }) {
+                throw .encrypted(.malformed("an earlier revision has /Encrypt and the newest doesn't"))
+            }
+            return nil
+        }
+        guard all.allSatisfy({ $0 == nil || $0 == newest }) else {
+            throw .encrypted(.malformed("revisions disagree on /Encrypt"))
+        }
+        let dict: PDFDictionary
+        var number: Int?
+        switch newest {
+        case .dictionary(let d):
+            dict = d
+        case .reference(let r):
+            // Never inside an object stream (ISO 32000-2 §7.5.7), and never decrypted.
+            guard case .inUse? = entries[r.number] else { throw .encrypted(.malformed("/Encrypt \(r) isn't a plain object")) }
+            guard case .dictionary(let d) = try object(r) else { throw .encrypted(.malformed("/Encrypt is not a dictionary")) }
+            dict = d
+            number = r.number
+        default:
+            throw .encrypted(.malformed("/Encrypt is not a dictionary"))
+        }
+        var firstID: [UInt8] = []
+        if let ids = trailer["ID"] {
+            guard let first = ids.arrayValue?.first?.stringValue else { throw .encrypted(.malformed("/ID is not an array of strings")) }
+            firstID = first.bytes
+        }
+        return try StandardSecurity.authenticate(dict, dictionaryObject: number, firstID: firstID, password: password)
     }
 
     // MARK: Cross-reference chain
@@ -238,7 +293,9 @@ public final class PDFSaveDocument {
             guard found.number == ref.number, found.generation == generation else {
                 throw .malformed("xref entry for \(ref.number) points at object \(found)")
             }
-            object = parsed
+            // Decrypted with the key of the object as the file numbers it. Objects inside an object
+            // stream are decrypted with their stream, never one by one.
+            object = try security?.decrypt(object: parsed, ref: found) ?? parsed
         case .compressed(let stream, let index)?:
             object = try compressedObject(ref.number, in: stream, index: index)
         }

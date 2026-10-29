@@ -1,5 +1,5 @@
 // Lists annotations as pdf.js sees them, or renders one page.
-//   node pdfjs-annots.mjs <file.pdf>
+//   node pdfjs-annots.mjs <file.pdf> [--password <password>]
 //     → JSON {annotations: [{page, ref, subtype, contents, hasAppearance}], warnings: [...]}
 //   node pdfjs-annots.mjs <file.pdf> --render <pageIndex> <out.png>
 //     → renders the page at 72 dpi with annotations (needs @napi-rs/canvas, an optional
@@ -19,9 +19,14 @@ console.error = capture;
 const { getDocument, VerbosityLevel, AnnotationMode } = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
 const pdfjsRoot = new URL("./node_modules/pdfjs-dist/", import.meta.url);
+const args = process.argv.slice(2);
+const at = args.indexOf("--password");
+const password = at >= 0 ? args.splice(at, 2)[1] : "";
+process.argv = [process.argv[0], process.argv[1], ...args];
 const data = new Uint8Array(readFileSync(process.argv[2]));
 const task = getDocument({
   data,
+  password,
   verbosity: VerbosityLevel.WARNINGS,
   isEvalSupported: false,
   stopAtErrors: true,

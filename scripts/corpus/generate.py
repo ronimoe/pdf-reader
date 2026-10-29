@@ -105,7 +105,8 @@ class MiniPDF:
             dict_body += " /Filter /FlateDecode"
         return f"<< {dict_body} /Length {len(data)} >>\nstream\n".encode("latin-1") + data + b"\nendstream"
 
-    def write(self, path: Path, mode: str, root: int, info: int | None, compressed: set[int] = frozenset()) -> None:
+    def write(self, path: Path, mode: str, root: int, info: int | None, compressed: set[int] = frozenset(),
+              encrypt: int | None = None, file_id: bytes | None = None) -> None:
         """mode: 'table', or 'hybrid' (table + /XRefStm for objects in an object stream)."""
         size = max(self.objects) + 1
         out = bytearray(b"%PDF-1.5\n%\xe2\xe3\xcf\xd3\n")
@@ -168,7 +169,10 @@ class MiniPDF:
         trailer = f"<< /Size {size} /Root {root} 0 R"
         if info:
             trailer += f" /Info {info} 0 R"
-        trailer += " /ID [<4c6563746572e6e5636f72707573aa01> <4c6563746572e6e5636f72707573aa01>]"
+        ident = (file_id or bytes.fromhex("4c6563746572e6e5636f72707573aa01")).hex()
+        trailer += f" /ID [<{ident}> <{ident}>]"
+        if encrypt:
+            trailer += f" /Encrypt {encrypt} 0 R"
         if xrefstm_offset is not None:
             trailer += f" /XRefStm {xrefstm_offset}"
         trailer += " >>"
@@ -338,6 +342,250 @@ def encrypted_pdfs(tmp: Path) -> None:
         base.as_posix(), (OUT / "encrypted-aes256-owner-only.pdf").as_posix())
 
 
+# ---------------------------------------------------------------------------
+# Encrypted files that Lectern saves into (M7). Every supported Standard-handler variant, plus the
+# ones that stay refused. Passwords are listed in Tests/Corpus/README.md and in the Swift corpus
+# cases; a fixture with no user password opens without a prompt.
+
+ENCRYPTED_OWNER = "owner-pass"
+
+
+def qpdf_encrypt(src: Path, dst: Path, user: str, bits: int, *options: str, weak: bool = False,
+                 object_streams: bool = False) -> None:
+    """`qpdf --encrypt` with the flag form, so any text (an empty or a non-ASCII password) is passed
+    exactly. The output isn't reproducible: the /ID and the salts change on every run."""
+    args = ["qpdf"]
+    if weak:
+        args.append("--allow-weak-crypto")
+    if object_streams:
+        args.append("--object-streams=generate")
+    args += ["--encrypt", f"--user-password={user}", f"--owner-password={ENCRYPTED_OWNER}",
+             f"--bits={bits}", *options, "--", src.as_posix(), dst.as_posix()]
+    run(*args)
+    check = ["qpdf", f"--password={user or ENCRYPTED_OWNER}", "--check", dst.as_posix()]
+    run(*check)
+
+
+def encrypted_base(tmp: Path, name: str, title: str, pages: int = 2) -> Path:
+    base = tmp / f"{name}-base.pdf"
+    reportlab_text_pdf(base, pages=pages, title=title)
+    return base
+
+
+def encrypted_r2(tmp: Path) -> None:
+    """R2, RC4 with a 40-bit key, user and owner passwords."""
+    base = encrypted_base(tmp, "r2", "Lectern corpus: encrypted R2 RC4-40")
+    qpdf_encrypt(base, OUT / "encrypted-r2-rc4-40.pdf", "user-pass", 40, weak=True)
+
+
+def encrypted_r3_annotated(tmp: Path) -> None:
+    """R3, RC4 128-bit, no user password; annotations written by another app (MuPDF) before
+    encrypting, so edits and deletes of existing annotations run against decrypted descriptors."""
+    base = tmp / "r3-annotated-base.pdf"
+    third_party_pdf(tmp, base)
+    qpdf_encrypt(base, OUT / "encrypted-r3-rc4-annotated.pdf", "", 128, "--use-aes=n", weak=True)
+
+
+def encrypted_r4_rc4(tmp: Path) -> None:
+    """R4 with the /V2 (RC4) crypt filter, and a non-ASCII user password inside PDFDocEncoding."""
+    base = encrypted_base(tmp, "r4-rc4", "Lectern corpus: encrypted R4 RC4")
+    qpdf_encrypt(base, OUT / "encrypted-r4-rc4.pdf", "pässwörd", 128, "--use-aes=n", "--force-V4", weak=True)
+
+
+def encrypted_r4_aes_objstm(tmp: Path) -> None:
+    """R4 with /AESV2, a cross-reference stream and object streams holding the pages."""
+    base = encrypted_base(tmp, "r4-aes", "Lectern corpus: encrypted R4 AES-128", pages=3)
+    qpdf_encrypt(base, OUT / "encrypted-r4-aes128-objstm.pdf", "user-pass", 128, "--use-aes=y", object_streams=True)
+
+
+def encrypted_r4_cleartext_metadata(tmp: Path) -> None:
+    """R4 AES with /EncryptMetadata false: the XMP stream stays in the clear."""
+    import pikepdf
+
+    plain = encrypted_base(tmp, "r4-meta", "Lectern corpus: encrypted R4 cleartext metadata")
+    base = tmp / "r4-meta-xmp.pdf"
+    with pikepdf.open(plain) as pdf:
+        with pdf.open_metadata(set_pikepdf_as_editor=False) as meta:
+            meta["dc:title"] = "Lectern corpus: cleartext metadata"
+        pdf.save(base, deterministic_id=True)
+    qpdf_encrypt(base, OUT / "encrypted-r4-cleartext-metadata.pdf", "", 128, "--use-aes=y", "--cleartext-metadata")
+
+
+def encrypted_r6_objstm_restricted(tmp: Path) -> None:
+    """R6, no user password, object streams; printing and copying forbidden, commenting allowed."""
+    base = encrypted_base(tmp, "r6-restricted", "Lectern corpus: encrypted R6 restricted", pages=3)
+    qpdf_encrypt(base, OUT / "encrypted-r6-objstm-restricted.pdf", "", 256,
+                 "--modify=annotate", "--print=none", "--extract=n", object_streams=True)
+
+
+def encrypted_r6_unicode(tmp: Path) -> None:
+    """R6 with a non-ASCII user password (precomposed, so NFC and NFKC agree)."""
+    base = encrypted_base(tmp, "r6-unicode", "Lectern corpus: encrypted R6 unicode password")
+    qpdf_encrypt(base, OUT / "encrypted-r6-unicode.pdf", "Grüße-ключ", 256)
+
+
+def encrypted_r5(tmp: Path) -> None:
+    """The deprecated R5 (Acrobat 9's AES-256): still refused."""
+    base = encrypted_base(tmp, "r5", "Lectern corpus: encrypted R5", pages=1)
+    qpdf_encrypt(base, OUT / "encrypted-r5.pdf", "user-pass", 256, "--force-R5", weak=True)
+
+
+def throwaway_certificate(tmp: Path, name: str, common_name: str, encipherment: bool = False):
+    """A self-signed RSA-2048 certificate and its private key, written to tmp (never committed)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder().subject_name(subject).issuer_name(subject)
+        .public_key(key.public_key()).serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=3650))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(x509.KeyUsage(digital_signature=True, content_commitment=True, key_encipherment=encipherment,
+                                     data_encipherment=False, key_agreement=False, key_cert_sign=True,
+                                     crl_sign=False, encipher_only=False, decipher_only=False), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    key_pem, cert_pem = tmp / f"{name}-key.pem", tmp / f"{name}-cert.pem"
+    key_pem.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                          serialization.NoEncryption()))
+    cert_pem.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    return key_pem, cert_pem
+
+
+def encrypted_signed(tmp: Path) -> None:
+    """R6 with no user password, then an approval signature added by pyHanko in an incremental
+    update (it encrypts the update with the file's key). Must stay copy-only, signature intact."""
+    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    from pyhanko.sign import fields, signers
+
+    path = OUT / "encrypted-signed.pdf"
+    base = encrypted_base(tmp, "enc-signed", "Lectern corpus: encrypted and signed")
+    encrypted = tmp / "enc-signed-encrypted.pdf"
+    qpdf_encrypt(base, encrypted, "", 256)
+    key_pem, cert_pem = throwaway_certificate(tmp, "enc-signed", "Lectern Corpus Test Signer")
+    shutil.copy(cert_pem, path.with_suffix(".cert.pem"))
+    signer = signers.SimpleSigner.load(str(key_pem), str(cert_pem))
+    with encrypted.open("rb") as inf, path.open("wb") as outf:
+        w = IncrementalPdfFileWriter(inf)
+        w.encrypt(ENCRYPTED_OWNER)
+        meta = signers.PdfSignatureMetadata(field_name="Signature1", reason="Lectern corpus test signature")
+        spec = fields.SigFieldSpec(sig_field_name="Signature1", on_page=0, box=(72, 72, 272, 132))
+        signers.sign_pdf(w, meta, signer=signer, new_field_spec=spec, output=outf)
+    run("qpdf", f"--password={ENCRYPTED_OWNER}", "--check", path.as_posix())
+
+
+def encrypted_pubkey(tmp: Path) -> None:
+    """The public-key security handler (/Adobe.PubSec): still refused. The recipient's private key
+    is thrown away, so nothing can open it; it exists to be recognised and refused."""
+    from asn1crypto import x509 as asn1_x509
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    from pyhanko.pdf_utils.writer import copy_into_new_writer
+
+    base = encrypted_base(tmp, "pubkey", "Lectern corpus: public-key encryption", pages=1)
+    _, cert_pem = throwaway_certificate(tmp, "pubkey", "Lectern Corpus Test Recipient", encipherment=True)
+    from cryptography import x509 as crypto_x509
+    from cryptography.hazmat.primitives import serialization
+
+    der = crypto_x509.load_pem_x509_certificate(cert_pem.read_bytes()).public_bytes(serialization.Encoding.DER)
+    with base.open("rb") as inf:
+        w = copy_into_new_writer(PdfFileReader(inf))
+        w.encrypt_pubkey([asn1_x509.Certificate.load(der)])
+        with (OUT / "encrypted-pubkey.pdf").open("wb") as outf:
+            w.write(outf)
+
+
+# R4 with different stream and string filters (/StmF AESV2, /StrF /Identity). qpdf never writes
+# that, so this one is assembled by hand (ISO 32000-2 §7.6.4, algorithms 2, 3 and 5) and accepted
+# only after qpdf decrypts it cleanly.
+
+PAD = bytes.fromhex("28BF4E5E4E758A4164004E56FFFA01082E2E00B6D0683E802F0CA9FE6453697A")
+
+
+def rc4(key: bytes, data: bytes) -> bytes:
+    s = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + s[i] + key[i % len(key)]) % 256
+        s[i], s[j] = s[j], s[i]
+    out, i, j = bytearray(), 0, 0
+    for b in data:
+        i = (i + 1) % 256
+        j = (j + s[i]) % 256
+        s[i], s[j] = s[j], s[i]
+        out.append(b ^ s[(s[i] + s[j]) % 256])
+    return bytes(out)
+
+
+def r4_identity_strings_pdf(path: Path) -> None:
+    import hashlib
+
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    file_id = bytes.fromhex("4c6563746572e6e5636f72707573aa02")
+    p_value = -4  # every permission
+    user, owner = b"", ENCRYPTED_OWNER.encode()
+    # Algorithm 3: /O.
+    owner_key = hashlib.md5((owner + PAD)[:32]).digest()
+    for _ in range(50):
+        owner_key = hashlib.md5(owner_key).digest()
+    o_value = rc4(owner_key, (user + PAD)[:32])
+    for i in range(1, 20):
+        o_value = rc4(bytes(b ^ i for b in owner_key), o_value)
+    # Algorithm 2: the file key (EncryptMetadata true, so no 0xFFFFFFFF).
+    digest = hashlib.md5((user + PAD)[:32] + o_value + (p_value & 0xFFFFFFFF).to_bytes(4, "little") + file_id).digest()
+    for _ in range(50):
+        digest = hashlib.md5(digest).digest()
+    key = digest[:16]
+    # Algorithm 5: /U.
+    u_value = rc4(key, hashlib.md5(PAD + file_id).digest())
+    for i in range(1, 20):
+        u_value = rc4(bytes(b ^ i for b in key), u_value)
+    u_value += bytes(16)
+
+    def aes(num: int, data: bytes) -> bytes:
+        k = hashlib.md5(key + num.to_bytes(3, "little") + (0).to_bytes(2, "little") + b"sAlT").digest()
+        iv = hashlib.md5(b"Lectern IV" + num.to_bytes(4, "big")).digest()  # fixed, so the file is reproducible
+        padder = padding.PKCS7(128).padder()
+        padded = padder.update(data) + padder.finalize()
+        enc = Cipher(algorithms.AES(k), modes.CBC(iv)).encryptor()
+        return iv + enc.update(padded) + enc.finalize()
+
+    def stream(num: int, extra: str, data: bytes) -> bytes:
+        body = aes(num, zlib.compress(data))
+        return f"<< {extra} /Filter /FlateDecode /Length {len(body)} >>\nstream\n".encode() + body + b"\nendstream"
+
+    m = MiniPDF()
+    m.add(1, "<< /Type /Catalog /Pages 2 0 R >>")
+    m.add(2, "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>")
+    m.add(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R "
+             "/Resources << /Font << /F1 7 0 R >> >> /Annots [9 0 R] >>")
+    m.add(4, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>")
+    m.add(5, stream(5, "", text_content(["Identity string filter, page 1."] + PARAGRAPHS, 720)))
+    m.add(6, stream(6, "", text_content(["Identity string filter, page 2."] + PARAGRAPHS, 720)))
+    m.add(7, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    # Strings stay in the clear under /StrF /Identity: this note's /Contents and /NM are plaintext.
+    m.add(9, "<< /Type /Annot /Subtype /Text /Rect [500 700 520 720] /P 3 0 R /NM (other-app-note-1) "
+             "/Contents (A note in the clear) /C [1 1 0] /Name /Comment >>")
+    m.add(8, "<< /Title (Lectern corpus: R4 identity string filter) /Producer (Lectern MiniPDF) >>")
+    o_hex, u_hex = o_value.hex(), u_value.hex()
+    m.add(10, f"<< /Filter /Standard /V 4 /R 4 /Length 128 /P {p_value} /O <{o_hex}> /U <{u_hex}> "
+              "/CF << /StdCF << /Type /CryptFilter /CFM /AESV2 /AuthEvent /DocOpen /Length 16 >> >> "
+              "/StmF /StdCF /StrF /Identity >>")
+    m.write(path, "table", root=1, info=8, encrypt=10, file_id=file_id)
+    run("qpdf", "--check", path.as_posix())
+
+
+def encrypted_r4_identity_strings(tmp: Path) -> None:
+    r4_identity_strings_pdf(OUT / "encrypted-r4-identity-strings.pdf")
+
+
 def main() -> None:
     """`generate` rewrites every file; `generate --only name ...` rewrites just those (the output
     isn't byte-reproducible, so regenerating everything changes files whose cases didn't change)."""
@@ -359,6 +607,17 @@ def main() -> None:
             "hybrid-xref": lambda: hybrid_pdf(OUT / "hybrid-xref.pdf"),
             "linearized-qpdf": lambda: linearized_pdf(tmp, OUT / "linearized-qpdf.pdf"),
             "encrypted": lambda: encrypted_pdfs(tmp),
+            "encrypted-r2-rc4-40": lambda: encrypted_r2(tmp),
+            "encrypted-r3-rc4-annotated": lambda: encrypted_r3_annotated(tmp),
+            "encrypted-r4-rc4": lambda: encrypted_r4_rc4(tmp),
+            "encrypted-r4-aes128-objstm": lambda: encrypted_r4_aes_objstm(tmp),
+            "encrypted-r4-cleartext-metadata": lambda: encrypted_r4_cleartext_metadata(tmp),
+            "encrypted-r4-identity-strings": lambda: encrypted_r4_identity_strings(tmp),
+            "encrypted-r6-objstm-restricted": lambda: encrypted_r6_objstm_restricted(tmp),
+            "encrypted-r6-unicode": lambda: encrypted_r6_unicode(tmp),
+            "encrypted-signed": lambda: encrypted_signed(tmp),
+            "encrypted-pubkey": lambda: encrypted_pubkey(tmp),
+            "encrypted-r5": lambda: encrypted_r5(tmp),
         }
         unknown = (only or set()) - set(jobs)
         if unknown:

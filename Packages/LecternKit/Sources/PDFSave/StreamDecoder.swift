@@ -27,6 +27,9 @@ enum StreamDecoder {
             case "FlateDecode", "Fl":
                 data = try inflate(data)
                 data = try unpredict(data, parms: parm)
+            case "Crypt":
+                // A stream's own crypt filter: the security handler applied it when the stream was read.
+                continue
             default:
                 throw .unsupported("stream filter /\(filter.string) in a structural stream")
             }

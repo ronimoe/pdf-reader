@@ -28,7 +28,7 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CHECKS = ["prefix", "qpdf", "objects", "fields", "signature", "mupdf", "poppler", "pdfjs", "refused"]
+CHECKS = ["prefix", "qpdf", "objects", "fields", "signature", "mupdf", "poppler", "pdfjs", "refused", "oracle"]
 TITLES = {
     "prefix": "1 Bytes prefix",
     "qpdf": "2 qpdf --check",
@@ -38,8 +38,14 @@ TITLES = {
     "mupdf": "6 MuPDF",
     "poppler": "6 Poppler",
     "pdfjs": "6 pdf.js",
-    "refused": "7 Encrypted refused",
+    "refused": "7 Encryption refused",
+    "oracle": "7 Encrypted = plaintext twin",
 }
+
+
+def pw(case) -> str:
+    """The password every tool opens the case's input and output with ("" for none)."""
+    return case.get("password") or ""
 
 
 def ref_key(s: str) -> tuple[int, int]:
@@ -92,7 +98,7 @@ def check_qpdf(case):
         return "skip: qpdf not installed"
 
     def run_check(path):
-        r = subprocess.run(["qpdf", "--check", path], capture_output=True, text=True)
+        r = subprocess.run(["qpdf", f"--password={pw(case)}", "--check", path], capture_output=True, text=True, errors="replace")
         lines = [m for m in messages(r.stdout + r.stderr, path) if "WARNING" in m or "ERROR" in m]
         return r.returncode, lines
 
@@ -130,9 +136,9 @@ def same_object(a, b) -> bool:
     return a.unparse(resolved=True) == b.unparse(resolved=True)
 
 
-def xref_objects(path) -> set[tuple[int, int]]:
+def xref_objects(path, password="") -> set[tuple[int, int]]:
     """Every in-use (number, generation) in the newest revision, from `qpdf --show-xref`."""
-    r = subprocess.run(["qpdf", "--show-xref", path], capture_output=True, text=True, check=True)
+    r = subprocess.run(["qpdf", f"--password={password}", "--show-xref", path], capture_output=True, text=True, errors="replace", check=True)
     result = set()
     for line in r.stdout.splitlines():
         head, _, kind = line.partition(":")
@@ -152,9 +158,10 @@ def check_objects(case):
 
     rewritten = {ref_key(r) for r in case["rewritten"]}
     written = {ref_key(r) for r in case["written"]}
-    src_ogs = xref_objects(case["input"])
-    dst_ogs = xref_objects(case["output"])
-    with pikepdf.open(case["input"], inherit_page_attributes=False) as src, pikepdf.open(case["output"], inherit_page_attributes=False) as dst:
+    src_ogs = xref_objects(case["input"], pw(case))
+    dst_ogs = xref_objects(case["output"], pw(case))
+    with pikepdf.open(case["input"], password=pw(case), inherit_page_attributes=False) as src, \
+            pikepdf.open(case["output"], password=pw(case), inherit_page_attributes=False) as dst:
         changed = []
         for og in sorted(src_ogs - rewritten):
             if og not in dst_ogs or not same_object(src.get_object(og), dst.get_object(og)):
@@ -219,7 +226,8 @@ def check_fields(case):
         return missing
     import pikepdf
 
-    with pikepdf.open(case["input"], inherit_page_attributes=False) as src, pikepdf.open(case["output"], inherit_page_attributes=False) as dst:
+    with pikepdf.open(case["input"], password=pw(case), inherit_page_attributes=False) as src, \
+            pikepdf.open(case["output"], password=pw(case), inherit_page_attributes=False) as dst:
         acro_a, fa = form_fields(src)
         acro_b, fb = form_fields(dst)
         if acro_a is None:
@@ -240,8 +248,12 @@ def check_signature(case):
         from pyhanko_certvalidator import ValidationContext
     except ImportError:
         return "skip: pyHanko not installed; run scripts/corpus/bootstrap"
+    if case.get("twin"):
+        return "n/a: plaintext twin (qpdf's decryption rewrote the signed file)"
     with open(case["output"], "rb") as f:
         reader = PdfFileReader(f)
+        if reader.encrypted:
+            reader.decrypt(pw(case))
         sigs = reader.embedded_signatures
         if not sigs:
             return "n/a: unsigned"
@@ -310,10 +322,10 @@ def compare_listing(exp, act):
     return f"missing={missing[:3]} extra={extra[:3]} contents-differ={wrong[:3]}"
 
 
-def page_geometry(path, index):
+def page_geometry(path, index, password=""):
     import pikepdf
 
-    with pikepdf.open(path, inherit_page_attributes=False) as pdf:
+    with pikepdf.open(path, password=password, inherit_page_attributes=False) as pdf:
         page = pdf.pages[index]
         node, rotate = page.obj, 0
         while node is not None:
@@ -362,7 +374,7 @@ def render_probes(case, render):
         tmp = Path(t)
         for i, probe in enumerate(case["probes"]):
             page = probe["page"]
-            box, rotate = page_geometry(case["output"], page)
+            box, rotate = page_geometry(case["output"], page, pw(case))
             px = to_pixels(probe["rect"], box, rotate)
             before = tmp / f"b{i}.png"
             after = tmp / f"a{i}.png"
@@ -403,7 +415,7 @@ def check_mupdf(case):
         return missing
 
     def listing(path):
-        r = subprocess.run(["mutool", "run", str(HERE / "mupdf-annots.js"), path], capture_output=True, text=True)
+        r = subprocess.run(["mutool", "run", str(HERE / "mupdf-annots.js"), path, pw(case)], capture_output=True, text=True, errors="replace")
         if r.returncode != 0:
             raise RuntimeError(f"mutool exit {r.returncode}: {r.stderr.strip()[:200]}")
         return json.loads(r.stdout), messages(r.stderr, path)
@@ -420,8 +432,8 @@ def check_mupdf(case):
         return f"fail: annotations differ: {diff}"
 
     def render(src, page, dst):
-        r = subprocess.run(["mutool", "draw", "-q", "-r", "72", "-o", str(dst), src, str(page + 1)],
-                           capture_output=True, text=True)
+        r = subprocess.run(["mutool", "draw", "-q", "-p", pw(case), "-r", "72", "-o", str(dst), src, str(page + 1)],
+                           capture_output=True, text=True, errors="replace")
         return messages(r.stderr, src) if r.returncode == 0 else [f"exit {r.returncode} {r.stderr.strip()}"]
 
     status = render_status(case, render)
@@ -439,9 +451,17 @@ def check_poppler(case):
 
     def render(src, page, dst):
         prefix = str(dst)[:-4]
-        r = subprocess.run(["pdftoppm", "-r", "72", "-f", str(page + 1), "-l", str(page + 1), "-png", "-singlefile",
-                            src, prefix], capture_output=True, text=True)
+        r = subprocess.run(["pdftoppm", "-opw", pw(case), "-upw", pw(case), "-r", "72", "-f", str(page + 1), "-l", str(page + 1), "-png", "-singlefile",
+                            src, prefix], capture_output=True, text=True, errors="replace")
         return messages(r.stderr, src) if r.returncode == 0 else [f"exit {r.returncode} {r.stderr.strip()}"]
+
+    # Poppler doesn't implement every Standard-handler variant (different /StmF and /StrF, for one):
+    # if it can't decrypt the unmodified input, it can't judge the output either.
+    with tempfile.TemporaryDirectory() as t:
+        probe = render(case["input"], 0, Path(t) / "input.png")
+        unsupported = [m for m in probe if "Unsupported version/revision" in m]
+        if unsupported:
+            return f"n/a: poppler can't decrypt the input ({unsupported[0]})"
 
     status = render_status(case, render)
     if status.startswith("n/a"):
@@ -456,7 +476,7 @@ def check_pdfjs(case):
         return "skip: pdfjs-dist not installed; run scripts/corpus/bootstrap"
 
     def listing(path):
-        r = subprocess.run(["node", str(HERE / "pdfjs-annots.mjs"), path], capture_output=True, text=True)
+        r = subprocess.run(["node", str(HERE / "pdfjs-annots.mjs"), path, "--password", pw(case)], capture_output=True, text=True, errors="replace")
         if r.returncode != 0:
             raise RuntimeError(f"node exit {r.returncode}: {r.stderr.strip()[:300]}")
         data = json.loads(r.stdout)
@@ -480,8 +500,8 @@ def check_pdfjs(case):
         return f"skip: pdf.js render needs Pillow from the .venv ({missing})"
 
     def render(src, page, dst):
-        r = subprocess.run(["node", str(HERE / "pdfjs-annots.mjs"), src, "--render", str(page), str(dst)],
-                           capture_output=True, text=True)
+        r = subprocess.run(["node", str(HERE / "pdfjs-annots.mjs"), src, "--password", pw(case), "--render", str(page), str(dst)],
+                           capture_output=True, text=True, errors="replace")
         if r.returncode != 0:
             return [f"node exit {r.returncode}: {r.stderr.strip()[:200]}"]
         return json.loads(r.stdout)["warnings"]
@@ -502,10 +522,87 @@ def check_refused(case):
     return f"fail: error {case.get('error')!r}, expected {case['expectError']!r}"
 
 
+def canonical(obj, pages, depth=0):
+    """A comparable form of an annotation: references to pages become their index, references to
+    other annotations (/Popup, /Parent, /IRT) their subtype, name and rectangle, streams their
+    dictionary and decoded data. Object numbers never appear, since qpdf renumbers."""
+    import pikepdf
+
+    if depth > 40:
+        return "<deep>"
+    if not isinstance(obj, pikepdf.Object):
+        return repr(obj)
+    if obj.is_indirect:
+        og = obj.objgen
+        if og in pages:
+            return ("page", pages[og])
+        if depth > 0 and isinstance(obj, pikepdf.Dictionary) and "/Subtype" in obj and "/Rect" in obj:
+            return ("annot", str(obj.Subtype), bytes(obj.get("/NM", pikepdf.String(""))), canonical(obj.Rect, pages, depth + 1))
+    if isinstance(obj, pikepdf.Stream):
+        d = {k: canonical(obj.stream_dict[k], pages, depth + 1) for k in obj.stream_dict.keys()
+             if k not in ("/Length", "/Filter", "/DecodeParms")}
+        return ("stream", tuple(sorted(d.items())), obj.read_bytes())
+    if isinstance(obj, pikepdf.Dictionary):
+        return tuple(sorted((k, canonical(obj[k], pages, depth + 1)) for k in obj.keys()))
+    if isinstance(obj, pikepdf.Array):
+        return tuple(canonical(v, pages, depth + 1) for v in obj)
+    if isinstance(obj, pikepdf.String):
+        return ("str", bytes(obj))
+    return str(obj)
+
+
+def annotations_by_page(path):
+    import pikepdf
+
+    with pikepdf.open(path, inherit_page_attributes=False) as pdf:
+        if pdf.is_encrypted:
+            raise RuntimeError(f"{path} is still encrypted")
+        pages = {page.obj.objgen: i for i, page in enumerate(pdf.pages)}
+        result = []
+        for i, page in enumerate(pdf.pages):
+            annots = page.obj.get("/Annots", pikepdf.Array())
+            result.append(sorted(repr(canonical(a, pages)) for a in annots))
+        return result
+
+
+def check_oracle(case):
+    """The strong oracle for encrypted files: the same edits made on the plaintext twin and on the
+    encrypted file give the same annotation objects, once qpdf has decrypted the output."""
+    if case.get("twin"):
+        return "n/a: plaintext twin"
+    twin = case.get("twinOutput")
+    if not twin:
+        return "n/a: no plaintext twin"
+    missing = have_python_libs()
+    if missing:
+        return missing
+    if not shutil.which("qpdf"):
+        return "skip: qpdf not installed"
+    with tempfile.TemporaryDirectory() as t:
+        decrypted, plain = Path(t) / "decrypted.pdf", Path(t) / "twin.pdf"
+        r = subprocess.run(["qpdf", f"--password={pw(case)}", "--decrypt", case["output"], str(decrypted)],
+                           capture_output=True, text=True, errors="replace")
+        if r.returncode not in (0, 3):
+            return f"fail: qpdf can't decrypt the output: {r.stderr.strip()[:200]}"
+        # The twin goes through qpdf too, so both are written the same way.
+        r = subprocess.run(["qpdf", "--decrypt", twin, str(plain)], capture_output=True, text=True, errors="replace")
+        if r.returncode not in (0, 3):
+            return f"fail: qpdf can't rewrite the twin: {r.stderr.strip()[:200]}"
+        a, b = annotations_by_page(decrypted), annotations_by_page(plain)
+        if len(a) != len(b):
+            return f"fail: {len(a)} pages, the twin has {len(b)}"
+        for i, (x, y) in enumerate(zip(a, b)):
+            if x != y:
+                only_enc = [v[:160] for v in x if v not in y][:1]
+                only_twin = [v[:160] for v in y if v not in x][:1]
+                return f"fail: page {i + 1} annotations differ: encrypted {only_enc} twin {only_twin}"
+        return f"pass: {sum(len(x) for x in a)} annotations identical to the plaintext twin's"
+
+
 FUNCS = {
     "prefix": check_prefix, "qpdf": check_qpdf, "objects": check_objects, "fields": check_fields,
     "signature": check_signature, "mupdf": check_mupdf, "poppler": check_poppler, "pdfjs": check_pdfjs,
-    "refused": check_refused,
+    "refused": check_refused, "oracle": check_oracle,
 }
 
 

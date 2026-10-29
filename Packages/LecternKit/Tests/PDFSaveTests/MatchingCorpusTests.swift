@@ -28,9 +28,10 @@ import Testing
     }
 
     /// Matches every PDFKit annotation in `data` and checks each match is plausible.
-    static func run(_ data: Data, label: String) throws -> (Tally, [AnnotationQuery], [AnnotationMatch], [AnnotationDescriptor]) {
-        let pk = try #require(PDFDocument(data: data))
-        let descriptors = try PDFSaveDocument(data: data).annotations()
+    static func run(_ data: Data, label: String, case c: CorpusCase) throws -> (Tally, [AnnotationQuery], [AnnotationMatch], [AnnotationDescriptor]) {
+        // An encrypted file: PDFKit's annotations against the decrypted descriptors.
+        let pk = try Corpus.pdfKit(c, data: data)
+        let descriptors = try PDFSaveDocument(data: data, password: c.password).annotations()
         let qs = queries(pk)
         let results = AnnotationMatcher().match(qs, in: descriptors)
         // Indexed, so the checks stay linear on the 3,270-page manual's 18,553 links.
@@ -80,9 +81,10 @@ import Testing
 
     @Test(arguments: CorpusTests.writable) func everyPDFKitAnnotationMatches(_ c: CorpusCase) throws {
         let o = try #require(try Corpus.outcomes().first { $0.testCase.name == c.name })
+        if let problem = o.problem { throw CorpusFailure("\(c.name): \(problem)") }
         let result = try #require(o.result)
-        let (before, _, _, _) = try Self.run(try Data(contentsOf: o.inputURL), label: "\(c.name) input")
-        let (after, qs, results, _) = try Self.run(result.data, label: "\(c.name) output")
+        let (before, _, _, _) = try Self.run(try Data(contentsOf: o.inputURL), label: "\(c.name) input", case: c)
+        let (after, qs, results, _) = try Self.run(result.data, label: "\(c.name) output", case: c)
         print("matcher \(c.name): input [\(before)] output [\(after)]")
 
         // Our new annotations carry /NM; PDFKit reports it, so they match by name, to the object written.

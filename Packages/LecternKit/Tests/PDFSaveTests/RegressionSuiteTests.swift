@@ -17,6 +17,9 @@ import Testing
         var password: String?
         /// False for scans without a text layer: no page may give text.
         var hasText = true
+        /// False for the public-key file, whose recipient key was thrown away: PDFKit opens it,
+        /// but nothing can decrypt its pages, so it must give no text and isn't checked for ink.
+        var decryptable = true
         var testDescription: String { path }
     }
 
@@ -33,6 +36,18 @@ import Testing
         Entry(path: "linearized-qpdf.pdf"),
         Entry(path: "encrypted-aes256.pdf", password: "user-pass"),
         Entry(path: "encrypted-aes256-owner-only.pdf"),
+        Entry(path: "encrypted-r2-rc4-40.pdf", password: "user-pass"),
+        Entry(path: "encrypted-r3-rc4-annotated.pdf"),
+        // PDFKit can't unlock a non-ASCII password (EncryptionTests), so these open with the owner's.
+        Entry(path: "encrypted-r4-rc4.pdf", password: "owner-pass"),
+        Entry(path: "encrypted-r4-aes128-objstm.pdf", password: "user-pass"),
+        Entry(path: "encrypted-r4-cleartext-metadata.pdf"),
+        Entry(path: "encrypted-r4-identity-strings.pdf"),
+        Entry(path: "encrypted-r6-objstm-restricted.pdf"),
+        Entry(path: "encrypted-r6-unicode.pdf", password: "owner-pass"),
+        Entry(path: "encrypted-signed.pdf"),
+        Entry(path: "encrypted-r5.pdf", password: "user-pass"),
+        Entry(path: "encrypted-pubkey.pdf", hasText: false, decryptable: false),
         Entry(path: "realworld/arxiv-2208.04284v5.pdf"),
         Entry(path: "realworld/arxiv-2310.12457v2.pdf"),
         Entry(path: "realworld/arxiv-2402.16746v1.pdf"),
@@ -91,7 +106,9 @@ import Testing
             }
             #expect(document.pageCount > 0)
             let page = try #require(document.page(at: 0))
-            #expect(try Self.inkFraction(Self.render(page)) > 0.001, "page 1 of \(entry.path) rendered blank")
+            if entry.decryptable {
+                #expect(try Self.inkFraction(Self.render(page)) > 0.001, "page 1 of \(entry.path) rendered blank")
+            }
 
             // Text: the first pages that have some (front matter can be all images), or none at all.
             if entry.hasText {

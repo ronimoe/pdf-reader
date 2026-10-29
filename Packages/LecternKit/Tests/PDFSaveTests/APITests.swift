@@ -559,7 +559,9 @@ private func annotation(_ result: SaveResult, _ ref: ObjectRef) throws -> PDFDic
 
     @Test func unsupportedFiles() {
         #expect(Saveability.evaluate(WriterUnitTests.minimalPDF(trailerExtra: "/Encrypt << /Filter /Standard >> "))
-            == .unsupported(.encrypted))
+            == .unsupported(.encrypted(.malformed("/R is missing or not an integer"))))
+        #expect(Saveability.evaluate(WriterUnitTests.minimalPDF(trailerExtra: "/Encrypt << /Filter /Adobe.PubSec /V 4 /R 4 >> "))
+            == .unsupported(.encrypted(.securityHandler("Adobe.PubSec"))))
         #expect(Saveability.evaluate(WriterUnitTests.minimalPDF(corruptOffset: true))
             == .unsupported(.malformed("expected integer at offset 114")))
         #expect(Saveability.evaluate(Data("junk".utf8) + WriterUnitTests.minimalPDF())
