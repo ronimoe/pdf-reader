@@ -43,3 +43,30 @@ A running log of the unattended v1 build. Each milestone records what landed, ho
 - The test now covers `autosavesDrafts`, which the review showed could be broken without any test failing.
 - `scripts/test.sh` runs each suite once and logs to `build/logs/`.
 - **Deferred:** the app-hosted tests run under the real bundle ID's sandbox container. Persistence tests will live in the package (M2), so they won't touch the real container.
+
+## M0c: Platform prototype (branch `m0c-platform`)
+
+**Result:** the sandbox stays on and Sparkle stays in, opt-in. Distribution is unsigned (ad-hoc). Architecture §6 and §8, and decisions B5 and B6, are amended.
+
+**What the prototype found**
+- **Bookmarks and container data** survive ad-hoc rebuilds, including after the file is renamed or moved.
+- **Keychain.** A password saved by one build can't be read by the next (`-25293`, a code-hash partition mismatch). This now appears as a known limitation under B6.
+- **Sparkle 2.10.1** installed an update end to end from a local server, both from a home folder and from `/Applications`. It needs `disable-library-validation` under ad-hoc signing.
+- **Gatekeeper.** A downloaded copy is blocked with only "Move to Trash" and "Done". Right-click → Open has been gone since macOS 15. The working install routes are:
+  - Open Anyway in System Settings,
+  - `xattr -dr com.apple.quarantine`,
+  - our own Homebrew tap, whose cask removes the quarantine after installing,
+  - building from source.
+- **CI.** No hosted runner has macOS 26 with Xcode 27, so `scripts/test.sh` run locally stays the gate.
+
+**Side effects on this Mac**
+- **Dialogs.** You saw and answered Gatekeeper and Keychain dialogs during the experiments.
+- **Homebrew.** A `brew uninstall` removed the unused library `libngtcp2`. The coordinator reinstalled it (1.25.0_1).
+- **Left behind:**
+  - the Sparkle test key (account `lectern-m0c-probe`) in the login Keychain; delete it in Keychain Access,
+  - two empty protected container folders.
+
+**Not verified**
+- Clicking Open Anyway.
+- Sparkle's standard UI, updates over HTTPS, and its scheduled updates.
+- Whether a GitHub-hosted tap needs `brew trust`.
