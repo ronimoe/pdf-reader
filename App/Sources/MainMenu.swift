@@ -50,6 +50,8 @@ enum MainMenu {
         viewMenu.addItem(.separator())
         ReaderCommands.readingOptionItems().forEach(viewMenu.addItem)
         viewMenu.addItem(.separator())
+        ReaderCommands.linkAndSplitItems().forEach(viewMenu.addItem)
+        viewMenu.addItem(.separator())
         let toolbar = viewMenu.addItem(withTitle: "Show Toolbar", action: #selector(NSWindow.toggleToolbarShown(_:)), keyEquivalent: "t")
         toolbar.keyEquivalentModifierMask = [.command, .option]
         let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")

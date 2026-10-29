@@ -1,4 +1,5 @@
 import AppKit
+import ReaderKit
 import ReaderUI
 import SwiftUI
 
@@ -12,6 +13,11 @@ protocol ReaderPresenting: AnyObject {
     func dismissGoToPage(on window: NSWindow)
     /// `enterOwnerPassword` is called if the user chooses to enter it.
     func explain(_ action: BlockedAction, on window: NSWindow, enterOwnerPassword: @escaping () -> Void)
+    /// A link with a scheme other than http or https (A4): shows the URL and
+    /// calls `open` only if the user confirms.
+    func confirmOpening(_ url: URL, on window: NSWindow, open: @escaping () -> Void)
+    /// A GoToR, Launch, SubmitForm or JavaScript link: says it was blocked.
+    func explainBlockedLink(_ link: BlockedLink, on window: NSWindow)
 }
 
 final class SheetPresenter: ReaderPresenting {
@@ -58,5 +64,26 @@ final class SheetPresenter: ReaderPresenting {
             // Let the alert's sheet finish closing before the next one opens.
             DispatchQueue.main.async { enterOwnerPassword() }
         }
+    }
+
+    func confirmOpening(_ url: URL, on window: NSWindow, open: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Open this link in another app?"
+        alert.informativeText = "The link goes to:\n\(url.absoluteString)\n\nIt isn’t a web page. Open it only if you trust the document."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Open Link")
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertSecondButtonReturn { open() }
+        }
+    }
+
+    func explainBlockedLink(_ link: BlockedLink, on window: NSWindow) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = link.title
+        alert.informativeText = link.message
+        alert.addButton(withTitle: "OK")
+        alert.beginSheetModal(for: window)
     }
 }

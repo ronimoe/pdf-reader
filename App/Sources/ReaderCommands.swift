@@ -44,6 +44,20 @@ enum ReaderCommands {
         ]
     }
 
+    /// Links (A3, Rule 8) and the split view (B3), in the View menu.
+    /// ⌥⇥ starts keyboard link focus: then ⇥ or the arrows move, Space
+    /// previews, Return follows and Escape leaves.
+    static func linkAndSplitItems() -> [NSMenuItem] {
+        [
+            item("Focus Links", #selector(ReaderWindowController.focusLinks(_:)), "\t", .option),
+            item("Preview Links on Hover", #selector(ReaderWindowController.togglePreviewLinksOnHover(_:))),
+            .separator(),
+            item("Split View", #selector(ReaderWindowController.toggleSplitView(_:)), "t", [.command, .control]),
+            item("Focus Other Pane", #selector(ReaderWindowController.focusOtherPane(_:)), "o", [.command, .control]),
+            item("Close Pane", #selector(ReaderWindowController.closeFocusedPane(_:))),
+        ]
+    }
+
     /// Show or hide the sidebar, and its sections (spec §4.1).
     static func sidebarItems() -> [NSMenuItem] {
         [
