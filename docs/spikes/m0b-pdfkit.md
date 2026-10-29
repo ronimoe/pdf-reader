@@ -40,7 +40,7 @@ After loading, displaying (run loop spun 0.5 s), clicking the link, clicking the
 
 A click on the JavaScript link reaches `PDFView.performAction:` with a `PDFAction` of type `JavaScript`, which does nothing.
 
-**Evidence.** `Q1JavaScript.noJavaScriptRunsOnLoadDisplayClickFocusTypeOrBlur`, `Q1JavaScript.fixtureIsWellFormed`. Also `dataRepresentationStripsDocumentJavaScript`: the rewrite drops every action-related entry (`/OpenAction`, `/JavaScript`, `/JS`, `/AA`, `/A`, `/Names`, `/CO`). The JavaScript link survives as a link with no action.
+**Evidence.** `Q1JavaScript.noJavaScriptRunsOnLoadDisplayClickFocusTypeOrBlur`, `Q1JavaScript.fixtureIsWellFormed`. Also `dataRepresentationStripsDocumentJavaScript`: the rewrite drops all JavaScript and every JavaScript trigger (`/OpenAction`, `/JavaScript`, `/JS`, `/AA`, `/Names`, `/CO`). The JavaScript link survives as a link with no action. Other link action types do survive a rewrite (§6).
 
 **Architecture.** A4 "JavaScript is never executed" is **confirmed** with no work needed. Classify the action (§2) so the app can explain a JavaScript link when it's clicked.
 
@@ -72,7 +72,7 @@ Destination detail is in §7.
 - **`Named` and `ResetForm`:** go to `performAction:`.
 
 **Three more ways a URL can leave, beyond the click:**
-1. **`-[PDFView openRepresentedLink:]`** is the private action behind PDFKit's context-menu "Open Link". Given an `NSMenuItem` whose `representedObject` is a URL, it calls `NSWorkspace openURL:` directly. **It skips the delegate even when one is set.** The headless context menu (`menuForEvent:`) showed no link items, so whether the real right-click menu offers them can't be verified here (unverified). PDFView does have `_addOpenItemsToMenu:` and `copyLink:`.
+1. **`-[PDFView openRepresentedLink:]`** is a private action that, by its name, sits behind a context-menu "Open Link". Given an `NSMenuItem` whose `representedObject` is a URL, it calls `NSWorkspace openURL:` directly. **It skips the delegate even when one is set.** The headless context menu (`menuForEvent:`) showed no link items, so whether the real right-click menu offers them can't be verified here (unverified). `PDFView` does respond to `_addOpenItemsToMenu:onPage:atPagePoint:` and `copyLink:` (`privateLinkMenuMethodsExist`).
 2. **The delegate's default implementation:** a `PDFView` with no delegate opens URI links itself.
 3. **Force Click:** `PDFView` installs an `NSImmediateActionGestureRecognizer`, with itself as delegate, for Look Up and link previews. See §8.
 
@@ -80,6 +80,7 @@ Destination detail is in §7.
 - Override **`mouseDown(with:)`**. Hit-test with `page(for:nearest:)`, `convert(_:to:)` and `PDFPage.annotation(at:)`, and classify. On a link, **don't call super**. Route on the matching `mouseUp`.
 - Override `menu(for:)` to drop `openRepresentedLink:` items.
 - Implement **`@objc(openRepresentedLink:)`** to route through the same policy.
+- Override **`perform(_:)`** as a choke point, classifying and routing without calling super. Every observed activation path except `openRepresentedLink:` ends in `-[PDFView performAction:]`. This also catches paths that can't be tested headlessly, such as VoiceOver pressing a link element. `performActionChokePoint` calls it with every fixture action: everything is routed, with no delegate call, no opener call and no `NSWorkspace` call.
 
 With this in place, every fixture link was routed by our code, and none of PDFKit's own handling ran:
 - no delegate call,
@@ -100,12 +101,15 @@ A URI opens only through the `URLOpening` seam, and only when the policy allows 
 - `uriOpensOnlyWhenPolicyAllows`
 - `interceptedGoToRecordsHistory`
 - `interceptingViewOverridesOpenRepresentedLink`
+- `performActionChokePoint`
+- `privateLinkMenuMethodsExist`
 - `classifierCoversEveryFixtureLink`
 
 **Architecture: change to §4.4.** "Owning link clicks" should name the mechanism:
 - **Intercept in `mouseDown`, not `mouseUp`** (PDFKit acts during `mouseDown`). Don't call super for link annotations.
 - **Classify by `action.type`, never by class.** `Launch` arrives as `PDFActionURL`. Read `PDFActionRemoteGoTo.url` only through KVC.
 - **Close the side doors:**
+  - Override `perform(_:)` as the choke point; never call super for link actions.
   - Always set a delegate whose `PDFViewWillClickOnLink` routes through the policy.
   - Override `openRepresentedLink:`.
   - Filter link items out of the context menu.
@@ -125,7 +129,7 @@ A URI opens only through the `URLOpening` seam, and only when the policy allows 
   - the rewritten bytes keep `/V (Alice)`.
 - **Keyboard focus:**
   - Tab sent to the `PDFView` itself doesn't move focus into any field, even in a stock view.
-  - Fields only gain focus by being clicked.
+  - Of the two paths tested, Tab and click, only a click gave a field focus. Other paths, such as accessibility, weren't tested.
   - Tab inside an editing field (synthesised and sent to the field editor) stayed in the same field. That differs from what `PDFView`'s private `handleTabInTextWidget:` suggests, so treat it as unverified for a real keyboard. It's moot once clicks are blocked, because no field ever gets focus.
 - **`isReadOnly` changes `dataRepresentation()`:**
   - An untouched rewrite writes `/Ff 0` on every widget; the original had no `/Ff`.
@@ -230,7 +234,7 @@ The outputs are saved to `~/Library/Containers/io.github.ronimoe.Lectern/Data/tm
 - **Live changes reach only one view.**
   - `PDFPage` has a single private `view` slot, owned by the view that last laid the page out.
   - An annotation added or removed while both views are showing appears or disappears only in the owner. In every display-mode combination tested, the other view kept showing the old state.
-  - `annotationsChanged(on:)`, `layoutDocumentView()`, `needsDisplay`, `go(to:)` and toggling the display mode don't refresh the stale view.
+  - `annotationsChanged(on:)`, `layoutDocumentView()`, `needsDisplay`, `go(to:)` and toggling the display mode don't refresh the stale view (`cheapRefreshesDoNotUpdateTheStaleView`, one case each).
   - **Reassigning `document`** (`nil`, then the same document) does refresh it. But that moves ownership, so the next change then misses the *other* view.
 - **`go(to: PDFDestination)`:**
   - An explicit point lands exactly at the top of the view (`/XYZ 0 792`, `/XYZ 100 500`, constructed y=300).
@@ -243,6 +247,7 @@ The outputs are saved to `~/Library/Containers/io.github.ronimoe.Lectern/Data/tm
 - `twoViewsCanShareOneDocument`
 - `existingAnnotationsShowInBothViews`
 - `liveAdditionReachesOnlyThePageOwner` (three display-mode pairs)
+- `cheapRefreshesDoNotUpdateTheStaleView` (five refresh calls)
 - `reassigningTheDocumentRefreshesTheStaleView`
 - `removalReachesOnlyThePageOwnerToo`
 - `goToDestinationVariants`
@@ -274,13 +279,13 @@ The outputs are saved to `~/Library/Containers/io.github.ronimoe.Lectern/Data/tm
 - **Force Click API:**
   - `PDFView` doesn't override `pressureChangeWithEvent:` or `quickLookWithEvent:`, so a subclass gets them.
   - `pressureConfiguration` can be set (`.primaryDeepClick`).
-  - `PDFView` installs an `NSImmediateActionGestureRecognizer`, with the view as its delegate, which drives Look Up and data detectors. It can be removed.
+  - `PDFView` installs an `NSImmediateActionGestureRecognizer`, with the view as its delegate (`immediateActionRecognizerWillPrepare:`). It can be removed. *Inferred, not observed:* in AppKit this recognizer drives Force Click actions such as Look Up and previews.
   - A pressure event can't be synthesised through public API: `NSEvent(cgEvent:)` on a CGEvent retyped to `NSEventTypePressure` crashed the test host. **Physical pressure is unverified.**
 
 **Evidence.** `Q8Hover`: `trackingAreaIsInstalled`, `syntheticEventsThroughTheWindow`, `hoverDelayLogicGivenEvents`, `forceClickAPI`.
 
 **Architecture.** §4.4 hover and Force Click are **confirmed at the API level**. Two additions:
-- Remove the immediate-action recognizer, so Force Click goes only to `pressureChange` and never to PDFKit's Look Up or link preview. Those could fetch a web page, against A4.
+- Remove the immediate-action recognizer, so Force Click goes only to `pressureChange` and never to PDFKit's own handling. We infer that handling may show a link preview, which could fetch a web page against A4. That wasn't observed.
 - Add a manual M3 check of real hover and Force Click.
 
 ## 9. Thumbnails on a background actor
@@ -350,13 +355,14 @@ These points matter for every future AppKit test in this project (`SpikeHosting.
   - No event is ever posted to a system event tap, so there's no Accessibility, Input Monitoring or Screen Recording prompt.
 - **The `NSWorkspace` tripwire:** every open and launch method of `NSWorkspace` is replaced in the test process with a recorder. Fixture targets are inert anyway: unregistered schemes, `.invalid` hosts, and paths that don't exist.
 - **Serialized suites:** all spike suites are nested in one suite marked `.serialized`, with a time limit.
+- **Requirement:** because the host window sits on a real screen, these tests need a logged-in GUI session with a display, and a primary screen at least about 900 pt tall (the window is 700×900). This bears on the CI **[verify]** in architecture.md §8, which this spike doesn't settle.
 
 ## Not verified
 
 - Real hover and tracking-area delivery, and physical Force Click pressure (§8). This needs a manual check in M3.
 - Whether PDFKit's real right-click menu offers "Open Link" over a link. It didn't appear headlessly. The `openRepresentedLink:` override covers it either way.
 - Tab inside a focused field with a real keyboard (§3). Moot once clicks are blocked.
-- VoiceOver or accessibility activation of form widgets (§3).
+- VoiceOver or accessibility activation of form widgets (§3) and of links (§2). The `perform(_:)` choke point should cover links, but that wasn't tested.
 - Whether a stale pane *draws* a live annotation through some path other than its effect layers. That can't be checked with pixels offscreen (§7, §11).
 - Two concurrent searches on one document. Sharing one `PDFDocument` across threads, deliberately not tried.
 - Performance on the baseline M1 with 8 GB (A6). These numbers are from an M3 Pro.

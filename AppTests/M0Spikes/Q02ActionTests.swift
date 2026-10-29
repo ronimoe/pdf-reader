@@ -236,6 +236,27 @@ extension M0bSpikes {
             }
         }
 
+        /// performAction: as a choke point: calling it directly (as any
+        /// untested activation path would) still goes through the policy.
+        @Test func performActionChokePoint() throws {
+            let s = try makeIntercepting()
+            defer { s.host.close() }
+            for spec in SpikeFixtures.linkSpecs {
+                s.view.perform(try #require(try link(spec.tag, in: s.document).action))
+            }
+            Spin.runLoop(0.2)
+            #expect(s.view.routed.count == SpikeFixtures.linkSpecs.count)
+            #expect(s.delegate.calls.isEmpty)
+            #expect(s.opener.opened.isEmpty)
+            #expect(WorkspaceTripwire.shared.calls.isEmpty)
+        }
+
+        @Test func privateLinkMenuMethodsExist() {
+            for name in ["openRepresentedLink:", "copyLink:", "_addOpenItemsToMenu:onPage:atPagePoint:"] {
+                #expect(PDFView.instancesRespond(to: NSSelectorFromString(name)), "\(name)")
+            }
+        }
+
         @Test func interceptingViewOverridesOpenRepresentedLink() throws {
             let s = try makeIntercepting()
             defer { s.host.close() }

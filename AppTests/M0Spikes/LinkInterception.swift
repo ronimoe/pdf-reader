@@ -29,37 +29,41 @@ enum LinkClassifier {
     static func classify(_ annotation: PDFAnnotation) -> LinkTarget? {
         guard annotation.type == "Link" else { return nil }
         if let action = annotation.action {
-            // Classify by the PDF action type first: PDFKit exposes Launch as a
-            // PDFActionURL with a nil URL, and SubmitForm / JavaScript as a
-            // bare PDFAction.
-            switch action.type {
-            case "Launch", "SubmitForm", "JavaScript", "ImportData", "GoToE", "Hide", "Rendition", "Sound", "Movie":
-                return .blocked(action.type)
-            default:
-                break
-            }
-            switch action {
-            case let goTo as PDFActionGoTo:
-                return destinationTarget(goTo.destination)
-            case let url as PDFActionURL:
-                guard let target = url.url else { return .blocked("URI without URL") }
-                let scheme = target.scheme?.lowercased()
-                return (scheme == "http" || scheme == "https") ? .web(target) : .otherScheme(target)
-            case is PDFActionRemoteGoTo:
-                return .blocked("GoToR")
-            case let named as PDFActionNamed:
-                return .named("\(named.name.rawValue)")
-            case is PDFActionResetForm:
-                return .blocked("ResetForm")
-            default:
-                return .blocked(action.type)
-            }
+            return classify(action: action)
         }
         if let destination = annotation.destination {
             return destinationTarget(destination)
         }
         // A link with neither action nor destination: never let PDFKit act on it.
         return .blocked("no action")
+    }
+
+    static func classify(action: PDFAction) -> LinkTarget {
+        // Classify by the PDF action type first: PDFKit exposes Launch as a
+        // PDFActionURL with a nil URL, and SubmitForm / JavaScript as a
+        // bare PDFAction.
+        switch action.type {
+        case "Launch", "SubmitForm", "JavaScript", "ImportData", "GoToE", "Hide", "Rendition", "Sound", "Movie":
+            return .blocked(action.type)
+        default:
+            break
+        }
+        switch action {
+        case let goTo as PDFActionGoTo:
+            return destinationTarget(goTo.destination)
+        case let url as PDFActionURL:
+            guard let target = url.url else { return .blocked("URI without URL") }
+            let scheme = target.scheme?.lowercased()
+            return (scheme == "http" || scheme == "https") ? .web(target) : .otherScheme(target)
+        case is PDFActionRemoteGoTo:
+            return .blocked("GoToR")
+        case let named as PDFActionNamed:
+            return .named("\(named.name.rawValue)")
+        case is PDFActionResetForm:
+            return .blocked("ResetForm")
+        default:
+            return .blocked(action.type)
+        }
     }
 
     private static func destinationTarget(_ destination: PDFDestination) -> LinkTarget {
@@ -121,6 +125,14 @@ final class InterceptingPDFView: PDFView {
         guard let url = (sender as? NSMenuItem)?.representedObject as? URL else { return }
         let scheme = url.scheme?.lowercased()
         route(scheme == "http" || scheme == "https" ? .web(url) : .otherScheme(url))
+    }
+
+    /// The choke point: every observed PDFKit activation path except
+    /// `openRepresentedLink:` ends in `-[PDFView performAction:]`. Never
+    /// call super, so a path we didn't anticipate (accessibility, keyboard)
+    /// still goes through the policy.
+    override func perform(_ action: PDFAction) {
+        route(LinkClassifier.classify(action: action))
     }
 
     func route(_ target: LinkTarget) {

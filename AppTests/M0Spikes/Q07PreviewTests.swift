@@ -88,6 +88,31 @@ extension M0bSpikes {
             #expect(annotationLayers(p.first) == 0)
         }
 
+        /// Cheaper refreshes tried on the stale (non-owner) view: none works.
+        @Test(arguments: ["annotationsChanged", "layoutDocumentView", "needsDisplay", "goToPage", "toggleDisplayMode"])
+        func cheapRefreshesDoNotUpdateTheStaleView(refresh: String) throws {
+            let p = try pair(modes: (.singlePage, .singlePage))
+            defer { p.host.close() }
+            _ = addHighlight(to: p.page)
+            Spin.runLoop(0.4)
+            #expect(annotationLayers(p.first) == 0)
+            let view = p.first
+            switch refresh {
+            case "annotationsChanged": view.annotationsChanged(on: p.page)
+            case "layoutDocumentView": view.layoutDocumentView()
+            case "needsDisplay":
+                view.needsDisplay = true
+                view.documentView?.subviews.forEach { $0.needsDisplay = true }
+            case "goToPage": view.go(to: p.page)
+            default:
+                view.displayMode = .singlePageContinuous
+                view.displayMode = .singlePage
+            }
+            Spin.runLoop(0.5)
+            #expect(annotationLayers(p.first) == 0, "\(refresh) did not refresh the stale view")
+            #expect(annotationLayers(p.second) == 1)
+        }
+
         @Test func reassigningTheDocumentRefreshesTheStaleView() throws {
             let p = try pair()
             defer { p.host.close() }
