@@ -83,7 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = NSDocumentController.shared as? ReaderDocumentController
         controller?.onDocumentsChange = { [weak self] count in
             guard let self else { return }
-            if !isRestoringSession { emptyState.documentsDidChange(count: count) }
+            // While last session is reopening, its file isn't rewritten with half of it: a crash
+            // mid-restore must not lose the rest. The restore saves once it ends.
+            guard !isRestoringSession else { return }
+            emptyState.documentsDidChange(count: count)
             session?.documentsDidChange()
         }
         guard !AppEnvironment.isHostingTests else { return }

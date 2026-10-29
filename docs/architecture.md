@@ -571,7 +571,10 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 - **Not verified:** VoiceOver itself, and keyboard focus inside SwiftUI controls (the audit checks their names only).
 
 **Snapshots** *(Added 2026-10-29, M5)*
-- `SnapshotTests` render windows offscreen, never ordered on screen, in light and dark: the empty state, a document with the sidebar, the split, the annotation popover, Settings, the shortcut map and distraction-free mode. The sandboxed test host writes them to its temporary folder and `scripts/test.sh` copies them to `build/snapshots/`. PDFKit's annotations don't appear in offscreen captures (M0b Q11).
+- `SnapshotTests` render windows offscreen, never ordered on screen, in light and dark: the empty state, a document with the sidebar, the split, the annotation popover, Settings, the shortcut map and distraction-free mode. The sandboxed test host writes them to its temporary folder and `scripts/test.sh` copies them to `build/snapshots/`.
+- **How they're made.** A never-ordered window's `cacheDisplay` replays only what views draw themselves: PDFKit's pages come out empty (M0b Q11), and macOS 26's glass and backdrop views draw a white fallback that covers everything in dark mode. So each image is composed: the window background colour, a flat panel where each glass container is, every visible page drawn with `PDFPage.draw(with:to:)` below the toolbar, then `cacheDisplay` of the window with the glass and backdrop views and PDFKit's page views hidden.
+- **What's approximate.** Glass is drawn flat, page thumbnails come out blank, and content under the toolbar isn't shown. The tests fail if a reader state shows no page text, or a dark capture is mostly white.
+- They found one real bug: a Settings caption that didn't wrap made the form wider than its window.
 
 **Performance**
 - XCTest metrics for open time, scroll frame pacing, search time to first result, and thumbnail throughput.

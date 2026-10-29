@@ -74,7 +74,7 @@ public struct SettingsView: View {
                 .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
                 .tag(Tab.updates)
         }
-        .frame(width: 460)
+        .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -91,6 +91,8 @@ public struct SettingsView: View {
                 : "macOS is set to close windows when quitting (Desktop & Dock), so Lectern doesn’t reopen them.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: 300, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
                 .opacity(model.sessionRestore == .system ? 1 : 0)
                 .accessibilityHidden(model.sessionRestore != .system)
             Toggle("Preview links on hover", isOn: $model.previewsLinksOnHover)
@@ -107,6 +109,8 @@ public struct SettingsView: View {
             Text("Written into new annotations only. Leave it empty to add no name.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: 300, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             Picker("Highlight colour:", selection: $model.annotationColor) {
                 ForEach(AnnotationColorPreset.allCases, id: \.self) { preset in
                     Label {
@@ -128,12 +132,16 @@ public struct SettingsView: View {
             Text("At most once a day, from GitHub. Nothing about you or your documents is sent.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: 300, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             Button("Check Now") { model.onCheckNow() }
                 .accessibilityLabel("Check for updates now")
             Divider()
             Label("Lectern sends no telemetry: no analytics, crash reports or usage data.", systemImage: "hand.raised")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: 300, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(20)
     }

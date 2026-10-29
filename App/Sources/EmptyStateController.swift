@@ -22,10 +22,16 @@ final class EmptyStateController {
     var isShown: Bool { window?.isVisible ?? false }
 
     func show() {
+        prepareWindow().makeKeyAndOrderFront(nil)
+    }
+
+    /// The window with the current recents, without showing it (also for offscreen snapshots).
+    @discardableResult
+    func prepareWindow() -> NSWindow {
         model.setRecents(recentURLs())
         let window = window ?? makeWindow()
         self.window = window
-        window.makeKeyAndOrderFront(nil)
+        return window
     }
 
     func hide() {
