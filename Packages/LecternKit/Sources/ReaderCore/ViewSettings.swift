@@ -26,6 +26,8 @@ public struct ViewSettings: Codable, Hashable, Sendable {
     /// degrees: always 0, 90, 180 or 270 (B9).
     public private(set) var rotation: Int
     public var zoom: ZoomMode
+    /// The sidebar's visibility and section (spec §4.1, §5.4). *(Added in M2.)*
+    public var sidebar: SidebarSettings
 
     public init(
         pages: Pages = .single,
@@ -33,7 +35,8 @@ public struct ViewSettings: Codable, Hashable, Sendable {
         coverPageAlone: Bool? = nil,
         rightToLeft: Bool? = nil,
         rotation: Int = 0,
-        zoom: ZoomMode = .fitWidth
+        zoom: ZoomMode = .fitWidth,
+        sidebar: SidebarSettings = SidebarSettings()
     ) {
         self.pages = pages
         self.scrolling = scrolling
@@ -41,6 +44,38 @@ public struct ViewSettings: Codable, Hashable, Sendable {
         self.rightToLeft = rightToLeft
         self.rotation = Self.normalized(rotation)
         self.zoom = zoom
+        self.sidebar = sidebar
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pages, scrolling, coverPageAlone, rightToLeft, rotation, zoom, sidebar
+    }
+
+    /// Every key is optional, so state stored by an older or newer version
+    /// still loads: a missing or unreadable value falls back to its default.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = ViewSettings()
+        self.init(
+            pages: (try? container.decodeIfPresent(Pages.self, forKey: .pages)) ?? defaults.pages,
+            scrolling: (try? container.decodeIfPresent(Scrolling.self, forKey: .scrolling)) ?? defaults.scrolling,
+            coverPageAlone: (try? container.decodeIfPresent(Bool.self, forKey: .coverPageAlone)) ?? nil,
+            rightToLeft: (try? container.decodeIfPresent(Bool.self, forKey: .rightToLeft)) ?? nil,
+            rotation: (try? container.decodeIfPresent(Int.self, forKey: .rotation)) ?? 0,
+            zoom: (try? container.decodeIfPresent(ZoomMode.self, forKey: .zoom)) ?? defaults.zoom,
+            sidebar: (try? container.decodeIfPresent(SidebarSettings.self, forKey: .sidebar)) ?? defaults.sidebar
+        )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(pages, forKey: .pages)
+        try container.encode(scrolling, forKey: .scrolling)
+        try container.encodeIfPresent(coverPageAlone, forKey: .coverPageAlone)
+        try container.encodeIfPresent(rightToLeft, forKey: .rightToLeft)
+        try container.encode(rotation, forKey: .rotation)
+        try container.encode(zoom, forKey: .zoom)
+        try container.encode(sidebar, forKey: .sidebar)
     }
 
     // MARK: Cover page and direction

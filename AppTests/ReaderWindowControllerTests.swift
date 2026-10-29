@@ -31,7 +31,7 @@ private struct Harness {
         document = try ReaderDocument.loaded(data)
         self.store = store
         lookups = CountingPasswordStore(store)
-        controller = ReaderWindowController(document: document, passwordStore: lookups, presenter: presenter)
+        controller = ReaderWindowController(document: document, passwordStore: lookups, presenter: presenter, stateStore: nil)
         document.addWindowController(controller)
         controller.window?.setContentSize(NSSize(width: 800, height: 600))
     }
@@ -62,7 +62,10 @@ private struct Harness {
         #expect(window.collectionBehavior.contains(.fullScreenPrimary))
         #expect(window.titleVisibility == .visible)
         #expect(window.toolbarStyle == .unifiedCompact)
-        #expect(window.contentView === harness.pdfView)
+        // The reading area sits beside a collapsible sidebar (spec §4.1).
+        #expect(window.contentViewController === harness.controller.splitViewController)
+        #expect(harness.pdfView.window === window)
+        #expect(harness.controller.sidebarItem.behavior == .sidebar)
         #expect(harness.controller.isShowingContent)
     }
 
@@ -348,7 +351,7 @@ private struct Harness {
 
     @Test func realSheetAppearsAndCancelClosesCleanly() throws {
         let document = try ReaderDocument.loaded(try #require(TestPDF.encrypted(user: "user", owner: "owner")))
-        let controller = ReaderWindowController(document: document, passwordStore: InMemoryPasswordStore(), presenter: SheetPresenter())
+        let controller = ReaderWindowController(document: document, passwordStore: InMemoryPasswordStore(), presenter: SheetPresenter(), stateStore: nil)
         document.addWindowController(controller)
         controller.showWindow(nil)
         let window = try #require(controller.window)
@@ -508,13 +511,18 @@ private struct Harness {
         let harness = try Harness(try #require(TestPDF.make(pageCount: 1)))
         defer { harness.close() }
         let toolbar = try #require(harness.controller.window?.toolbar)
-        let identifiers = harness.controller.toolbarDefaultItemIdentifiers(toolbar).filter { $0 != .flexibleSpace }
-        #expect(identifiers == [.zoomOut, .zoomIn, .zoomMenu, .readingOptions])
+        let identifiers = harness.controller.toolbarDefaultItemIdentifiers(toolbar)
+            .filter { $0 != .flexibleSpace && $0 != .sidebarTrackingSeparator }
+        #expect(identifiers == [.sidebar, .goBack, .goForward, .zoomOut, .zoomIn, .zoomMenu, .readingOptions, .search])
         for identifier in identifiers {
             let item = try #require(harness.controller.toolbar(toolbar, itemForItemIdentifier: identifier, willBeInsertedIntoToolbar: true))
             #expect(!item.label.isEmpty)
             #expect(item.toolTip?.isEmpty == false)
-            #expect(item.image?.accessibilityDescription == item.label)
+            if let search = item as? NSSearchToolbarItem {
+                #expect(search.searchField.accessibilityLabel() == "Search document")
+            } else {
+                #expect(item.image?.accessibilityDescription == item.label)
+            }
         }
     }
 

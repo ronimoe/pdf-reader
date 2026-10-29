@@ -5,6 +5,10 @@ import CoreGraphics
 ///
 /// Used to keep the reader's place across zoom, resize, layout, rotation and
 /// reload, as the stored reading position, and as a history entry.
+///
+/// The point is the page-space point that was at the top-left corner of the
+/// visible area. Page space is the unrotated crop box, so an anchor survives
+/// a view rotation (B9) unchanged.
 public struct ReadingAnchor: Codable, Hashable, Sendable {
     public var pageIndex: Int
     public var pointInPage: CGPoint
@@ -22,5 +26,13 @@ public struct ReadingAnchor: Codable, Hashable, Sendable {
         var copy = self
         copy.pageIndex = min(max(0, pageIndex), max(0, pageCount - 1))
         return copy
+    }
+
+    /// The same page, and points within `tolerance` page points of each
+    /// other. The scale is ignored: it doesn't change where the reader is.
+    public func isSamePlace(as other: ReadingAnchor, tolerance: CGFloat = 1) -> Bool {
+        pageIndex == other.pageIndex
+            && abs(pointInPage.x - other.pointInPage.x) <= tolerance
+            && abs(pointInPage.y - other.pointInPage.y) <= tolerance
     }
 }

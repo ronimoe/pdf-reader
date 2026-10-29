@@ -14,8 +14,45 @@ final class ReaderDocument: NSDocument {
     private(set) var originalPageRotations: [Int] = []
     /// The catalog's layout hints (B1). Read once the document is unlocked.
     private(set) var layoutHints = DocumentLayoutHints.none
+    /// The pages' labels, for go to page and the sidebar. Read once the
+    /// document is unlocked.
+    /// Built the first time it's needed (go to page, search results): reading
+    /// every page's label creates every `PDFPage`, which costs tens of
+    /// milliseconds on a long document.
+    var pageNumbering: PageNumbering {
+        if let cachedNumbering { return cachedNumbering }
+        guard let pdfDocument, !pdfDocument.isLocked else { return PageNumbering(pageCount: 0) }
+        let numbering = definesPageLabels
+            ? PageNumbering(labels: (0..<pdfDocument.pageCount).map { pdfDocument.page(at: $0)?.label ?? "" }, definesLabels: true)
+            : PageNumbering(pageCount: pdfDocument.pageCount)
+        cachedNumbering = numbering
+        return numbering
+    }
+    private var cachedNumbering: PageNumbering?
+    /// Whether the catalog has `/PageLabels`. Read once the document is unlocked.
+    private(set) var definesPageLabels = false
+
+    /// One page's label, without building every label: the page's own when
+    /// the document defines labels, its number otherwise.
+    func label(forPageAt index: Int) -> String {
+        if let cachedNumbering { return cachedNumbering.label(forPageAt: index) }
+        guard definesPageLabels, let label = pdfDocument?.page(at: index)?.label, !label.isEmpty else { return String(index + 1) }
+        return label
+    }
     /// Identifies the document in the Keychain; readable while locked.
-    private(set) lazy var documentKey = DocumentKey(pdfData: originalData)
+    var documentKey: DocumentKey {
+        if let cachedKey { return cachedKey }
+        let key = DocumentKey(pdfData: originalData)
+        cachedKey = key
+        return key
+    }
+    private var cachedKey: DocumentKey?
+    /// The password that last gained access, kept in memory only, so the
+    /// background renderers and a reload can open their own copies (B6).
+    /// Never stored.
+    private(set) var sessionPassword: String?
+    /// True once the file has been deleted or moved to the Trash (B7).
+    private(set) var fileWasRemoved = false
 
     // A1: nothing is ever written without an explicit Save.
     override nonisolated class var autosavesInPlace: Bool { false }
@@ -72,7 +109,9 @@ final class ReaderDocument: NSDocument {
         let wasLocked = pdfDocument.isLocked
         guard pdfDocument.unlock(withPassword: password) else { return false }
         documentDidBecomeReadableIfUnlocked()
-        return wasLocked ? !pdfDocument.isLocked : hasOwnerAccess
+        let gained = wasLocked ? !pdfDocument.isLocked : hasOwnerAccess
+        if gained { sessionPassword = password }
+        return gained
     }
 
     private var hasRecordedOriginals = false
@@ -82,10 +121,129 @@ final class ReaderDocument: NSDocument {
     private func documentDidBecomeReadableIfUnlocked() {
         guard let pdfDocument, !pdfDocument.isLocked, !hasRecordedOriginals else { return }
         hasRecordedOriginals = true
-        originalPageRotations = (0..<pdfDocument.pageCount).map { pdfDocument.page(at: $0)?.rotation ?? 0 }
+        appliedViewRotation = 0
+        cachedNumbering = nil
         if let reference = pdfDocument.documentRef {
+            // Read from CoreGraphics' page dictionaries: asking PDFKit would
+            // create a PDFPage for every page (about 90 ms for 2,000 pages).
+            originalPageRotations = (0..<reference.numberOfPages).map { Int(reference.page(at: $0 + 1)?.rotationAngle ?? 0) }
             layoutHints = DocumentLayoutHints(document: reference)
+            definesPageLabels = PageNumbering.definesPageLabels(reference)
+        } else {
+            originalPageRotations = (0..<pdfDocument.pageCount).map { pdfDocument.page(at: $0)?.rotation ?? 0 }
+            definesPageLabels = false
         }
+    }
+
+    // MARK: Changes on disk (B7)
+
+    /// How long to wait for a writer to finish before reading the file.
+    var reloadDelay: TimeInterval = 0.3
+    private var pendingReload: DispatchWorkItem?
+
+    // NSDocument is the file presenter for its file. These arrive on its
+    // presenter queue; the work happens on the main thread.
+
+    override nonisolated func presentedItemDidChange() {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.scheduleReload() }
+        }
+    }
+
+    override nonisolated func presentedItemDidMove(to newURL: URL) {
+        super.presentedItemDidMove(to: newURL)
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.fileDidMove(to: newURL) }
+        }
+    }
+
+    override nonisolated func accommodatePresentedItemDeletion(completionHandler: @escaping @Sendable ((any Error)?) -> Void) {
+        // The document stays open on the bytes it already has.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.fileDidGoAway() }
+        }
+        completionHandler(nil)
+    }
+
+    /// Writers often touch a file several times; read it once they settle.
+    func scheduleReload() {
+        pendingReload?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { _ = self?.reloadFromDiskIfChanged() }
+        }
+        pendingReload = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + reloadDelay, execute: work)
+    }
+
+    /// Reads the file through file coordination and, if its bytes changed
+    /// and they parse, reloads silently (B7, no unsaved annotations until
+    /// M4). Returns whether it reloaded.
+    @discardableResult
+    func reloadFromDiskIfChanged() -> Bool {
+        pendingReload?.cancel()
+        pendingReload = nil
+        guard let url = fileURL else { return false }
+        var data: Data?
+        var coordinationError: NSError?
+        NSFileCoordinator(filePresenter: self).coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinationError) { url in
+            data = try? Data(contentsOf: url)
+        }
+        guard let data else {
+            if !FileManager.default.fileExists(atPath: url.path) { fileDidGoAway() }
+            return false
+        }
+        guard data != originalData else { return false }
+        // A file caught half-written doesn't parse; the next change notice
+        // brings the finished one.
+        guard let pdf = PDFDocument(data: data) else { return false }
+        reload(with: data, pdf: pdf)
+        return true
+    }
+
+    /// Replaces the bytes and the model with the file's new contents.
+    func reload(with data: Data, pdf: PDFDocument) {
+        originalData = data
+        pdfDocument = pdf
+        cachedKey = nil
+        hasRecordedOriginals = false
+        originalPageRotations = []
+        layoutHints = .none
+        cachedNumbering = nil
+        definesPageLabels = false
+        if let sessionPassword, pdf.isEncrypted {
+            pdf.unlock(withPassword: sessionPassword)
+        }
+        documentDidBecomeReadableIfUnlocked()
+        fileModificationDate = (try? fileURL?.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        readerWindowController?.documentDidReload()
+    }
+
+    private func fileDidMove(to url: URL) {
+        if Self.isInTrash(url) {
+            fileDidGoAway()
+        } else {
+            readerWindowController?.documentDidMove(to: url)
+        }
+    }
+
+    /// Whether `url` is inside a Trash: the home folder's, or the per-volume
+    /// `.Trashes` on another disk.
+    nonisolated static func isInTrash(_ url: URL) -> Bool {
+        let components = url.standardizedFileURL.pathComponents
+        if components.contains(".Trash") || components.contains(".Trashes") { return true }
+        guard let trash = try? FileManager.default.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: url, create: false) else {
+            return false
+        }
+        let trashPath = trash.standardizedFileURL.resolvingSymlinksInPath().path
+        return url.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(trashPath + "/")
+    }
+
+    /// Deleted, or moved to the Trash: the document stays open with a
+    /// notice. Save a Copy arrives in M4.
+    func fileDidGoAway() {
+        guard !fileWasRemoved else { return }
+        fileWasRemoved = true
+        readerWindowController?.showFileRemovedNotice()
     }
 
     // MARK: View rotation (B9)
@@ -99,11 +257,18 @@ final class ReaderDocument: NSDocument {
     /// Rotates every page by `degrees` on top of its original rotation. Only
     /// the in-memory model changes; `originalData` is never touched.
     func applyViewRotation(_ degrees: Int) {
-        guard let pdfDocument else { return }
+        let degrees = ViewSettings.normalized(degrees)
+        // Pages already show their own rotation; touching them would create
+        // every PDFPage for nothing.
+        guard let pdfDocument, degrees != appliedViewRotation else { return }
         for (index, original) in originalPageRotations.enumerated() {
             pdfDocument.page(at: index)?.rotation = ViewSettings.normalized(original + degrees)
         }
+        appliedViewRotation = degrees
     }
+
+    /// The view rotation the model's pages carry now.
+    private var appliedViewRotation = 0
 
     // MARK: Printing
 

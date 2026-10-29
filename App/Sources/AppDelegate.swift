@@ -1,9 +1,59 @@
 import AppKit
+import Persistence
+
+/// App-wide services the windows use.
+enum AppEnvironment {
+    /// Per-document state (A2), in the app's container. Nil until launch
+    /// finishes; tests inject their own store instead.
+    static var stateStore: DocumentStateStore?
+
+    /// True when the app is hosting the unit tests.
+    static var isHostingTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
+    }
+
+    /// Application Support in the container; a throwaway folder while
+    /// hosting tests, so documents tests open never reach the user's state.
+    static var stateDirectory: URL {
+        guard isHostingTests else { return DocumentStateStore.defaultDirectory() }
+        let folder = FileManager.default.temporaryDirectory.appending(path: "\(testFolderPrefix)\(UUID().uuidString)", directoryHint: .isDirectory)
+        testStateFolder = folder
+        removeAbandonedTestFolders()
+        // The test host ends with exit(), not terminate:.
+        atexit { AppEnvironment.removeTestStateFolder() }
+        return folder
+    }
+
+    static let testFolderPrefix = "LecternTestState-"
+
+    /// The test host's throwaway state folder, removed when it exits.
+    nonisolated(unsafe) private(set) static var testStateFolder: URL?
+
+    nonisolated static func removeTestStateFolder() {
+        guard let testStateFolder else { return }
+        try? FileManager.default.removeItem(at: testStateFolder)
+    }
+
+    /// Folders left by test hosts that crashed or were killed. Only old ones:
+    /// other test runs may share this container right now.
+    private static func removeAbandonedTestFolders() {
+        let temporary = FileManager.default.temporaryDirectory
+        let entries = (try? FileManager.default.contentsOfDirectory(at: temporary, includingPropertiesForKeys: [.creationDateKey])) ?? []
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+        for entry in entries where entry.lastPathComponent.hasPrefix(testFolderPrefix) {
+            let created = (try? entry.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantFuture
+            if created < cutoff { try? FileManager.default.removeItem(at: entry) }
+        }
+    }
+}
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let emptyState = EmptyStateController()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        AppEnvironment.stateStore = DocumentStateStore(directory: AppEnvironment.stateDirectory)
         (NSDocumentController.shared as? ReaderDocumentController)?.onDocumentsChange = { [weak self] count in
             self?.emptyState.documentsDidChange(count: count)
         }
@@ -23,5 +73,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
+    }
+
+    /// Quitting doesn't close windows first, so remember every open
+    /// document's position and write it all out now (Journey A step 5).
+    func applicationWillTerminate(_ notification: Notification) {
+        for document in NSDocumentController.shared.documents {
+            (document as? ReaderDocument)?.readerWindowController?.saveAnchor()
+        }
+        AppEnvironment.stateStore?.flush()
     }
 }

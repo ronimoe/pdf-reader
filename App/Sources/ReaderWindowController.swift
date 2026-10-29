@@ -1,18 +1,70 @@
 import AppKit
+import PDFKit
 import Persistence
 import ReaderCore
 import ReaderKit
 import ReaderUI
 
 /// One reader window (or tab) for one document. Owns the document's view
-/// settings, the toolbar, the reading commands, and the unlock flow (B6).
+/// settings, the pane and its history, the sidebar, search, the toolbar, the
+/// reading commands, the unlock flow (B6), and the document's stored state
+/// (A2).
 final class ReaderWindowController: NSWindowController {
-    let pdfView = ReaderPDFView(frame: .zero)
-    /// The layout, zoom and rotation of this document (B1, B9). Stored
-    /// per document from M2.
-    private(set) var settings = ViewSettings()
+    /// The one pane until the split view lands in M3.
+    let pane = ReaderPane(id: .primary)
+    var pdfView: ReaderPDFView { pane.view }
+    /// The layout, zoom, rotation and sidebar of this document (B1, B9),
+    /// stored per document.
+    private(set) var settings = ViewSettings() {
+        didSet {
+            if settings != oldValue { updateStoredState { $0.viewSettings = self.settings } }
+        }
+    }
     /// The password sheet's model while it is showing.
     private(set) var passwordPrompt: PasswordPromptModel?
+    /// The Go to Page sheet's model while it is showing.
+    private(set) var goToPagePrompt: GoToPageModel?
+
+    let splitViewController = NSSplitViewController()
+    let outlineSection = OutlineSectionViewController()
+    let thumbnailsSection = ThumbnailsSectionViewController()
+    let searchSection = SearchResultsSectionViewController()
+    private(set) lazy var sidebar = SidebarViewController(
+        sections: [thumbnailsSection, outlineSection, searchSection],
+        visible: settings.sidebar.section
+    )
+    private(set) var sidebarItem: NSSplitViewItem!
+    let notice = NoticeView()
+
+    // Search (B8)
+    private(set) var search: DocumentSearch?
+    private(set) var searchOptions = SearchOptions()
+    private(set) var currentResultIndex: Int?
+    private(set) var searchField: NSSearchField?
+    private var searchItem: NSSearchToolbarItem?
+    /// The section to go back to when a search ends.
+    private var sectionBeforeSearch: SidebarSection?
+
+    // Background work on the document's bytes (architecture §4.6)
+    private(set) var renderer: PageRenderer?
+    private(set) var textInventory: TextInventory?
+    /// The text check in flight; replaced, and its result ignored, when the
+    /// document reloads.
+    private var textInventoryTask: Task<Void, Never>?
+    /// When the page highlights were last replaced, to throttle them while
+    /// results stream in.
+    private var lastHighlightUpdate: TimeInterval = 0
+    private var highlightedResultCount = 0
+    private(set) var pagesWithoutText: [Int]?
+
+    // Stored state (A2)
+    private let stateStore: DocumentStateStore?
+    private(set) var storedDocumentID: UUID?
+    private var anchorSave: DispatchWorkItem?
+    private var collapseObservation: NSKeyValueObservation?
+    /// Set while the sidebar opens or closes for a reason other than the
+    /// user's choice (a search showing its results), so it isn't remembered.
+    private var isMovingSidebarForSearch = false
 
     private weak var readerDocument: ReaderDocument?
     private let passwordStore: any DocumentPasswordStore
@@ -22,11 +74,13 @@ final class ReaderWindowController: NSWindowController {
     init(
         document: ReaderDocument,
         passwordStore: any DocumentPasswordStore = KeychainPasswordStore(),
-        presenter: any ReaderPresenting = SheetPresenter()
+        presenter: any ReaderPresenting = SheetPresenter(),
+        stateStore: DocumentStateStore? = AppEnvironment.stateStore
     ) {
         readerDocument = document
         self.passwordStore = passwordStore
         self.presenter = presenter
+        self.stateStore = stateStore
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 1000),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -41,7 +95,7 @@ final class ReaderWindowController: NSWindowController {
         window.setFrameAutosaveName("ReaderWindow")
         super.init(window: window)
 
-        window.contentView = pdfView
+        buildContent(in: window)
         window.toolbar = makeToolbar()
         pdfView.onUserZoom = { [weak self] scale in self?.settings.zoom = .scale(scale) }
         pdfView.onCopyBlocked = { [weak self] in self?.explainBlocked(.copy) }
@@ -49,12 +103,69 @@ final class ReaderWindowController: NSWindowController {
         pdfView.contextMenuItems = {
             ReaderCommands.zoomItems() + [.separator()] + ReaderCommands.readingOptionItems()
         }
+        pane.onHistoryChange = { [weak self] history in
+            guard let self else { return }
+            updateStoredState { $0.history[self.pane.id] = history }
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(pageDidChange(_:)), name: .PDFViewPageChanged, object: pdfView)
+        pdfView.onVisibleAreaChange = { [weak self] in self?.saveAnchorSoon() }
+        pdfView.onCancel = { [weak self] in
+            guard let self, isSearching else { return false }
+            endSearch()
+            return true
+        }
         window.delegate = self
         showContentIfReadable()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// Sidebar and reading area side by side, in a split view whose sidebar
+    /// collapses (spec §4.1).
+    private func buildContent(in window: NSWindow) {
+        let reading = NSViewController()
+        let container = NSView()
+        container.addSubview(pdfView)
+        pdfView.translatesAutoresizingMaskIntoConstraints = false
+        notice.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(notice)
+        NSLayoutConstraint.activate([
+            pdfView.topAnchor.constraint(equalTo: container.topAnchor),
+            pdfView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            pdfView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            pdfView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            notice.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 12),
+            notice.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            notice.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -40),
+        ])
+        reading.view = container
+
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        sidebarItem.canCollapse = true
+        sidebarItem.minimumThickness = 170
+        sidebarItem.maximumThickness = 420
+        sidebarItem.isCollapsed = true
+        self.sidebarItem = sidebarItem
+        splitViewController.splitViewItems = [sidebarItem, NSSplitViewItem(viewController: reading)]
+        splitViewController.view.frame = NSRect(origin: .zero, size: window.contentRect(forFrameRect: window.frame).size)
+        window.contentViewController = splitViewController
+        window.setContentSize(splitViewController.view.frame.size)
+
+        sidebar.setHidden(true, for: .search)
+        sidebar.onSectionChange = { [weak self] section in
+            // Search results come and go with the search; they are never the
+            // section to reopen on.
+            if section != .search { self?.settings.sidebar.section = section }
+        }
+        outlineSection.onJump = { [weak self] outline in self?.jump(to: outline) }
+        thumbnailsSection.onJump = { [weak self] index in self?.pane.jump(toPageAt: index) }
+        searchSection.onShowResult = { [weak self] index in self?.showResult(at: index) }
+        collapseObservation = sidebarItem.observe(\.isCollapsed, options: [.new]) { [weak self] item, _ in
+            let collapsed = item.isCollapsed
+            MainActor.assumeIsolated { self?.sidebarCollapsedDidChange(collapsed) }
+        }
+    }
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
@@ -74,10 +185,387 @@ final class ReaderWindowController: NSWindowController {
         guard !isShowingContent, let readerDocument, !readerDocument.isPasswordLocked,
               let pdf = readerDocument.pdfDocument
         else { return }
+        let stored = openStoredState(for: readerDocument, pdf: pdf)
         readerDocument.applyViewRotation(settings.rotation)
         pdfView.document = pdf
         pdfView.apply(settings, hints: readerDocument.layoutHints)
+        configureSidebar(for: readerDocument, pdf: pdf)
+        if let anchor = stored?.anchor {
+            // Restore once the view has its real size; the anchor then holds
+            // through any later resize until the user scrolls.
+            splitViewController.view.layoutSubtreeIfNeeded()
+            pdfView.restore(anchor)
+        }
         window?.makeFirstResponder(pdfView)
+    }
+
+    // MARK: Stored state (A2)
+
+    /// Loads what was remembered about this file: the view settings, the
+    /// sidebar, the pane's history and the reading position. Documents
+    /// without a file (tests) have nothing stored.
+    private func openStoredState(for document: ReaderDocument, pdf: PDFDocument) -> DocumentState? {
+        guard let stateStore, let url = document.fileURL else { return nil }
+        let identifiers = pdf.documentRef.map(DocumentIdentity.fileIdentifiers(of:))
+        let stored = stateStore.open(url: url, data: document.originalData, pageCount: pdf.pageCount, fileIdentifiers: identifiers)
+        storedDocumentID = stored.id
+        var restored = stored.state.viewSettings
+        if stored.match == .new, pdf.outlineRoot.map({ $0.numberOfChildren > 0 }) == true {
+            // A document with a table of contents opens the sidebar on it.
+            restored.sidebar.section = .outline
+        }
+        settings = restored
+        pane.setHistory(stored.state.history[pane.id] ?? HistoryStack())
+        return stored.state
+    }
+
+    private func updateStoredState(_ change: (inout DocumentState) -> Void) {
+        guard let stateStore, let storedDocumentID else { return }
+        stateStore.update(storedDocumentID, change)
+    }
+
+    /// Scrolling never makes a history entry, but the reading position is
+    /// remembered a moment after it settles.
+    private func saveAnchorSoon() {
+        guard storedDocumentID != nil else { return }
+        anchorSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.saveAnchor() }
+        }
+        anchorSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    func saveAnchor() {
+        anchorSave?.cancel()
+        anchorSave = nil
+        guard isShowingContent, let anchor = pdfView.currentAnchor else { return }
+        updateStoredState { $0.anchor = anchor }
+    }
+
+    /// Saves the reading position and writes everything out now: the window
+    /// is closing or the app is quitting.
+    func saveStateNow() {
+        saveAnchor()
+        stateStore?.flush()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        saveStateNow()
+        search?.cancel()
+    }
+
+    // MARK: Sidebar (spec §4.1)
+
+    private func configureSidebar(for document: ReaderDocument, pdf: PDFDocument) {
+        // Both open their own copy of the document lazily, on their actor.
+        renderer = PageRenderer(data: document.originalData, password: document.sessionPassword)
+        textInventoryTask?.cancel()
+        textInventoryTask = nil
+        textInventory = TextInventory(data: document.originalData, password: document.sessionPassword)
+        pagesWithoutText = nil
+        outlineSection.setDocument(pdf)
+        thumbnailsSection.configure(
+            document: pdf,
+            renderer: renderer,
+            label: { [weak document] index in document?.label(forPageAt: index) ?? String(index + 1) },
+            rotation: settings.rotation
+        )
+        sidebar.show(settings.sidebar.section)
+        sidebarItem.isCollapsed = !settings.sidebar.isVisible
+        if let page = pdfView.currentPage { thumbnailsSection.setCurrentPage(pdf.index(for: page)) }
+    }
+
+    var isSidebarVisible: Bool { !sidebarItem.isCollapsed }
+
+    @objc func toggleReaderSidebar(_ sender: Any?) {
+        setSidebarVisible(!isSidebarVisible)
+    }
+
+    func setSidebarVisible(_ visible: Bool) {
+        sidebarItem.isCollapsed = !visible
+        settings.sidebar.isVisible = visible
+    }
+
+    @objc func showThumbnails(_ sender: Any?) { showSidebarSection(.thumbnails) }
+    @objc func showTableOfContents(_ sender: Any?) { showSidebarSection(.outline) }
+
+    /// Shows a section and moves keyboard focus into it, so the outline or
+    /// thumbnails can be used from the keyboard.
+    func showSidebarSection(_ section: SidebarSection) {
+        sidebar.show(section)
+        if section != .search { settings.sidebar.section = section }
+        setSidebarVisible(true)
+        sidebar.focusVisibleSection()
+    }
+
+    private func sidebarCollapsedDidChange(_ collapsed: Bool) {
+        // Dragging the divider closed counts as hiding it.
+        if !isMovingSidebarForSearch, settings.sidebar.isVisible == collapsed, isShowingContent {
+            settings.sidebar.isVisible = !collapsed
+        }
+    }
+
+    @objc private func pageDidChange(_ notification: Notification) {
+        guard let document = pdfView.document, let page = pdfView.currentPage else { return }
+        thumbnailsSection.setCurrentPage(document.index(for: page))
+    }
+
+    private func jump(to outline: PDFOutline) {
+        let destination = outline.destination ?? (outline.action as? PDFActionGoTo)?.destination
+        guard let destination else { return }
+        pane.jump(to: destination)
+    }
+
+    // MARK: Go to page
+
+    @objc func showGoToPage(_ sender: Any?) {
+        guard let window, let readerDocument, isShowingContent, goToPagePrompt == nil else { return }
+        let current = pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) } ?? 0
+        let model = GoToPageModel(numbering: readerDocument.pageNumbering, currentPageIndex: current)
+        model.onGo = { [weak self] index in
+            self?.dismissGoToPage()
+            self?.pane.jump(toPageAt: index)
+        }
+        model.onCancel = { [weak self] in self?.dismissGoToPage() }
+        goToPagePrompt = model
+        presenter.showGoToPage(model, on: window)
+    }
+
+    private func dismissGoToPage() {
+        goToPagePrompt = nil
+        if let window { presenter.dismissGoToPage(on: window) }
+    }
+
+    // MARK: History (B2)
+
+    @objc func navigateBack(_ sender: Any?) { pane.goBack() }
+    @objc func navigateForward(_ sender: Any?) { pane.goForward() }
+
+    // MARK: Search (B8)
+
+    /// ⌘F: puts the cursor in the search field.
+    @objc func focusSearchField(_ sender: Any?) {
+        guard isShowingContent, let window else { return }
+        if let toolbar = window.toolbar {
+            if !toolbar.isVisible { toolbar.isVisible = true }
+            // A customised toolbar may have lost the field; ⌘F brings it back.
+            if !toolbar.items.contains(where: { $0.itemIdentifier == .search }) {
+                toolbar.insertItem(withItemIdentifier: .search, at: toolbar.items.count)
+            }
+        }
+        if let searchItem {
+            searchItem.beginSearchInteraction()
+        } else if let searchField {
+            window.makeFirstResponder(searchField)
+        }
+    }
+
+    @objc func searchFieldChanged(_ sender: NSSearchField) {
+        let query = sender.stringValue
+        guard !query.isEmpty else {
+            endSearch()
+            return
+        }
+        // Return in the field steps through the results of the same query.
+        if query == search?.query, let event = NSApp.currentEvent, event.type == .keyDown,
+           event.keyCode == 36 || event.keyCode == 76 {
+            showNextResult(sender)
+            return
+        }
+        startSearch(query)
+    }
+
+    /// Searches for `query`. The first search of a session remembers where
+    /// reading was; refining the query keeps the same session.
+    func startSearch(_ query: String) {
+        guard let document = pdfView.document, !query.isEmpty else { return }
+        if search == nil {
+            pane.beginSearchSession()
+            let search = DocumentSearch(document: document)
+            search.onChange = { [weak self] in self?.searchDidChange() }
+            self.search = search
+            sectionBeforeSearch = sidebar.visibleSection
+            searchSection.setSearch(search, numbering: readerDocument?.pageNumbering ?? PageNumbering(pageCount: document.pageCount))
+        }
+        if searchField?.stringValue != query { searchField?.stringValue = query }
+        currentResultIndex = nil
+        search?.pagesWithoutText = pagesWithoutText?.count
+        search?.start(query, options: searchOptions)
+        sidebar.setHidden(false, for: .search)
+        sidebar.show(.search)
+        setSidebarCollapsedForSearch(false)
+        loadTextInventoryIfNeeded()
+    }
+
+    /// Escape or an empty field: the session ends, highlights go, and the
+    /// sidebar returns to the section it showed before.
+    func endSearch() {
+        guard let search else { return }
+        search.cancel()
+        self.search = nil
+        currentResultIndex = nil
+        pane.endSearchSession()
+        pdfView.highlightedSelections = nil
+        highlightedResultCount = 0
+        pdfView.clearSelection()
+        searchSection.setSearch(nil, numbering: PageNumbering(pageCount: 0))
+        if searchField?.stringValue.isEmpty == false { searchField?.stringValue = "" }
+        sidebar.setHidden(true, for: .search)
+        sidebar.show(sectionBeforeSearch ?? settings.sidebar.section)
+        setSidebarCollapsedForSearch(!settings.sidebar.isVisible)
+        sectionBeforeSearch = nil
+    }
+
+    private func setSidebarCollapsedForSearch(_ collapsed: Bool) {
+        isMovingSidebarForSearch = true
+        sidebarItem.isCollapsed = collapsed
+        isMovingSidebarForSearch = false
+    }
+
+    var isSearching: Bool { search != nil }
+
+    override func cancelOperation(_ sender: Any?) {
+        if isSearching { endSearch() }
+    }
+
+    private func searchDidChange() {
+        searchSection.reload()
+        guard let search else { return }
+        // Replacing thousands of highlights is costly: do it when the count
+        // changed, at most twice a second while results stream in, and once
+        // more when the search ends.
+        let shown = min(search.results.count, SearchResultsSectionViewController.rowLimit)
+        let now = ProcessInfo.processInfo.systemUptime
+        guard shown != highlightedResultCount,
+              !search.isSearching || shown == 0 || now - lastHighlightUpdate >= 0.5
+        else { return }
+        lastHighlightUpdate = now
+        highlightedResultCount = shown
+        pdfView.highlightedSelections = shown == 0 ? nil : search.results.prefix(shown).map(\.selection)
+    }
+
+    @objc func showNextResult(_ sender: Any?) { stepResult(by: 1) }
+    @objc func showPreviousResult(_ sender: Any?) { stepResult(by: -1) }
+
+    private func stepResult(by step: Int) {
+        guard let count = search?.results.count, count > 0 else { return }
+        let next: Int
+        if let currentResultIndex {
+            next = (currentResultIndex + step + count) % count
+        } else {
+            next = step > 0 ? 0 : count - 1
+        }
+        showResult(at: next)
+    }
+
+    func showResult(at index: Int) {
+        guard let results = search?.results, results.indices.contains(index) else { return }
+        currentResultIndex = index
+        pane.show(results[index].selection)
+        searchSection.selectResult(index)
+    }
+
+    @objc func toggleMatchCase(_ sender: Any?) {
+        searchOptions.matchCase.toggle()
+        rerunSearch()
+    }
+
+    @objc func toggleWholeWord(_ sender: Any?) {
+        searchOptions.wholeWord.toggle()
+        rerunSearch()
+    }
+
+    private func rerunSearch() {
+        guard let query = search?.query, !query.isEmpty else { return }
+        startSearch(query)
+    }
+
+    private func loadTextInventoryIfNeeded() {
+        guard pagesWithoutText == nil, textInventoryTask == nil, let textInventory else { return }
+        textInventoryTask = Task { [weak self] in
+            let missing = await textInventory.pagesWithoutText()
+            self?.storeTextInventory(missing, from: textInventory)
+        }
+    }
+
+    /// Keeps a text check's result only if it is about the document showing
+    /// now: a check started before a reload finishes about the old file.
+    private func storeTextInventory(_ missing: [Int], from inventory: TextInventory) {
+        guard !Task.isCancelled, inventory === textInventory else { return }
+        textInventoryTask = nil
+        pagesWithoutText = missing
+        search?.pagesWithoutText = missing.count
+    }
+
+    /// Waits for the text check in flight, for tests.
+    func waitForTextInventory() async {
+        if textInventoryTask == nil { loadTextInventoryIfNeeded() }
+        await textInventoryTask?.value
+    }
+
+    // MARK: Changes on disk (B7)
+
+    /// The document reloaded silently: keep the reader's place, the history
+    /// (clamped to the new page count) and any search, then say so briefly.
+    func documentDidReload() {
+        guard let readerDocument else { return }
+        let anchor = pdfView.currentAnchor
+        let query = search?.query
+        if isSearching {
+            search?.cancel()
+            search = nil
+            pdfView.highlightedSelections = nil
+            highlightedResultCount = 0
+        }
+        guard let pdf = readerDocument.pdfDocument, !readerDocument.isPasswordLocked else {
+            // The new file needs a password the old one didn't.
+            pdfView.document = nil
+            didCheckPasswords = false
+            checkPasswordsIfNeeded()
+            return
+        }
+        pane.setHistory(pane.history.clamped(toPageCount: pdf.pageCount))
+        readerDocument.applyViewRotation(settings.rotation)
+        pdfView.document = pdf
+        pdfView.apply(settings, hints: readerDocument.layoutHints)
+        if let anchor { pdfView.restore(anchor.clamped(toPageCount: pdf.pageCount)) }
+        configureSidebar(for: readerDocument, pdf: pdf)
+        refreshStoredIdentity()
+        if let query, !query.isEmpty {
+            // Same session: no new history entry.
+            let search = DocumentSearch(document: pdf)
+            search.onChange = { [weak self] in self?.searchDidChange() }
+            self.search = search
+            searchSection.setSearch(search, numbering: readerDocument.pageNumbering)
+            search.start(query, options: searchOptions)
+            loadTextInventoryIfNeeded()
+        }
+        notice.show("Reloaded")
+        saveAnchor()
+    }
+
+    /// Followed through file coordination: the window title updates itself,
+    /// and the stored identity learns the new place.
+    func documentDidMove(to url: URL) {
+        // NSDocument may not have updated fileURL yet; the new URL is known.
+        refreshStoredIdentity(at: url)
+    }
+
+    private func refreshStoredIdentity(at newURL: URL? = nil) {
+        guard let stateStore, let storedDocumentID, let readerDocument, let url = newURL ?? readerDocument.fileURL,
+              let pdf = readerDocument.pdfDocument
+        else { return }
+        let identity = stateStore.identity(
+            for: url, data: readerDocument.originalData, pageCount: pdf.pageCount,
+            fileIdentifiers: pdf.documentRef.map(DocumentIdentity.fileIdentifiers(of:))
+        )
+        stateStore.update(storedDocumentID) { $0.identity = identity }
+    }
+
+    func showFileRemovedNotice() {
+        let name = readerDocument?.displayName ?? "This document"
+        notice.show("“\(name)” was deleted or moved to the Trash. It stays open here until you close it.", duration: nil)
     }
 
     // MARK: Passwords (B6)
@@ -190,14 +678,20 @@ final class ReaderWindowController: NSWindowController {
         pdfView.setZoomMode(mode)
     }
 
+    /// Applies a layout or rotation change, keeping the reader's place (A3).
     private func updateLayout(_ change: (inout ViewSettings) -> Void) {
         let rotation = settings.rotation
         change(&settings)
-        if settings.rotation != rotation {
-            readerDocument?.applyViewRotation(settings.rotation)
-            pdfView.layoutDocumentView()
+        pdfView.preservingAnchor {
+            if settings.rotation != rotation {
+                readerDocument?.applyViewRotation(settings.rotation)
+                pdfView.layoutDocumentView()
+            }
+            pdfView.apply(settings, hints: layoutHints)
         }
-        pdfView.apply(settings, hints: layoutHints)
+        if settings.rotation != rotation {
+            thumbnailsSection.setRotation(settings.rotation)
+        }
     }
 
     // MARK: Validation
@@ -209,6 +703,9 @@ final class ReaderWindowController: NSWindowController {
         case #selector(decreaseZoom(_:)): return pdfView.scaleFactor > ZoomMode.minimumScale * 1.01
         // Cover page and direction only change a two-page layout.
         case #selector(toggleCoverPage(_:)), #selector(toggleRightToLeft(_:)): return settings.pages == .twoUp
+        case #selector(navigateBack(_:)): return pane.canGoBack
+        case #selector(navigateForward(_:)): return pane.canGoForward
+        case #selector(showNextResult(_:)), #selector(showPreviousResult(_:)): return (search?.results.isEmpty == false)
         default: return true
         }
     }
@@ -224,6 +721,10 @@ final class ReaderWindowController: NSWindowController {
         case #selector(scrollPageByPage(_:)): settings.scrolling == .paged
         case #selector(toggleCoverPage(_:)): settings.effectiveCoverPageAlone(hints: layoutHints)
         case #selector(toggleRightToLeft(_:)): settings.effectiveRightToLeft(hints: layoutHints)
+        case #selector(toggleMatchCase(_:)): searchOptions.matchCase
+        case #selector(toggleWholeWord(_:)): searchOptions.wholeWord
+        case #selector(showThumbnails(_:)): isSidebarVisible && sidebar.visibleSection == .thumbnails
+        case #selector(showTableOfContents(_:)): isSidebarVisible && sidebar.visibleSection == .outline
         default: false
         }
     }
@@ -233,6 +734,14 @@ extension ReaderWindowController: NSWindowDelegate {}
 
 extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleReaderSidebar(_:)) {
+            menuItem.title = isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+        }
+        // The search options stay available before a search starts.
+        if menuItem.action == #selector(toggleMatchCase(_:)) || menuItem.action == #selector(toggleWholeWord(_:)) {
+            menuItem.state = isChecked(menuItem.action) ? .on : .off
+            return true
+        }
         menuItem.state = isChecked(menuItem.action) ? .on : .off
         return isEnabled(menuItem.action)
     }
@@ -245,10 +754,14 @@ extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation 
 // MARK: Toolbar
 
 extension NSToolbarItem.Identifier {
+    static let sidebar = Self("sidebar")
+    static let goBack = Self("goBack")
+    static let goForward = Self("goForward")
     static let zoomOut = Self("zoomOut")
     static let zoomIn = Self("zoomIn")
     static let zoomMenu = Self("zoomMenu")
     static let readingOptions = Self("readingOptions")
+    static let search = Self("search")
 }
 
 extension ReaderWindowController: NSToolbarDelegate {
@@ -262,11 +775,11 @@ extension ReaderWindowController: NSToolbarDelegate {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, .zoomOut, .zoomIn, .zoomMenu, .readingOptions]
+        [.sidebar, .sidebarTrackingSeparator, .goBack, .goForward, .flexibleSpace, .zoomOut, .zoomIn, .zoomMenu, .readingOptions, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.zoomOut, .zoomIn, .zoomMenu, .readingOptions, .space, .flexibleSpace]
+        [.sidebar, .sidebarTrackingSeparator, .goBack, .goForward, .zoomOut, .zoomIn, .zoomMenu, .readingOptions, .search, .space, .flexibleSpace]
     }
 
     func toolbar(
@@ -275,6 +788,12 @@ extension ReaderWindowController: NSToolbarDelegate {
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch identifier {
+        case .sidebar:
+            button(identifier, "Sidebar", "sidebar.left", #selector(toggleReaderSidebar(_:)), tip: "Show or hide the sidebar (⌃⌘S)")
+        case .goBack:
+            button(identifier, "Back", "chevron.backward", #selector(navigateBack(_:)), tip: "Go back (⌘[)")
+        case .goForward:
+            button(identifier, "Forward", "chevron.forward", #selector(navigateForward(_:)), tip: "Go forward (⌘])")
         case .zoomOut:
             button(identifier, "Zoom Out", "minus.magnifyingglass", #selector(decreaseZoom(_:)), tip: "Zoom out (⌘−)")
         case .zoomIn:
@@ -283,9 +802,34 @@ extension ReaderWindowController: NSToolbarDelegate {
             menu(identifier, "Zoom", "arrow.up.left.and.arrow.down.right", ReaderCommands.zoomItems(), tip: "Actual size and fit options")
         case .readingOptions:
             menu(identifier, "Reading Options", "rectangle.split.2x1", ReaderCommands.readingOptionItems(), tip: "Pages, scrolling and rotation")
+        case .search:
+            searchToolbarItem(identifier)
         default:
             nil
         }
+    }
+
+    private func searchToolbarItem(_ identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
+        let item = NSSearchToolbarItem(itemIdentifier: identifier)
+        item.label = "Search"
+        item.paletteLabel = "Search"
+        item.toolTip = "Search the document’s text (⌘F)"
+        let field = item.searchField
+        field.placeholderString = "Search"
+        field.sendsSearchStringImmediately = false
+        field.sendsWholeSearchString = false
+        field.target = self
+        field.action = #selector(searchFieldChanged(_:))
+        field.setAccessibilityLabel("Search document")
+        let options = NSMenu(title: "Search Options")
+        for item in ReaderCommands.searchOptionItems() {
+            item.target = self
+            options.addItem(item)
+        }
+        field.searchMenuTemplate = options
+        searchItem = item
+        searchField = field
+        return item
     }
 
     private func button(_ identifier: NSToolbarItem.Identifier, _ label: String, _ symbol: String, _ action: Selector, tip: String) -> NSToolbarItem {
