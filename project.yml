@@ -57,6 +57,10 @@ targets:
     platform: macOS
     sources:
       - AppTests
+      # A real arXiv paper for the M3 link tests. The test host is sandboxed,
+      # so it reads the paper from its own bundle, not the repository.
+      - path: Tests/Corpus/public/realworld/arxiv-2310.12457v2.pdf
+        buildPhase: resources
     dependencies:
       - target: Lectern
     settings:

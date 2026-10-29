@@ -226,8 +226,8 @@ extension ReaderWindowController {
     }
 
     func dismissPreview() {
-        hoverDismissWork?.cancel()
-        hoverDismissWork = nil
+        hoverDismissTimer?.invalidate()
+        hoverDismissTimer = nil
         guard let preview = linkPreview else { return }
         previewPresenter.dismiss(preview)
         linkPreview = nil
@@ -238,15 +238,15 @@ extension ReaderWindowController {
     /// after, unless the pointer went into the preview.
     func hoverLinkDidEnd(in pane: ReaderPane) {
         guard let preview = linkPreview, preview.trigger == .hover, linkPreviewSource === pane else { return }
-        hoverDismissWork?.cancel()
-        let work = DispatchWorkItem { [weak self, weak preview] in
+        hoverDismissTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.4, repeats: false) { [weak self, weak preview] _ in
             MainActor.assumeIsolated {
                 guard let self, let preview, self.linkPreview === preview, !preview.pointerHasEntered else { return }
                 self.dismissPreview()
             }
         }
-        hoverDismissWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        RunLoop.main.add(timer, forMode: .common)
+        hoverDismissTimer = timer
     }
 
     /// View ▸ Focus Links (⌥Tab): keyboard link focus in the focused pane.

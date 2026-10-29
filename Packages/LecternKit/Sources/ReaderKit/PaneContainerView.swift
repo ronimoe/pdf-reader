@@ -85,7 +85,7 @@ public final class PaneContainerView: NSView {
             guard let page = destination.page, let document = page.document else { return "Link in this document" }
             return "Page \(page.label ?? String(document.index(for: page) + 1)) — Space or Force Click to preview"
         case let .named(name):
-            return "Viewer action: \(name.rawValue)"
+            return "Viewer action: \(LinkTarget.description(of: name))"
         case let .blocked(type):
             return "Blocked: \(BlockedLink(actionType: type).title.lowercased())"
         }

@@ -35,7 +35,7 @@ final class ReaderWindowController: NSWindowController {
     /// The preview showing now, and the pane it previews from.
     var linkPreview: LinkPreviewController?
     weak var linkPreviewSource: ReaderPane?
-    var hoverDismissWork: DispatchWorkItem?
+    var hoverDismissTimer: Timer?
     private var preferencesObserver: (any NSObjectProtocol)?
     /// The layout, zoom, rotation and sidebar of this document (B1, B9),
     /// stored per document.

@@ -54,7 +54,7 @@ public final class ReaderPDFView: PDFView {
     var pendingLink: PendingLink?
     var lastPressureStage = 0
     var hoveredLink: PDFAnnotation?
-    var hoverWork: DispatchWorkItem?
+    var hoverTimer: Timer?
     var hoverTrackingArea: NSTrackingArea?
     /// Links collected for keyboard link focus, in reading order.
     public internal(set) var focusableLinks: [FocusableLink] = []
@@ -106,6 +106,9 @@ public final class ReaderPDFView: PDFView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(scaleDidChange(_:)), name: .PDFViewScaleChanged, object: self
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(documentDidChange(_:)), name: .PDFViewDocumentChanged, object: self
+        )
         observeClipView()
         inputMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.userInputEvents) { [weak self] event in
             MainActor.assumeIsolated { self?.noteInputIfMine(event) }
@@ -127,17 +130,20 @@ public final class ReaderPDFView: PDFView {
         if let inputMonitor { NSEvent.removeMonitor(inputMonitor) }
     }
 
-    public override var document: PDFDocument? {
-        didSet {
-            keptAnchor = nil
-            fitReferencePageIndex = 0
-            endLinkFocus()
-            cancelHover()
-            pendingLink = nil
-            targetMarker = nil
-            applyZoom()
-            observeClipView()
-        }
+    /// Resets the view's own state for a new document. Driven by
+    /// `PDFViewDocumentChanged` rather than an override of `document`:
+    /// PDFKit reads `document` from a background queue (its page analyzer,
+    /// on `visiblePagesChanged`, seen on macOS 26), and a Swift override of
+    /// the property is main-actor isolated and traps there.
+    @objc private func documentDidChange(_ notification: Notification) {
+        keptAnchor = nil
+        fitReferencePageIndex = 0
+        endLinkFocus()
+        cancelHover()
+        pendingLink = nil
+        targetMarker = nil
+        applyZoom()
+        observeClipView()
     }
 
     // MARK: Layout (B1)
@@ -252,6 +258,9 @@ public final class ReaderPDFView: PDFView {
 
     public override func layout() {
         super.layout()
+        // PDFKit may build or replace its scroll view after the document
+        // changed notification; follow whichever clip view is current.
+        observeClipView()
         // Safe-area changes (toolbar shown or hidden, full screen) arrive as
         // layout passes without a frame change.
         refit(force: false)
@@ -319,6 +328,7 @@ public final class ReaderPDFView: PDFView {
             go(to: page)
         }
         guard let scrollView else { return }
+        observeClipView()
         let clip = scrollView.contentView
         let point = clip.convert(convert(anchor.pointInPage, from: page), from: self)
         let target = clip.convert(anchorTarget, from: self)

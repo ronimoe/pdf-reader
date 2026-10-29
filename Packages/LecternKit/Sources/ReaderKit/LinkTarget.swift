@@ -50,8 +50,26 @@ public enum LinkTarget {
             return "destination(\(page))"
         case let .web(url): return "web(\(url.absoluteString))"
         case let .otherScheme(url): return "otherScheme(\(url.absoluteString))"
-        case let .named(name): return "named(\(name.rawValue))"
+        case let .named(name): return "named(\(Self.description(of: name)))"
         case let .blocked(type): return "blocked(\(type))"
+        }
+    }
+
+    /// The PDF name of a named action (`NextPage`…).
+    public static func description(of name: PDFActionNamedName) -> String {
+        switch name {
+        case .nextPage: "NextPage"
+        case .previousPage: "PrevPage"
+        case .firstPage: "FirstPage"
+        case .lastPage: "LastPage"
+        case .goBack: "GoBack"
+        case .goForward: "GoForward"
+        case .goToPage: "GoToPage"
+        case .find: "Find"
+        case .print: "Print"
+        case .zoomIn: "ZoomIn"
+        case .zoomOut: "ZoomOut"
+        default: "Named"
         }
     }
 }

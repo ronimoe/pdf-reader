@@ -19,6 +19,8 @@ public protocol LinkPreviewPresenting: AnyObject {
 public final class PopoverPreviewPresenter: NSObject, LinkPreviewPresenting, NSPopoverDelegate {
     private var popover: NSPopover?
     private weak var controller: LinkPreviewController?
+    /// Whether the popover fades in and out.
+    public var animates = true
 
     public override init() {}
 
@@ -26,7 +28,7 @@ public final class PopoverPreviewPresenter: NSObject, LinkPreviewPresenting, NSP
         if let current = self.controller { dismiss(current) }
         let popover = NSPopover()
         popover.behavior = .transient
-        popover.animates = true
+        popover.animates = animates
         popover.contentViewController = controller
         popover.delegate = self
         self.popover = popover

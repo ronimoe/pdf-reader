@@ -40,7 +40,7 @@ struct PendingLink {
 }
 
 extension ReaderPDFView {
-    static let openRepresentedLinkSelector = NSSelectorFromString("openRepresentedLink:")
+    public static let openRepresentedLinkSelector = NSSelectorFromString("openRepresentedLink:")
 
     // MARK: Finding links
 
@@ -75,7 +75,7 @@ extension ReaderPDFView {
         case let .web(url), let .otherScheme(url):
             return "Link to \(url.absoluteString)"
         case let .named(name):
-            return "Link: \(name.rawValue)"
+            return "Link: \(LinkTarget.description(of: name))"
         case let .blocked(type):
             return text.isEmpty ? "Blocked link (\(type))" : "Blocked link, \(text) (\(type))"
         }
@@ -163,7 +163,7 @@ extension ReaderPDFView {
 
     /// Previews the internal link at `point`, if there is one.
     @discardableResult
-    func previewLink(at point: CGPoint, trigger: LinkPreviewRequest.Trigger) -> Bool {
+    public func previewLink(at point: CGPoint, trigger: LinkPreviewRequest.Trigger) -> Bool {
         guard let link = link(at: point), link.target.isInternal else { return false }
         return requestPreview(of: link.annotation, target: link.target, trigger: trigger)
     }
@@ -184,7 +184,7 @@ extension ReaderPDFView {
     }
 
     /// AppKit's recognizer for Force Click actions; its class isn't public.
-    static func isImmediateAction(_ recognizer: NSGestureRecognizer) -> Bool {
+    public static func isImmediateAction(_ recognizer: NSGestureRecognizer) -> Bool {
         String(describing: type(of: recognizer)) == "NSImmediateActionGestureRecognizer"
     }
 
@@ -235,25 +235,26 @@ extension ReaderPDFView {
         hoveredLink = link?.annotation
         if !isLinkFocusActive { onHighlightedLinkChange?(link?.target) }
         guard let link, link.target.isInternal, previewsOnHover, pendingLink == nil else { return }
-        let annotation = link.annotation
-        let target = link.target
-        let work = DispatchWorkItem { [weak self] in
+        // A run-loop timer in the common modes, so it also fires while a
+        // menu or a drag is tracking. Any change of link invalidates it, so
+        // the hovered link when it fires is the one it was started for.
+        let timer = Timer(timeInterval: Self.hoverDelay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.hoveredLink === annotation else { return }
-                self.hoverWork = nil
+                guard let self, let annotation = self.hoveredLink, let target = LinkClassifier.target(of: annotation) else { return }
+                self.hoverTimer = nil
                 self.requestPreview(of: annotation, target: target, trigger: .hover)
             }
         }
-        hoverWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hoverDelay, execute: work)
+        RunLoop.main.add(timer, forMode: .common)
+        hoverTimer = timer
     }
 
     /// True while a hover preview is waiting for its delay.
-    public var isHoverPreviewPending: Bool { hoverWork != nil }
+    public var isHoverPreviewPending: Bool { hoverTimer != nil }
 
     func cancelHover() {
-        hoverWork?.cancel()
-        hoverWork = nil
+        hoverTimer?.invalidate()
+        hoverTimer = nil
     }
 
     // MARK: Keyboard link focus (Rule 8)
@@ -383,8 +384,14 @@ extension ReaderPDFView {
         guard let document else { return [] }
         let visible = unobscuredRect
         var found: [(key: (Int, Int, CGFloat, CGFloat), link: FocusableLink)] = []
-        for page in visiblePages {
-            let pageIndex = document.index(for: page)
+        // The pages under the visible area's corners and everything between.
+        // Measured, as `visiblePages` lags behind a scroll made in code.
+        let corners = [CGPoint(x: visible.minX, y: visible.minY), CGPoint(x: visible.maxX, y: visible.minY),
+                       CGPoint(x: visible.minX, y: visible.maxY), CGPoint(x: visible.maxX, y: visible.maxY)]
+        let indices = corners.compactMap { page(for: $0, nearest: true) }.map { document.index(for: $0) }.filter { $0 != NSNotFound }
+        guard let first = indices.min(), let last = indices.max() else { return [] }
+        for pageIndex in first...last {
+            guard let page = document.page(at: pageIndex) else { continue }
             for annotation in page.annotations where annotation.type == "Link" {
                 guard let target = LinkClassifier.target(of: annotation) else { continue }
                 let rect = convert(annotation.bounds, from: page)
