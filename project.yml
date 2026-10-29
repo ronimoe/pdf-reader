@@ -44,6 +44,10 @@ targets:
         buildPhase: resources
       - path: docs/known-limitations.md
         buildPhase: resources
+      # The app icon, an Icon Composer document (design/logo/README.md).
+      - path: App/AppIcon.icon
+        type: file
+        buildPhase: resources
     dependencies:
       - package: LecternKit
         product: ReaderCore
@@ -66,6 +70,7 @@ targets:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         SWIFT_APPROACHABLE_CONCURRENCY: YES
         GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
         Release:
           # No get-task-allow in shipped builds (keeps the hardened runtime meaningful).
