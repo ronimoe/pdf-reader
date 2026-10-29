@@ -10,7 +10,15 @@ Answers to the open items in [spec-review.md](spec-review.md). Each one amends o
 | A4 | Active content and network use | 2026-10-28 |
 | A5 | Existing form fields | 2026-10-28 |
 | A6 | Platform floor and test corpus | 2026-10-28 |
+| B1 | Reading layouts | 2026-10-29 |
+| B2 | Back/forward history | 2026-10-29 |
+| B3 | Split view, tabs and windows | 2026-10-29 |
+| B4 | Annotation details | 2026-10-29 |
 | B5 | Distribution channels | 2026-10-28 |
+| B6 | Permissions and passwords | 2026-10-29 |
+| B7 | Files that change on disk | 2026-10-29 |
+| B8 | Search behaviour | 2026-10-29 |
+| B9 | Rotation | 2026-10-29 |
 | — | License: GPL-3.0 | 2026-10-28 |
 
 ---
@@ -91,24 +99,123 @@ Real-world PDFs that can't be redistributed go in a git-ignored local folder. Te
 
 **Coverage.** The corpus covers every category listed in spec-review.md A6. Each user journey in spec §10 maps to scripted checks against it.
 
+## B1. Reading layouts
+
+**Two independent toggles**
+- **Pages:** Single or Two-up.
+- **Scrolling:** Continuous or Paged.
+
+Together they give all four combinations.
+
+**Two-up details**
+- **Cover page.** "Cover page alone" follows the PDF's `/PageLayout` hint (`TwoPageRight`/`TwoColumnRight`), and the user can override it per document.
+- **Spread order.** Spreads read right-to-left when the PDF sets the `/Direction /R2L` viewer preference. The user can override it per document.
+- **Mixed page sizes.** Pages of different sizes are centred within the spread and keep their true relative size.
+
+## B2. Back/forward history
+
+**What adds an entry.** Each of these jumps adds one:
+- following a link,
+- outline, thumbnail, bookmark and annotation-list jumps,
+- go-to-page,
+- the preview's Go action.
+
+**What doesn't**
+- **Scrolling** never adds an entry.
+- **Searching** adds one entry per search session: the position just before searching started. Stepping through results adds nothing more, so Back returns to where the user was before searching.
+
+**Scope and lifetime**
+- **Per pane:** each split pane keeps its own history.
+- **Persistent:** history is saved locally per document, so it survives closing and reopening.
+
+## B3. Split view, tabs and windows
+
+**The split**
+- One document shown in two equal panes inside the same tab.
+- The focused pane has a clear indicator.
+- The sidebar (outline, thumbnails, bookmarks, annotations) and search act on the focused pane.
+
+**Open in Split** (from a link preview)
+- If the tab isn't split yet, the split is created.
+- If it is, the other pane navigates to the destination and records that move in its own history.
+
+**Tabs and windows**
+- **Already-open files.** Opening a file that's already open brings its existing tab forward. Two views of the same document come from the split, not from duplicate tabs.
+- **Session restore** brings back windows, tabs, splits and each pane's position.
+
+## B4. Annotation details
+
+**Notes come in two forms**
+- **Standalone sticky notes:** a PDF `Text` annotation.
+- **Comments on markup:** a comment attached to a highlight, underline or strike-through, stored in that annotation's `Contents` and popup.
+
+**Editing**
+- **Who can edit what.** The user can edit or delete any annotation, including ones made by other people or other apps.
+- **Undo and redo.** Every annotation action can be undone and redone until the document is closed. This includes actions that have already been saved, where undoing creates a new unsaved change.
+
+**Author name**
+- Empty by default. It is never filled in automatically from the macOS account.
+- The user can set it in Settings, and it is then written into each new annotation's `/T` field.
+
+**Colours**
+- Six preset colours, with yellow as the default highlight.
+- Highlight, underline and strike-through are told apart by shape, not colour (Rule 8).
+- Each colour has a name for VoiceOver.
+
 ## B5. Distribution channels
 
 - **Channels:** a notarised DMG published on GitHub Releases, and a Homebrew cask.
 - **Not distributed through the Mac App Store.** Because of that, GPL-3.0 needs no App Store exception and no contributor agreement.
 - **If the App Store is reconsidered later,** an exception requires agreement from every copyright holder at that time.
 
+## B6. Permissions and passwords
+
+**Permissions**
+- The app respects owner-password restrictions on copying, printing and annotating.
+- A blocked action is never silently ignored. The app tells the user that the document doesn't allow it.
+- Entering the owner password removes the restrictions for that session.
+
+**Passwords**
+- **Never stored by default.** The password prompt has a "Remember in Keychain" checkbox, unchecked by default.
+- **Session restore** asks for the password again unless it was saved in the Keychain.
+
+## B7. Files that change on disk
+
+The app watches each open file and reacts to changes:
+
+- **No unsaved annotations:** the file reloads silently and keeps the reading anchor (see A3). A brief, non-blocking "Reloaded" indicator appears.
+- **Unsaved annotations:** the app asks the user to choose between:
+  - **Reload:** discards the unsaved annotations.
+  - **Save a Copy:** writes the unsaved annotations into a copy of the version currently open in the app.
+- **File deleted:** the document stays open with a notice and offers Save a Copy.
+- **File moved or renamed:** the app follows it through the file bookmark (see A2).
+
+## B8. Search behaviour
+
+**Matching**
+- Ignores case and accents by default.
+- The search field offers Match Case and Whole Word options.
+
+**Results**
+- Results appear progressively, with a match count and a progress indicator, and the UI never blocks.
+- The sidebar lists results with surrounding text, and matches are highlighted on the page.
+- ⌘G and ⇧⌘G move to the next and previous result.
+
+**Scope**
+- The main search covers the document's text only.
+- Note text is searched with the annotation list's filter.
+
+**Documents without text**
+- A document with no text layer shows "This document has no searchable text" instead of "No results".
+- A partly scanned document says how many pages have no text.
+
+## B9. Rotation
+
+- Rotation applies to the whole document and is view-only; it is never written to the PDF.
+- It is remembered locally for each document, like zoom.
+
 ---
 
 ## Still open
 
-These spec-review items have not been decided yet:
-
-- **B1:** which reading layouts ship, cover-page handling, and right-to-left reading order.
-- **B2:** what creates a back/forward history entry.
-- **B3:** how split view, tabs and windows interact.
-- **B4:** annotation details: what a text note is, who can edit which annotations, the author-name setting, undo, and colours.
-- **B6:** document permissions and whether passwords are ever stored.
-- **B7:** files that change on disk while open.
-- **B8:** search behaviour.
-- **B9:** whether rotation is remembered.
-- **C:** the minor items, including the product name.
+- **C:** the minor items in spec-review.md: product name, how dark mode with white pages is presented as a known limitation, lazy thumbnails, and keeping "citations" in scope.
