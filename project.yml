@@ -1,0 +1,77 @@
+name: Lectern
+options:
+  bundleIdPrefix: io.github.ronimoe
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    # Placeholder product name; renaming is a change to PRODUCT_NAME and
+    # PRODUCT_BUNDLE_IDENTIFIER below (see docs/progress.md).
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
+    # Unsigned distribution (ad-hoc). See docs/architecture.md §8.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: YES
+packages:
+  LecternKit:
+    path: Packages/LecternKit
+targets:
+  Lectern:
+    type: application
+    platform: macOS
+    sources:
+      - App/Sources
+    dependencies:
+      - package: LecternKit
+        product: ReaderCore
+      - package: LecternKit
+        product: PDFSave
+      - package: LecternKit
+        product: Persistence
+      - package: LecternKit
+        product: ReaderKit
+      - package: LecternKit
+        product: ReaderUI
+    settings:
+      base:
+        PRODUCT_NAME: Lectern
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ronimoe.Lectern
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Lectern.entitlements
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        GENERATE_INFOPLIST_FILE: NO
+      configs:
+        Release:
+          # No get-task-allow in shipped builds (keeps the hardened runtime meaningful).
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+  LecternTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - AppTests
+    dependencies:
+      - target: Lectern
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ronimoe.LecternTests
+        GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Lectern.app/Contents/MacOS/Lectern"
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+schemes:
+  Lectern:
+    build:
+      targets:
+        Lectern: all
+        LecternTests: [test]
+    test:
+      targets:
+        - LecternTests
