@@ -8,7 +8,7 @@ enum MainMenu {
         let main = NSMenu()
 
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About \(appName)", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
@@ -90,6 +90,10 @@ enum MainMenu {
 
         let helpMenu = NSMenu(title: "Help")
         helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "/")
+        helpMenu.addItem(withTitle: "Known Limitations", action: #selector(AppDelegate.showKnownLimitations(_:)), keyEquivalent: "")
+        helpMenu.addItem(.separator())
+        helpMenu.addItem(withTitle: "Licence", action: #selector(AppDelegate.showLicence(_:)), keyEquivalent: "")
+        helpMenu.addItem(withTitle: "Acknowledgements", action: #selector(AppDelegate.showAcknowledgements(_:)), keyEquivalent: "")
         main.addItem(submenu: helpMenu, title: "Help")
         NSApplication.shared.helpMenu = helpMenu
 

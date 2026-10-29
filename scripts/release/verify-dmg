@@ -1,22 +1,24 @@
 #!/bin/zsh
 # Checks a DMG made by build-dmg the way a user would meet it, without touching
-# any system security setting and without ever showing a Gatekeeper dialog.
+# any system security setting, and without ever showing a window, a Dock icon or a
+# Gatekeeper dialog.
 #
 #  1. The .sha256 file matches.
-#  2. Mounted read-only, the image holds Lectern.app, an Applications link and "Read Me First.txt".
-#  3. A copy of the app in a temporary folder has a valid ad-hoc, sandboxed signature and no
-#     quarantine attribute. It is launched with `open -n` and a test PDF, must show a window and
-#     stay up, then gets SIGTERM and must exit within 10 s without leaving a crash report.
-#  4. A simulated browser download: com.apple.quarantine (as Safari sets it) on a copy of the
+#  2. Mounted read-only and hidden (-nobrowse -noautoopen: no Finder window), the image holds
+#     Lectern.app, an Applications link, "Read Me First.txt", License.txt and Acknowledgements.txt.
+#  3. A copy of the app in a temporary folder has a valid ad-hoc, sandboxed signature, no
+#     get-task-allow, and no quarantine attribute.
+#  4. That copy runs its headless self-check: its executable is started directly with
+#     -LecternSelfCheck, which checks the bundle, the frameworks, the entitlements the process
+#     really has, the sandbox and the PDF engine, prints the result and exits before NSApplication
+#     exists (App/Sources/SelfCheck.swift). It must exit 0 within 30 s, own no window at any
+#     point, and leave no crash report. Nothing is opened, so no state, recent document or
+#     preference is written.
+#  5. A simulated browser download: com.apple.quarantine (as Safari sets it) on a copy of the
 #     DMG and on a second copy of the app. `spctl --assess -vv` output is recorded for both, and
-#     for the clean copy. Neither quarantined copy is ever opened.
+#     for the clean copy. Neither quarantined copy is ever opened or run.
 #
 # It refuses to run while any Lectern is running, so it never touches your own session.
-# The test launch passes -ApplePersistenceIgnoreState YES, so it neither restores nor
-# overwrites the user's last session, and doesn't ask the first-launch update question. It still uses the real sandbox container
-# (~/Library/Containers/io.github.ronimoe.Lectern), so the temporary test PDF is
-# recorded there like any opened document: in File > Open Recent and in Lectern's
-# reading state. File > Open Recent > Clear Menu removes both (docs/INSTALL.md).
 # A report is written to build/release/verify-<version>.txt.
 #
 # Usage: scripts/release/verify-dmg [path/to/Lectern-<version>.dmg]
@@ -43,8 +45,6 @@ else
 fi
 [[ -f $DMG ]] || die "$DMG not found"
 VERSION=${${DMG:t:r}#Lectern-}
-TEST_PDF=$ROOT/Tests/Corpus/public/classic-xref.pdf
-[[ -f $TEST_PDF ]] || die "test PDF $TEST_PDF not found"
 REPORT=${DMG:h}/verify-$VERSION.txt
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
@@ -92,6 +92,8 @@ ls -l $MNT | sed 's/^/  /'
 [[ -d $MNT/Lectern.app ]] || die "no Lectern.app in the image"
 [[ -L $MNT/Applications && $(readlink $MNT/Applications) == /Applications ]] || die "no Applications link"
 [[ -f "$MNT/Read Me First.txt" ]] || die "no 'Read Me First.txt'"
+grep -q "GNU GENERAL PUBLIC LICENSE" $MNT/License.txt 2>/dev/null || die "no License.txt with the GPL-3.0"
+grep -q "Andy Matuschak" $MNT/Acknowledgements.txt 2>/dev/null || die "no Acknowledgements.txt with Sparkle's licence"
 mkdir -p ${APP:h} ${QAPP:h}
 ditto $MNT/Lectern.app $APP
 ditto $MNT/Lectern.app $QAPP
@@ -110,54 +112,44 @@ print -r -- "  app-sandbox: true; get-task-allow: absent; verify --deep --strict
 app_version=$(plutil -extract CFBundleShortVersionString raw -o - $APP/Contents/Info.plist)
 [[ $app_version == $VERSION ]] || die "app version $app_version doesn't match the DMG name ($VERSION)"
 
-say "4. launch, check, quit"
-# This guard is what keeps a Gatekeeper dialog off the screen: never launch a quarantined copy.
+say "4. headless self-check (no window, no Dock icon)"
+# This guard is what keeps a Gatekeeper dialog off the screen: never run a quarantined copy.
 if xattr -p com.apple.quarantine $APP >/dev/null 2>&1 \
    || [[ -n $(xattr -r $APP 2>/dev/null | grep com.apple.quarantine) ]]; then
-  die "the copy to be launched carries com.apple.quarantine; refusing to launch it"
+  die "the copy to be run carries com.apple.quarantine; refusing to run it"
 fi
-cp $TEST_PDF $TMP/test.pdf
 cat >$TMP/windows.swift <<'EOF'
 import CoreGraphics
 let pid = Int32(CommandLine.arguments[1])!
-let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-print(windows.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }.count)
+let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+print(windows.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }.count)
 EOF
 swiftc -O -o $TMP/windows $TMP/windows.swift 2>/dev/null || die "could not compile the window counter"
 
-pattern="${TMP:t}/run/Lectern.app/Contents/MacOS/Lectern"
 pgrep -x Lectern >/dev/null && die "a Lectern started while this script was running; quit it first"
 touch $TMP/launch-marker
-# Don't restore the windows of the user's own Lectern session.
-open -g -n -a $APP $TMP/test.pdf --args -ApplePersistenceIgnoreState YES
-for _ in {1..30}; do
-  APP_PID=$(pgrep -f -- $pattern | head -1) || true
-  [[ -n $APP_PID ]] && break
-  sleep 0.5
+$APP/Contents/MacOS/Lectern -LecternSelfCheck >$TMP/selfcheck.txt 2>&1 &
+APP_PID=$!
+most_windows=0
+for _ in {1..300}; do
+  kill -0 $APP_PID 2>/dev/null || break
+  count=$($TMP/windows $APP_PID 2>/dev/null || print 0)
+  (( count > most_windows )) && most_windows=$count
+  sleep 0.1
 done
-[[ -n $APP_PID ]] || die "Lectern did not start within 15 s"
-print -r -- "  running: pid $APP_PID ($(ps -o comm= -p $APP_PID))"
-windows=0
-for _ in {1..20}; do
-  windows=$($TMP/windows $APP_PID)
-  (( windows > 0 )) && break
-  kill -0 $APP_PID 2>/dev/null || die "Lectern exited during launch"
-  sleep 0.5
-done
-(( windows > 0 )) || die "Lectern showed no window within 10 s"
-print -r -- "  on-screen windows: $windows"
-sleep 3
-kill -0 $APP_PID 2>/dev/null || die "Lectern exited on its own after launch"
-print -r -- "  still running after 3 s"
-kill -TERM $APP_PID
-exited=0
-for _ in {1..20}; do
-  kill -0 $APP_PID 2>/dev/null || { exited=1; break; }
-  sleep 0.5
-done
-(( exited )) || die "Lectern did not exit within 10 s of SIGTERM"
-print -r -- "  exited after SIGTERM"
+if kill -0 $APP_PID 2>/dev/null; then
+  kill -KILL $APP_PID 2>/dev/null || true
+  cat $TMP/selfcheck.txt
+  die "the self-check didn't exit within 30 s"
+fi
+selfcheck_status=0
+wait $APP_PID || selfcheck_status=$?
 APP_PID=
+sed 's/^/  /' $TMP/selfcheck.txt
+(( selfcheck_status == 0 )) || die "the self-check exited with $selfcheck_status"
+grep -q '^selfcheck: PASS' $TMP/selfcheck.txt || die "the self-check didn't report PASS"
+(( most_windows == 0 )) || die "the self-check owned $most_windows window(s); it must show none"
+print -r -- "  exit 0, windows owned: 0"
 crashes=$(find $HOME/Library/Logs/DiagnosticReports -maxdepth 1 -name 'Lectern*' -newer $TMP/launch-marker 2>/dev/null || true)
 [[ -z $crashes ]] || die "crash report(s) written: $crashes"
 print -r -- "  no crash report"

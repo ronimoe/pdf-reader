@@ -73,6 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let emptyState = AppEnvironment.isHostingTests ? EmptyStateController(recentURLs: { [] }) : EmptyStateController()
     private(set) lazy var settings = SettingsWindowController()
     private(set) lazy var keyboardShortcuts = KeyboardShortcutsWindowController()
+    private(set) lazy var licence = TextDocumentWindowController(title: "Licence", resource: "LICENSE")
+    private(set) lazy var acknowledgements = TextDocumentWindowController(title: "Acknowledgements", resource: "Acknowledgements.txt")
+    private(set) lazy var knownLimitations = TextDocumentWindowController(title: "Known Limitations", resource: "known-limitations.md")
     /// Last session's windows and tabs (B3), and the empty state. Its restorer is nil while
     /// hosting tests, so the test host never restores or saves a session.
     private(set) var sessions: SessionCoordinator?
@@ -119,6 +122,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showKeyboardShortcuts(_ sender: Any?) {
         keyboardShortcuts.show()
     }
+
+    /// Lectern ▸ About Lectern: version, copyright, source, licence, no telemetry.
+    @objc func showAbout(_ sender: Any?) {
+        NSApp.orderFrontStandardAboutPanel(options: AboutPanel.options())
+    }
+
+    /// Help ▸ Licence: the GPL-3.0, shipped in the app.
+    @objc func showLicence(_ sender: Any?) { licence.show() }
+
+    /// Help ▸ Acknowledgements: third-party notices (Sparkle and what it bundles).
+    @objc func showAcknowledgements(_ sender: Any?) { acknowledgements.show() }
+
+    /// Help ▸ Known Limitations (spec §11).
+    @objc func showKnownLimitations(_ sender: Any?) { knownLimitations.show() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Not while hosting tests, nor in a test launch that ignores saved state (verify-dmg):
