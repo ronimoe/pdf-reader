@@ -21,18 +21,6 @@ struct XRefSection {
     let hybridStreamOffset: Int?
 }
 
-/// What the writer needs to know about an existing annotation.
-public struct AnnotationInfo: Sendable, Equatable {
-    public let ref: ObjectRef
-    public let pageIndex: Int
-    public let subtype: String
-    public let contents: String?
-    public let author: String?
-    public let rect: [Double]
-    public let popup: ObjectRef?
-    public let inReplyTo: ObjectRef?
-}
-
 /// A read-only, structural view of a PDF file: its cross-reference chain, objects and pages.
 /// It reads only what the incremental writer needs and never repairs a damaged file.
 public final class PDFSaveDocument {
@@ -374,32 +362,34 @@ public final class PDFSaveDocument {
         return count
     }
 
-    /// The annotations listed on a page, in `/Annots` order. Direct (inline) annotation
-    /// dictionaries can't be addressed by reference and are skipped.
-    public func annotations(onPage index: Int) throws(PDFSaveError) -> [AnnotationInfo] {
-        var result: [AnnotationInfo] = []
-        for item in try annots(ofPage: index).items {
-            guard let ref = item.referenceValue, let dict = try dictionary(ref) else { continue }
-            let rect = (try resolve(dict["Rect"] ?? .null)).arrayValue?.compactMap(\.doubleValue) ?? []
+    /// The annotations listed on a page, in `/Annots` order, including inline dictionaries
+    /// (whose `ref` is nil). Items that aren't dictionaries (null, dangling references) are skipped.
+    public func annotations(onPage index: Int) throws(PDFSaveError) -> [AnnotationDescriptor] {
+        var result: [AnnotationDescriptor] = []
+        for (position, item) in try annots(ofPage: index).items.enumerated() {
+            let ref = item.referenceValue
+            guard let dict = try resolve(item).dictionaryValue else { continue }
             func text(_ key: PDFName) throws(PDFSaveError) -> String? {
                 try resolve(dict[key] ?? .null).stringValue?.text
             }
-            result.append(AnnotationInfo(
-                ref: ref, pageIndex: index,
+            let numbers = try resolve(dict["Rect"] ?? .null).arrayValue?.compactMap(\.doubleValue) ?? []
+            let rect = numbers.count == 4 ? PDFRect(corners: numbers[0], numbers[1], numbers[2], numbers[3]) : nil
+            let components = try resolve(dict["C"] ?? .null).arrayValue?.compactMap(\.doubleValue)
+            result.append(AnnotationDescriptor(
+                ref: ref, pageIndex: index, indexInAnnots: position,
                 subtype: dict["Subtype"]?.nameValue?.string ?? "",
-                contents: try text("Contents"), author: try text("T"), rect: rect,
-                popup: dict["Popup"]?.referenceValue, inReplyTo: dict["IRT"]?.referenceValue
+                rect: rect, name: try text("NM"), contents: try text("Contents"), author: try text("T"),
+                inReplyTo: dict["IRT"]?.referenceValue, popup: dict["Popup"]?.referenceValue,
+                color: components.flatMap(AnnotationColor.init(components:))
             ))
         }
         return result
     }
 
-    /// True when the document has a filled signature field (the app routes these to Save a Copy, A1).
-    public var isSigned: Bool {
-        guard let rootRef = trailer["Root"]?.referenceValue,
-              let root = try? dictionary(rootRef),
-              let acroForm = (try? resolve(root["AcroForm"] ?? .null))?.dictionaryValue else { return false }
-        if let flags = (try? resolve(acroForm["SigFlags"] ?? .null))?.intValue, flags & 1 != 0 { return true }
-        return false
+    /// Every page's annotations, page by page.
+    public func annotations() throws(PDFSaveError) -> [AnnotationDescriptor] {
+        var all: [AnnotationDescriptor] = []
+        for page in 0..<pageCount { all += try annotations(onPage: page) }
+        return all
     }
 }

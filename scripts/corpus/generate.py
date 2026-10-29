@@ -252,8 +252,9 @@ def xref_stream_pdf(tmp: Path, path: Path) -> None:
                  compress_streams=True, deterministic_id=True, linearize=False)
 
 
-def signed_pdf(tmp: Path, path: Path) -> None:
-    """Approval signature from a throwaway self-signed certificate."""
+def signed_pdf(tmp: Path, path: Path, certify: bool = False) -> None:
+    """Approval signature from a throwaway self-signed certificate, or with `certify` a
+    certification signature (DocMDP, P=2: form filling only, so annotations are not permitted)."""
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
@@ -275,20 +276,24 @@ def signed_pdf(tmp: Path, path: Path) -> None:
                                      crl_sign=False, encipher_only=False, decipher_only=False), critical=True)
         .sign(key, hashes.SHA256())
     )
-    key_pem = tmp / "signer-key.pem"
-    cert_pem = tmp / "signer-cert.pem"
+    key_pem = tmp / f"{path.stem}-key.pem"
+    cert_pem = tmp / f"{path.stem}-cert.pem"
     key_pem.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                                           serialization.NoEncryption()))
     cert_pem.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     # The certificate is public and needed by verify to build the trust root.
     shutil.copy(cert_pem, path.with_suffix(".cert.pem"))
 
-    base = tmp / "signed-base.pdf"
-    reportlab_text_pdf(base, pages=2, title="Lectern corpus: signed")
+    base = tmp / f"{path.stem}-base.pdf"
+    reportlab_text_pdf(base, pages=2, title="Lectern corpus: certified" if certify else "Lectern corpus: signed")
     signer = signers.SimpleSigner.load(str(key_pem), str(cert_pem))
     with base.open("rb") as inf, path.open("wb") as outf:
         w = IncrementalPdfFileWriter(inf)
-        meta = signers.PdfSignatureMetadata(field_name="Signature1", reason="Lectern corpus test signature")
+        if certify:
+            meta = signers.PdfSignatureMetadata(field_name="Signature1", reason="Lectern corpus test certification",
+                                                certify=True, docmdp_permissions=fields.MDPPerm.FILL_FORMS)
+        else:
+            meta = signers.PdfSignatureMetadata(field_name="Signature1", reason="Lectern corpus test signature")
         spec = fields.SigFieldSpec(sig_field_name="Signature1", on_page=0, box=(72, 72, 272, 132))
         signers.sign_pdf(w, meta, signer=signer, new_field_spec=spec, output=outf)
 
@@ -315,6 +320,14 @@ def incremental_pdf(tmp: Path, path: Path) -> None:
         sys.exit("generate: MuPDF did not write an incremental update")
 
 
+def linearized_pdf(tmp: Path, path: Path) -> None:
+    """A linearized ("Fast Web View") file with consistent hint tables, from qpdf."""
+    base = tmp / "lin-base.pdf"
+    reportlab_text_pdf(base, pages=4, title="Lectern corpus: linearized")
+    run("qpdf", "--linearize", "--deterministic-id", base.as_posix(), path.as_posix())
+    run("qpdf", "--check-linearization", path.as_posix())
+
+
 def encrypted_pdfs(tmp: Path) -> None:
     base = tmp / "enc-base.pdf"
     reportlab_text_pdf(base, pages=1, title="Lectern corpus: encrypted")
@@ -326,20 +339,33 @@ def encrypted_pdfs(tmp: Path) -> None:
 
 
 def main() -> None:
+    """`generate` rewrites every file; `generate --only name ...` rewrites just those (the output
+    isn't byte-reproducible, so regenerating everything changes files whose cases didn't change)."""
     for tool in ("qpdf", "mutool"):
         require(tool)
     OUT.mkdir(parents=True, exist_ok=True)
+    only = set(sys.argv[sys.argv.index("--only") + 1:]) if "--only" in sys.argv else None
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
-        reportlab_text_pdf(OUT / "classic-xref.pdf", pages=2, title="Lectern corpus: classic xref")
-        xref_stream_pdf(tmp, OUT / "xref-stream-objstm.pdf")
-        incremental_pdf(tmp, OUT / "incremental-existing.pdf")
-        signed_pdf(tmp, OUT / "signed-approval.pdf")
-        forms_pdf(tmp, OUT / "acroform-filled.pdf")
-        third_party_pdf(tmp, OUT / "third-party-annots.pdf")
-        mixed_sizes_pdf(OUT / "mixed-page-sizes.pdf")
-        hybrid_pdf(OUT / "hybrid-xref.pdf")
-        encrypted_pdfs(tmp)
+        jobs = {
+            "classic-xref": lambda: reportlab_text_pdf(OUT / "classic-xref.pdf", pages=2, title="Lectern corpus: classic xref"),
+            "xref-stream-objstm": lambda: xref_stream_pdf(tmp, OUT / "xref-stream-objstm.pdf"),
+            "incremental-existing": lambda: incremental_pdf(tmp, OUT / "incremental-existing.pdf"),
+            "signed-approval": lambda: signed_pdf(tmp, OUT / "signed-approval.pdf"),
+            "certified-docmdp": lambda: signed_pdf(tmp, OUT / "certified-docmdp.pdf", certify=True),
+            "acroform-filled": lambda: forms_pdf(tmp, OUT / "acroform-filled.pdf"),
+            "third-party-annots": lambda: third_party_pdf(tmp, OUT / "third-party-annots.pdf"),
+            "mixed-page-sizes": lambda: mixed_sizes_pdf(OUT / "mixed-page-sizes.pdf"),
+            "hybrid-xref": lambda: hybrid_pdf(OUT / "hybrid-xref.pdf"),
+            "linearized-qpdf": lambda: linearized_pdf(tmp, OUT / "linearized-qpdf.pdf"),
+            "encrypted": lambda: encrypted_pdfs(tmp),
+        }
+        unknown = (only or set()) - set(jobs)
+        if unknown:
+            sys.exit(f"generate: unknown file(s) {sorted(unknown)}; known: {sorted(jobs)}")
+        for name, job in jobs.items():
+            if only is None or name in only:
+                job()
     for f in sorted(OUT.glob("*.pdf")):
         print(f"{f.stat().st_size:>8}  {f.relative_to(ROOT)}")
 

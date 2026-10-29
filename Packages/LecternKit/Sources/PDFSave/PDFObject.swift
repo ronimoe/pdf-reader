@@ -1,7 +1,7 @@
 import Foundation
 
 /// An indirect object reference, `number generation R`.
-public struct ObjectRef: Hashable, Comparable, Sendable, CustomStringConvertible {
+public struct ObjectRef: Hashable, Comparable, Sendable, Codable, CustomStringConvertible {
     public let number: Int
     public let generation: Int
 
