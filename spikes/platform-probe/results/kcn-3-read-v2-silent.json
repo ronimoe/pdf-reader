@@ -1,0 +1,44 @@
+{
+  "buildTag" : "v2-nosandbox",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2-nosandbox\/PlatformProbe.app",
+  "bundleVersion" : "2",
+  "codeVariant" : "v2: rebuilt with a code change",
+  "complete" : true,
+  "finished" : "2026-10-29T08:56:17Z",
+  "home" : "\/Users\/ronimoe",
+  "mode" : "keychain-read",
+  "pid" : 90804,
+  "runID" : "kcn-3-read-v2-silent",
+  "sandboxed" : false,
+  "started" : "2026-10-29T08:56:17Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2-nosandbox\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "kcn-3-read-v2-silent",
+        "--mode",
+        "keychain-read",
+        "--variant",
+        "legacy",
+        "--interactive",
+        "no"
+      ],
+      "at" : "2026-10-29T08:56:17Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:56:17Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "legacy-attributes"
+    },
+    {
+      "at" : "2026-10-29T08:56:17Z",
+      "message" : "The user name or passphrase you entered is not correct.",
+      "status" : -25293,
+      "step" : "legacy-data-noninteractive",
+      "valueMatches" : false
+    }
+  ]
+}

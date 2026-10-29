@@ -1,0 +1,45 @@
+# containermanagerd (lines naming the probe, writes, errors)
+# TCC services requested (all processes)
+   2 service=kTCCServiceAccessibility
+   2 service=kTCCServiceAppleEvents
+  20 service=kTCCServiceListenEvent
+   4 service=kTCCServiceScreenCapture
+   4 service=kTCCServiceSystemPolicyAllFiles
+# TCC lines naming the probe
+2026-10-29 15:24:09.107 I  tccd[428:335e34] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68187, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/bu
+2026-10-29 15:24:09.107 I  tccd[428:335e34] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68187, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/bu
+2026-10-29 15:24:09.110 I  tccd[428:335e34] [com.apple.TCC:access] BUNDLE_ATTRIBUTION: /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app/Contents/MacOS/PlatformProbe is main executable for candidateBundle(/Users/ronimoe/D
+2026-10-29 15:24:09.110 I  tccd[428:335e34] [com.apple.TCC:access] BUNDLE_ATTRIBUTION: executable path file:///Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app/Contents/MacOS/PlatformProbe resolves to attributed bundle: f
+2026-10-29 15:24:09.111 Df tccd[428:335e34] [com.apple.TCC:access] -[TCCDAccessIdentity staticCode]: static code for: identifier io.github.ronimoe.PlatformProbe, type: 0: 0x740f9c300 at /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/Pla
+2026-10-29 15:24:09.112 I  tccd[428:335e34] [com.apple.TCC:access] /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app/Contents/MacOS/PlatformProbe (offset 0) linked against SDK version 0x1b0000, platform: 1
+2026-10-29 15:24:09.112 I  tccd[428:335e34] [com.apple.TCC:access] -[TCCDAccessIdentity matchesCodeRequirement:]: SecStaticCodeCheckValidity() static code (0x740f9c300) from io.github.ronimoe.PlatformProbe : anchor apple; status: -67050
+2026-10-29 15:24:09.112 I  tccd[428:335e34] [com.apple.TCC:access] For io.github.ronimoe.PlatformProbe: matches platform requirements: No
+2026-10-29 15:24:09.112 E  tccd[428:335e34] [com.apple.TCC:access] Prompting policy for hardened runtime; service: kTCCServiceAppleEvents requires entitlement com.apple.security.automation.apple-events but it is missing for accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=6818
+2026-10-29 15:24:09.112 I  tccd[428:335e34] [com.apple.TCC:access] Derived team id of (null) for TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68187, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/b
+# SecurityAgent / securityd / secd / syspolicyd lines naming the probe, and SecurityAgent activity
+2026-10-29 15:24:18.169 Df SecurityAgent[68189:3360ab] [com.apple.TextInputUI:CursorUI] -[TUINSCursorUIController scheduleUpdateCursorLocation]
+2026-10-29 15:24:18.182 Df securityd[400:114d] [com.apple.securityd:kcacl] user approved 'always allow' for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app(68187)
+2026-10-29 15:24:18.184 Df securityd[400:114d] [com.apple.securityd:kcacl] user approved 'allow' for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app(68187)
+2026-10-29 15:24:18.184 I  SecurityAgent[68189:3360ab] [com.apple.AppKit:Window] window <SFAuthenticationWindow: 0x8ad578f00> windowNumber=1946 finishing close
+2026-10-29 15:24:18.186 I  SecurityAgent[68189:3360ab] [com.apple.CFPasteboard:entry] CopyData('AppleKeyboardInputMethodsPasteboard' (<CFUUID 0x8ac90a660> 5051A3BA-AA04-4729-BEFC-F22CE1F78DC9) gen: -1 item: 1264739405 flavor: 'AppleKeyboardInputMethodsFlavor')
+2026-10-29 15:24:18.186 I  SecurityAgent[68189:3360ab] [com.apple.CFPasteboard:exit] (not-in-cache) - result: -8 generation: 0 null data flags: 0
+2026-10-29 15:24:18.186 Df SecurityAgent[68189:3360ab] [com.apple.xpc:connection] [0x8ad03b980] activating connection: mach=false listener=false peer=false name=(anonymous)
+2026-10-29 15:24:18.205 I  SecurityAgent[68189:3360ab] [com.apple.AppKit:Window] order window: 1946 op: 0 relative: 0 related: 0
+2026-10-29 15:24:18.205 I  SecurityAgent[68189:3360ab] [com.apple.AppKit:Intelligence] stopping collection observation
+2026-10-29 15:24:18.205 Df SecurityAgent[68189:3360b6] [com.apple.xpc:connection] [0x8ad03a800] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-10-29 15:24:18.205 I  SecurityAgent[68189:3360ab] [com.apple.AppKit:Window] context (8b42a334 -> 0) for window 1946
+2026-10-29 15:24:18.205 Df SecurityAgent[68189:3360b6] [com.apple.xpc:session] [0x8acc95270] Session canceled.
+2026-10-29 15:24:18.205 I  SecurityAgent[68189:3360ab] [com.apple.launchservices:cas] _LSSetMetaApplicationInfo({
+2026-10-29 15:24:18.205 Df SecurityAgent[68189:336243] [com.apple.UIIntelligenceSupport:xpc] agent connection cancelled (details: Session manually canceled)
+2026-10-29 15:24:18.205 Df SecurityAgent[68189:336243] [com.apple.xpc:session] [0x8acc95270] Disposing of session
+2026-10-29 15:24:18.206 Df SecurityAgent[68189:3360ab] [com.apple.xpc:connection] [0x100d08590] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-10-29 15:24:18.209 I  SecurityAgent[68189:3360ab] [com.apple.AppKit:Window] context (8b42a334 -> 0) for window 1946
+2026-10-29 15:24:18.214 I  SecurityAgent[68189:3360ab] [com.apple.launchservices:cas] Removing cached information for app [ 0x0-0x513513]  "Google Chrome", as it is no longer in shared memory and so has likely quit.
+2026-10-29 15:24:18.216 Df SecurityAgent[68189:3360ab] [com.apple.AppKit:AutomaticTermination] void _updateToReflectAutomaticTerminationState(void) Setting _kLSApplicationWouldBeTerminatedByTALKey=1
+2026-10-29 15:24:18.293 A  SecurityAgent[68189:3362f4] (RunningBoardServices) didChangeInheritances
+2026-10-29 15:24:18.319 I  SecurityAgent[68189:3362f4] [com.apple.AppKit:WindowTab] Indexing 0 items
+2026-10-29 15:24:18.320 A  SecurityAgent[68189:3362f4] (CoreSpotlight) end-index-batch
+2026-10-29 15:24:18.320 A  SecurityAgent[68189:3362f4] (CoreSpotlight) index-items
+2026-10-29 15:24:18.320 Df SecurityAgent[68189:3362f4] [com.apple.corespotlight:index] CSInlineDonation:<private>: Skipping donation (feature flag disabled)
+2026-10-29 15:24:18.669 Df SecurityAgent[68189:3360ab] [com.apple.xpc:connection] [0x8ad03b480] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+# sandbox denials for the probe

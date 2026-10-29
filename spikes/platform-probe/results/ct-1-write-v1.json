@@ -1,0 +1,38 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:55:03Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "container-write",
+  "pid" : 89483,
+  "runID" : "ct-1-write-v1",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:55:03Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "ct-1-write-v1",
+        "--mode",
+        "container-write"
+      ],
+      "at" : "2026-10-29T08:55:03Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:55:03Z",
+      "ok" : true,
+      "path" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data\/Library\/Application Support\/PlatformProbe\/container-marker.json",
+      "step" : "write-marker"
+    },
+    {
+      "at" : "2026-10-29T08:55:03Z",
+      "ok" : true,
+      "step" : "write-defaults"
+    }
+  ]
+}

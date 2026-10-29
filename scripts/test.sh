@@ -8,7 +8,7 @@ result=0
 xcodegen generate --quiet || exit 1
 
 echo "== swift test (LecternKit)"
-(cd Packages/LecternKit && swift test) > build/logs/swift-test.log 2>&1 || result=1
+(cd Packages/LecternKit && LECTERN_REQUIRE_TOOLS=1 swift test) > build/logs/swift-test.log 2>&1 || result=1
 grep -E "^✘|error:|Test run with" build/logs/swift-test.log
 
 echo "== xcodebuild test (Lectern app)"

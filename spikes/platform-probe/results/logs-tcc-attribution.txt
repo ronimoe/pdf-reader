@@ -1,0 +1,14 @@
+# tccd attribution for probe and Sparkle processes, 2026-10-29 15:20:00 to 2026-10-29 15:46:00
+  29 accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe
+  12 accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbeSparkle
+   2 accessing={TCCDProcess: identifier=org.sparkle-project.Sparkle.Updater
+  31 requesting={TCCDProcess: identifier=com.apple.WindowServer
+   3 requesting={TCCDProcess: identifier=com.apple.mds
+   9 requesting={TCCDProcess: identifier=com.apple.syspolicyd
+  25 requesting={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe
+   4 requesting={TCCDProcess: identifier=io.github.ronimoe.PlatformProbeSparkle
+   2 requesting={TCCDProcess: identifier=org.sparkle-project.Sparkle.Updater
+# subjects of kTCCServiceSystemPolicyAppBundles requests in the same window
+   1 subject=com.anthropic.claude-code
+   1 subject=com.anthropic.claudefordesktop
+   1 subject=com.raycast.macos

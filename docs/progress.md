@@ -44,6 +44,81 @@ A running log of the unattended v1 build. Each milestone records what landed, ho
 - `scripts/test.sh` runs each suite once and logs to `build/logs/`.
 - **Deferred:** the app-hosted tests run under the real bundle ID's sandbox container. Persistence tests will live in the package (M2), so they won't touch the real container.
 
+## M0c: Platform prototype (branch `m0c-platform`)
+
+**Result:** the sandbox stays on and Sparkle stays in, opt-in. Distribution is unsigned (ad-hoc). Architecture §6 and §8, and decisions B5 and B6, are amended.
+
+**What the prototype found**
+- **Bookmarks and container data** survive ad-hoc rebuilds, including after the file is renamed or moved.
+- **Keychain.** A password saved by one build can't be read by the next (`-25293`, a code-hash partition mismatch). This now appears as a known limitation under B6.
+- **Sparkle 2.10.1** installed an update end to end from a local server, both from a home folder and from `/Applications`. It needs `disable-library-validation` under ad-hoc signing.
+- **Gatekeeper.** A downloaded copy is blocked with only "Move to Trash" and "Done". Right-click → Open has been gone since macOS 15. The working install routes are:
+  - Open Anyway in System Settings,
+  - `xattr -dr com.apple.quarantine`,
+  - our own Homebrew tap, whose cask removes the quarantine after installing,
+  - building from source.
+- **CI.** No hosted runner has macOS 26 with Xcode 27, so `scripts/test.sh` run locally stays the gate.
+
+**Side effects on this Mac**
+- **Dialogs.** You saw and answered Gatekeeper and Keychain dialogs during the experiments.
+- **Homebrew.** A `brew uninstall` removed the unused library `libngtcp2`. The coordinator reinstalled it (1.25.0_1).
+- **Left behind:**
+  - the Sparkle test key (account `lectern-m0c-probe`) in the login Keychain; delete it in Keychain Access,
+  - two empty protected container folders.
+
+**Not verified**
+- Clicking Open Anyway.
+- Sparkle's standard UI, updates over HTTPS, and its scheduled updates.
+- Whether a GitHub-hosted tap needs `brew trust`.
+
+## M1: Reader shell (branch `m1-shell`, PR #3)
+
+**Landed**
+- **Windows and tabs:** native tabs and multiple windows, full screen, drag-and-drop, and an already-open file brings its tab forward.
+- **Empty state:** Open Document and the recent files only.
+- **Layouts (B1):** Pages and Scrolling, plus cover-page and right-to-left defaults read from the catalog.
+- **Zoom:** fit modes that survive resizes.
+- **Rotation (B9):** view-only, with the original rotations recorded for the save path.
+- **Passwords and permissions (B6):** the password sheet, opt-in Keychain, a document key that hashes `/O` and `/U` for encrypted files, permission gating with explanations, and the owner-password unlock.
+- **Printing, toolbar, View menu.**
+- **Context menu:** our own, so text-sharing items can't leak copy-restricted text.
+
+**Review:** the code-reviewer found one blocker, the context menu sharing restricted text through Look Up, Translate and Search with Google, plus four should-fix items. All are fixed.
+
+**Verified**
+- `scripts/test.sh`: 38 package tests and 68 app-hosted tests.
+- The app launches with a PDF and quits cleanly.
+
+**Not verified**
+- The on-screen look: you declined screen access, so this is checked offscreen only.
+- Real drag-and-drop.
+- VoiceOver.
+- That AppKit adds exactly the expected text-sharing items to the context menu.
+
+## M0b: PDFKit behaviour prototype (branch `m0b-pdfkit`)
+
+**Result:** all 11 questions settled. 62 spike tests stay in `AppTests/M0Spikes` as regression evidence, and Thread Sanitizer found no data races. Architecture §4.2, §4.3 and §4.4 are amended.
+
+**Confirmed**
+- JavaScript never runs.
+- `PDFPage.rotation` is always written by PDFKit's own save, so the app never uses that save path.
+- **Thumbnails:** 600 pages in 0.36 s on a background actor.
+- **Search:** first result after 0.05 s, about 4.4 s for 2,400 pages. The main thread is never blocked for more than about 9 ms, and accent-insensitive matching works.
+- **Offscreen rendering:** `PDFPage.draw` captures annotations; `cacheDisplay` doesn't.
+
+**Changes for later milestones**
+- **M3:** link interception in `mouseDown` plus `perform(_:)`, actions classified by `action.type`, PDFKit's side paths closed, and `/Fit` handled by the app.
+- **M3/M4:** after an annotation change, the other pane re-assigns its `document`.
+- **M4:** clear PDFKit's automatic `/T` and `/M`. Save a Copy uses the incremental writer, never PDFKit's save.
+
+**Coordinator fix:** renamed the spike's `RawPDF` helper to `SpikeRawPDF`, after the merge with M1's fixtures.
+
+**Not verified**
+- Real hover delivery and physical Force Click pressure; needs a manual check in M3.
+- VoiceOver.
+- Baseline M1 hardware: the numbers above are from an M3 Pro.
+- The click tests need a logged-in display session.
+
 ## M0a: Incremental save prototype (branch `m0a-save`)
 
 **Result: GO for candidate 1.** Our own Swift incremental writer is the save path. Architecture §3.2 is amended to record this.
@@ -63,6 +138,14 @@ A running log of the unattended v1 build. Each milestone records what landed, ho
   - MuPDF, Poppler, pdf.js and PDFKit all draw the highlights.
 - Encrypted files are refused with a typed error.
 - Mutation checks: deliberately corrupted outputs are caught.
+
+**Review:** the code-reviewer found four blockers, all fixed:
+- a shared `/Annots` array was edited for every page that uses it,
+- pages with duplicate keys changed when rewritten,
+- the post-save check could pass on a damaged file,
+- malformed input crashed instead of throwing an error.
+
+The automated security review flagged the same parser problems. Fixes include a malformed-input suite and a seeded 2,000-iteration fuzz test. 57 PDFSave tests pass. `scripts/test.sh` now sets `LECTERN_REQUIRE_TOOLS=1`, so a missing external tool fails the run instead of skipping.
 
 **Not verified**
 - Acrobat Reader and Preview itself (PDFKit, its engine, was checked).
