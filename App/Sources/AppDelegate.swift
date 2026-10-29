@@ -7,6 +7,8 @@ enum AppEnvironment {
     /// Per-document state (A2), in the app's container. Nil until launch
     /// finishes; tests inject their own store instead.
     static var stateStore: DocumentStateStore?
+    /// The crash journal of unsaved annotations (A1), beside the state store.
+    static var journal: AnnotationJournal?
 
     /// The one way a URL leaves the app (A4). While hosting tests it only
     /// records, so a test that forgets to inject its own can't open anything.
@@ -62,7 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let emptyState = EmptyStateController()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        AppEnvironment.stateStore = DocumentStateStore(directory: AppEnvironment.stateDirectory)
+        let store = DocumentStateStore(directory: AppEnvironment.stateDirectory)
+        AppEnvironment.stateStore = store
+        AppEnvironment.journal = AnnotationJournal(directory: store.directory.appending(path: "Journal", directoryHint: .isDirectory))
         (NSDocumentController.shared as? ReaderDocumentController)?.onDocumentsChange = { [weak self] count in
             self?.emptyState.documentsDidChange(count: count)
         }

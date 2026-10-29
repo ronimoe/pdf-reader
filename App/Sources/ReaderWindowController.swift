@@ -53,12 +53,24 @@ final class ReaderWindowController: NSWindowController {
     let outlineSection = OutlineSectionViewController()
     let thumbnailsSection = ThumbnailsSectionViewController()
     let searchSection = SearchResultsSectionViewController()
+    let annotationsSection = AnnotationsSectionViewController()
     private(set) lazy var sidebar = SidebarViewController(
-        sections: [thumbnailsSection, outlineSection, searchSection],
+        sections: [thumbnailsSection, outlineSection, annotationsSection, searchSection],
         visible: settings.sidebar.section
     )
     private(set) var sidebarItem: NSSplitViewItem!
     let notice = NoticeView()
+    /// "This document has form fields…" (A5), along the bottom of the reading area.
+    let formInfoLine = InfoLineView()
+
+    // Annotations (M4)
+    /// The crash journal (A1); nil for documents without stored state.
+    let journal: AnnotationJournal?
+    /// Opens a file as a document: B7's Save a Copy opens the copy. Tests record instead.
+    var openCopy: (URL) -> Void = { url in ReaderDocumentController.openDocuments(at: [url]) }
+    var isAskingAboutChangedFile = false
+    var didCheckJournal = false
+    var annotationListCache: [(item: AnnotationListItem, annotation: PDFAnnotation)]?
 
     // Search (B8)
     private(set) var search: DocumentSearch?
@@ -84,8 +96,13 @@ final class ReaderWindowController: NSWindowController {
     private(set) var pagesWithoutText: [Int]?
 
     // Stored state (A2)
-    private let stateStore: DocumentStateStore?
+    let stateStore: DocumentStateStore?
     private(set) var storedDocumentID: UUID?
+
+    /// After a Save As, the document is the new file, with its own stored record.
+    func adoptStoredDocument(_ id: UUID) {
+        storedDocumentID = id
+    }
     private var anchorSave: DispatchWorkItem?
     private var collapseObservation: NSKeyValueObservation?
     /// Set while the sidebar opens or closes for a reason other than the
@@ -104,8 +121,10 @@ final class ReaderWindowController: NSWindowController {
         stateStore: DocumentStateStore? = AppEnvironment.stateStore,
         previewPresenter: (any LinkPreviewPresenting)? = nil,
         urlOpener: (any URLOpening)? = nil,
-        preferences: ReaderPreferences? = nil
+        preferences: ReaderPreferences? = nil,
+        journal: AnnotationJournal? = AppEnvironment.journal
     ) {
+        self.journal = journal
         readerDocument = document
         self.passwordStore = passwordStore
         self.presenter = presenter
@@ -153,6 +172,29 @@ final class ReaderWindowController: NSWindowController {
         view.contextMenuItems = {
             ReaderCommands.zoomItems() + [.separator()] + ReaderCommands.readingOptionItems()
         }
+        view.markupColor = preferences.annotationColor
+        view.onMarkupAction = { [weak self, weak pane] action in
+            guard let self, let pane else { return }
+            markUpSelection(action, in: pane)
+        }
+        view.onMarkupColor = { [weak self] preset in self?.preferences.annotationColor = preset }
+        view.onAnnotationClick = { [weak self, weak pane] annotation, count in
+            guard let self, let pane else { return }
+            annotationClicked(annotation, clickCount: count, in: pane)
+        }
+        view.onAnnotationSelectionChange = { [weak self, weak pane] annotation in
+            guard let self, let pane, pane === focusedPane else { return }
+            annotationsSection.select(annotation.map(ObjectIdentifier.init))
+        }
+        view.onDeleteKey = { [weak self, weak view] in
+            guard let self, let view, view.selectedAnnotation != nil else { return false }
+            deleteAnnotation(nil)
+            return true
+        }
+        view.annotationContextMenuItems = { [weak self, weak view] annotation in
+            guard let self, let view else { return [] }
+            return annotationMenuItems(for: annotation, in: view)
+        }
         pane.onHistoryChange = { [weak self] history in
             self?.updateStoredState { $0.history[id] = history }
         }
@@ -180,7 +222,10 @@ final class ReaderWindowController: NSWindowController {
     }
 
     private func applyPreferences() {
-        for pane in panes { pane.view.previewsOnHover = preferences.previewsLinksOnHover }
+        for pane in panes {
+            pane.view.previewsOnHover = preferences.previewsLinksOnHover
+            pane.view.markupColor = preferences.annotationColor
+        }
     }
 
     @available(*, unavailable)
@@ -201,6 +246,8 @@ final class ReaderWindowController: NSWindowController {
         panesView.translatesAutoresizingMaskIntoConstraints = false
         notice.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(notice)
+        formInfoLine.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(formInfoLine)
         NSLayoutConstraint.activate([
             panesView.topAnchor.constraint(equalTo: container.topAnchor),
             panesView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -209,6 +256,9 @@ final class ReaderWindowController: NSWindowController {
             notice.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 12),
             notice.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             notice.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -40),
+            formInfoLine.bottomAnchor.constraint(equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            formInfoLine.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            formInfoLine.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -40),
         ])
         reading.view = container
 
@@ -228,7 +278,9 @@ final class ReaderWindowController: NSWindowController {
             // Search results come and go with the search; they are never the
             // section to reopen on.
             if section != .search { self?.settings.sidebar.section = section }
+            if section == .annotations { self?.refreshAnnotationList() }
         }
+        annotationsSection.onSelect = { [weak self] item in self?.jumpToListItem(item) }
         outlineSection.onJump = { [weak self] outline in self?.jump(to: outline) }
         thumbnailsSection.onJump = { [weak self] index in self?.pane.jump(toPageAt: index) }
         searchSection.onShowResult = { [weak self] index in self?.showResult(at: index) }
@@ -272,6 +324,8 @@ final class ReaderWindowController: NSWindowController {
         }
         configureSidebar(for: readerDocument, pdf: pdf)
         window?.makeFirstResponder(focusedPane.view)
+        annotationEditorDidChange()
+        readerDocument.inspectForAnnotations()
     }
 
     // MARK: Stored state (A2)
@@ -357,6 +411,7 @@ final class ReaderWindowController: NSWindowController {
         sidebar.show(settings.sidebar.section)
         sidebarItem.isCollapsed = !settings.sidebar.isVisible
         updateThumbnailSelection()
+        if settings.sidebar.section == .annotations, settings.sidebar.isVisible { refreshAnnotationList() }
     }
 
     /// The thumbnails mark the focused pane's page.
@@ -382,6 +437,7 @@ final class ReaderWindowController: NSWindowController {
     /// Shows a section and moves keyboard focus into it, so the outline or
     /// thumbnails can be used from the keyboard.
     func showSidebarSection(_ section: SidebarSection) {
+        if section == .annotations { refreshAnnotationList() }
         sidebar.show(section)
         if section != .search { settings.sidebar.section = section }
         setSidebarVisible(true)
@@ -630,8 +686,11 @@ final class ReaderWindowController: NSWindowController {
             if let anchor { pane.view.restore(anchor.clamped(toPageCount: pdf.pageCount)) }
         }
         searchPane = queryPane
+        annotationEditorDidChange()
         configureSidebar(for: readerDocument, pdf: pdf)
         refreshStoredIdentity()
+        if let storedDocumentID { journal?.remove(storedDocumentID) }
+        readerDocument.inspectForAnnotations()
         if let query, !query.isEmpty {
             // Same session: no new history entry.
             let search = DocumentSearch(document: pdf)
@@ -652,7 +711,7 @@ final class ReaderWindowController: NSWindowController {
         refreshStoredIdentity(at: url)
     }
 
-    private func refreshStoredIdentity(at newURL: URL? = nil) {
+    func refreshStoredIdentity(at newURL: URL? = nil) {
         guard let stateStore, let storedDocumentID, let readerDocument, let url = newURL ?? readerDocument.fileURL,
               let pdf = readerDocument.pdfDocument
         else { return }
@@ -835,6 +894,13 @@ final class ReaderWindowController: NSWindowController {
         case #selector(navigateForward(_:)): return pane.canGoForward
         case #selector(showNextResult(_:)), #selector(showPreviousResult(_:)): return (search?.results.isEmpty == false)
         case #selector(focusOtherPane(_:)), #selector(closeFocusedPane(_:)): return isSplit
+        case #selector(highlightSelection(_:)), #selector(underlineSelection(_:)), #selector(strikeThroughSelection(_:)), #selector(commentOnSelection(_:)):
+            return pdfView.currentSelection?.string?.isEmpty == false
+        case #selector(deleteAnnotation(_:)):
+            // A bare ⌫ must reach text fields: only enabled while the page has focus.
+            return selectedAnnotation != nil && window?.firstResponder === pdfView
+        case #selector(editAnnotationText(_:)):
+            return selectedAnnotation != nil
         default: return true
         }
     }
@@ -856,12 +922,19 @@ final class ReaderWindowController: NSWindowController {
         case #selector(showTableOfContents(_:)): isSidebarVisible && sidebar.visibleSection == .outline
         case #selector(togglePreviewLinksOnHover(_:)): preferences.previewsLinksOnHover
         case #selector(focusLinks(_:)): pdfView.isLinkFocusActive
+        case #selector(setAnnotationColor(_:)): false
+        case #selector(showAnnotationList(_:)): isSidebarVisible && sidebar.visibleSection == .annotations
         default: false
         }
     }
 }
 
-extension ReaderWindowController: NSWindowDelegate {}
+extension ReaderWindowController: NSWindowDelegate {
+    /// The document's undo manager, so annotation undo follows the document (B4).
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
+        readerDocument?.undoManager
+    }
+}
 
 extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -870,6 +943,18 @@ extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation 
         }
         if menuItem.action == #selector(toggleSplitView(_:)) {
             menuItem.title = isSplit ? "Close Split View" : "Split View"
+        }
+        if menuItem.action == #selector(setAnnotationColor(_:)) {
+            let current = selectedAnnotation.map { AnnotationEditor.rgb(of: $0) }.flatMap { AnnotationColorPreset.matching(red: $0.red, green: $0.green, blue: $0.blue) }
+                ?? (selectedAnnotation == nil ? markupColor : nil)
+            menuItem.state = AnnotationColorPreset.allCases.firstIndex(of: current ?? .default) == menuItem.tag && current != nil ? .on : .off
+            if let selected = selectedAnnotation {
+                return isShowingContent && AnnotationKindName.allowsColorChange(subtype: selected.type ?? "")
+            }
+            return isShowingContent
+        }
+        if menuItem.action == #selector(editAnnotationText(_:)) {
+            menuItem.title = selectedAnnotation?.type == "Text" ? "Edit Note…" : (selectedAnnotation == nil ? "Edit Note or Comment…" : "Edit Comment…")
         }
         // The search options stay available before a search starts.
         if menuItem.action == #selector(toggleMatchCase(_:)) || menuItem.action == #selector(toggleWholeWord(_:)) {

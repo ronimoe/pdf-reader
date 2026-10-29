@@ -1,4 +1,6 @@
 import AppKit
+import ReaderCore
+import ReaderKit
 
 /// The reading commands, built as menu items for both the menu bar and the
 /// toolbar menus. Targets are nil, so each command reaches the key window's
@@ -64,7 +66,42 @@ enum ReaderCommands {
             item("Show Sidebar", #selector(ReaderWindowController.toggleReaderSidebar(_:)), "s", [.command, .control]),
             item("Thumbnails", #selector(ReaderWindowController.showThumbnails(_:))),
             item("Table of Contents", #selector(ReaderWindowController.showTableOfContents(_:))),
+            item("Annotations", #selector(ReaderWindowController.showAnnotationList(_:)), "a", [.command, .control]),
         ]
+    }
+
+    /// The Annotate menu (B4, Journey C). Every action has a key (Rule 8). Preview's ⌃⌘S for
+    /// Strike Through is taken by Show Sidebar, so strike-through is ⌃⌘X ("cross out").
+    static func annotateItems() -> [NSMenuItem] {
+        let colors = NSMenu(title: "Colour")
+        colorItems().forEach(colors.addItem)
+        let colorItem = NSMenuItem(title: "Colour", action: nil, keyEquivalent: "")
+        colorItem.submenu = colors
+        return [
+            item("Highlight", #selector(ReaderWindowController.highlightSelection(_:)), "h", [.command, .control]),
+            item("Underline", #selector(ReaderWindowController.underlineSelection(_:)), "u", [.command, .control]),
+            item("Strike Through", #selector(ReaderWindowController.strikeThroughSelection(_:)), "x", [.command, .control]),
+            item("Add Comment to Selection…", #selector(ReaderWindowController.commentOnSelection(_:)), "k", [.command, .control]),
+            .separator(),
+            item("Add Note", #selector(ReaderWindowController.addNote(_:)), "n", [.command, .control]),
+            .separator(),
+            item("Edit Note or Comment…", #selector(ReaderWindowController.editAnnotationText(_:)), "e", [.command, .control]),
+            colorItem,
+            // A bare ⌫, enabled only while the page has focus and an annotation is selected,
+            // so it never takes Backspace from a text field.
+            item("Delete Annotation", #selector(ReaderWindowController.deleteAnnotation(_:)), String(UnicodeScalar(UInt8(NSBackspaceCharacter))), []),
+        ]
+    }
+
+    /// The six colours (B4), by name with a swatch: ⌃⌘1 to ⌃⌘6. With an annotation selected they
+    /// change its colour; otherwise they pick the colour for new annotations.
+    static func colorItems() -> [NSMenuItem] {
+        AnnotationColorPreset.allCases.enumerated().map { index, preset in
+            let menuItem = item(preset.name, #selector(ReaderWindowController.setAnnotationColor(_:)), String(index + 1), [.command, .control])
+            menuItem.tag = index
+            menuItem.image = SelectionActionBar.swatch(preset)
+            return menuItem
+        }
     }
 
     /// The Go menu: history (B2) and go to page.
@@ -74,6 +111,9 @@ enum ReaderCommands {
             item("Forward", #selector(ReaderWindowController.navigateForward(_:)), "]"),
             .separator(),
             item("Go to Page…", #selector(ReaderWindowController.showGoToPage(_:)), "g", [.command, .option]),
+            .separator(),
+            item("Next Annotation", #selector(ReaderWindowController.showNextAnnotation(_:)), String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!), [.command, .option]),
+            item("Previous Annotation", #selector(ReaderWindowController.showPreviousAnnotation(_:)), String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!), [.command, .option]),
         ]
     }
 

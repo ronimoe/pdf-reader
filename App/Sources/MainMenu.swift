@@ -25,8 +25,12 @@ enum MainMenu {
         fileMenu.addItem(submenu: recentMenu, title: "Open Recent")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        // Save goes through the incremental writer only (A1): in place, or a copy for signed,
+        // certified, Reader-extended and read-only files.
+        fileMenu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
+        let saveAs = fileMenu.addItem(withTitle: "Save As…", action: #selector(NSDocument.saveAs(_:)), keyEquivalent: "s")
+        saveAs.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(.separator())
-        // Save returns with the writer in M4.
         fileMenu.addItem(withTitle: "Print…", action: #selector(NSDocument.printDocument(_:)), keyEquivalent: "p")
         main.addItem(submenu: fileMenu, title: "File")
 
@@ -57,6 +61,10 @@ enum MainMenu {
         let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
         fullScreen.keyEquivalentModifierMask = [.command, .control]
         main.addItem(submenu: viewMenu, title: "View")
+
+        let annotateMenu = NSMenu(title: "Annotate")
+        ReaderCommands.annotateItems().forEach(annotateMenu.addItem)
+        main.addItem(submenu: annotateMenu, title: "Annotate")
 
         let goMenu = NSMenu(title: "Go")
         ReaderCommands.goItems().forEach(goMenu.addItem)
