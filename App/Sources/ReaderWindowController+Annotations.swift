@@ -403,6 +403,9 @@ extension ReaderWindowController {
         }
         do throws(AnnotationRefusal) {
             try editor.replay(entry.changes)
+            // Written now, not after the debounce: the offered file goes only once the changes
+            // are on disk again.
+            if let storedDocumentID { journal?.flush(storedDocumentID) }
             journal?.delete(file)
         } catch {
             explainAnnotationRefusal(error)

@@ -271,12 +271,11 @@ extension M4Tests {
         @Test func tabNeverReachesPDFKitInAFormAndAStockViewWouldEditOnClick() async throws {
             let harness = try await AnnotationHarness(corpus: "acroform-filled")
             defer { harness.close() }
-            let tab = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-                                                    characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
-            let backTab = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift, timestamp: 0, windowNumber: 0, context: nil,
-                                                        characters: "\u{19}", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
-            #expect(harness.view.handleFormKey(tab))
-            #expect(harness.view.handleFormKey(backTab))
+            // Tab, sent through the window to the page, leaves for the next control. This
+            // doesn't pin the Tab handling: with synthesized events, PDFKit passes Tab on the same
+            // way (a mutant without it survives), so whether a real keyboard reaches a field
+            // stays [verify] (architecture §4.3).
+            #expect(Self.tabLeavesThePage(harness))
 
             // Positive control: the same click on the same field edits it in a stock PDFView.
             let data = try Corpus.data("acroform-filled")
@@ -305,12 +304,16 @@ extension M4Tests {
             #expect(!readerField.isReadOnly)
         }
 
-        @Test func tabIsLeftAloneWithoutForms() async throws {
-            let harness = try await AnnotationHarness(corpus: "classic-xref")
-            defer { harness.close() }
-            let tab = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-                                                    characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
-            #expect(!harness.view.handleFormKey(tab))
+        /// Sends Tab to the page through the window, with a text field as the next key view, and
+        /// says whether focus left the page.
+        static func tabLeavesThePage(_ harness: AnnotationHarness) -> Bool {
+            let probe = NSTextField(frame: NSRect(x: 0, y: 0, width: 80, height: 22))
+            harness.window.contentView?.addSubview(probe)
+            defer { probe.removeFromSuperview() }
+            harness.view.nextKeyView = probe
+            harness.window.makeFirstResponder(harness.view)
+            Synth.key("\t", keyCode: 48, in: harness.window)
+            return harness.window.firstResponder !== harness.view
         }
 
         // MARK: 9. Widgets without AcroForm fields
@@ -320,6 +323,183 @@ extension M4Tests {
             defer { harness.close() }
             #expect(harness.view.documentHasFormFields)
             #expect(harness.controller.formInfoLine.message == ReaderWindowController.formFieldsMessage)
+        }
+    }
+}
+
+/// Answers NSDocument's error-presentation callback.
+final class PresentCallbackRecorder: NSObject {
+    private(set) var presented: [Bool] = []
+    @objc func didPresentError(withRecovery didRecover: Bool, contextInfo: UnsafeMutableRawPointer?) { presented.append(didRecover) }
+}
+
+/// An error whose recovery attempter AppKit's alert would run.
+nonisolated final class RecoveryAttempter: NSObject {
+    @objc override func attemptRecovery(fromError error: any Error, optionIndex recoveryOptionIndex: Int) -> Bool { true }
+}
+
+extension M4Tests {
+    /// The second review round (ef5230c), each with a test that fails without its fix.
+    @MainActor @Suite struct ReviewRound2 {
+        // 1. A reload before the journal check never deletes the journal.
+        @Test func aReloadBeforeTheJournalCheckKeepsAndOffersIt() async throws {
+            let folder = try TemporaryFolder()
+            let url = try folder.write(TwoSquaresFixture.make(swapped: false), to: "squares.pdf")
+            let first = try await AnnotationHarness(file: url, folder: folder)
+            let alpha = try #require(first.pdf.page(at: 0)?.annotations.first { $0.contents == "alpha" })
+            try first.editor.delete(alpha)
+            let id = try #require(first.controller.storedDocumentID)
+            first.journal.flush(id)
+            first.abandon()
+
+            let second = try await AnnotationHarness(file: url, folder: folder, store: first.store, journal: first.journal,
+                                                     staleJournalChoice: .keep, inspectionDelay: .seconds(1))
+            defer { second.close() }
+            #expect(second.presenter.journalOffers.isEmpty && second.presenter.staleJournalExplanations.isEmpty, "the check hasn't run yet")
+            // The file is rewritten while the check is still running.
+            let swapped = TwoSquaresFixture.make(swapped: true)
+            try swapped.write(to: url)
+            #expect(await second.document.reloadFromDiskIfChanged())
+            await second.waitForInspection()
+            #expect(second.presenter.staleJournalExplanations == [false], "offered as no longer fitting")
+            guard case .mismatched(let kept) = second.journal.lookup(id, currentSHA256: JournalEntry.hash(of: swapped)) else {
+                Issue.record("the crash journal was deleted unseen")
+                return
+            }
+            #expect(kept.changes == [.delete(ObjectRef(6))])
+            #expect(Set(second.pdf.page(at: 0)?.annotations.compactMap(\.contents) ?? []) == ["alpha", "beta"])
+        }
+
+        // 2. A symbolic link to the original is the original.
+        @Test func saveAsThroughASymbolicLinkToTheSignedOriginalIsRefused() async throws {
+            let folder = try TemporaryFolder()
+            let target = try folder.write(try Corpus.data("signed-approval"), to: "signed.pdf")
+            let link = folder.url.appending(path: "link.pdf")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+            let original = try Data(contentsOf: target)
+            // Opened through the link, saved onto the target; then the other way round.
+            let viaLink = try await AnnotationHarness(file: link, folder: folder)
+            try viaLink.highlight("quick brown fox")
+            await #expect(throws: (any Error).self) { try await viaLink.save(to: target, .saveAsOperation) }
+            viaLink.close()
+            let direct = try await AnnotationHarness(file: target, folder: folder)
+            defer { direct.close() }
+            try direct.highlight("quick brown fox")
+            await #expect(throws: (any Error).self) { try await direct.save(to: link, .saveAsOperation) }
+            #expect(try Data(contentsOf: target) == original)
+        }
+
+        // 3. Restore journals the changes again before the offered file goes.
+        @Test func restoreJournalsTheChangesBeforeDeletingTheOfferedFile() async throws {
+            let folder = try TemporaryFolder()
+            let url = try folder.write(TwoSquaresFixture.make(swapped: false), to: "squares.pdf")
+            let first = try await AnnotationHarness(file: url, folder: folder)
+            let alpha = try #require(first.pdf.page(at: 0)?.annotations.first { $0.contents == "alpha" })
+            try first.editor.delete(alpha)
+            let id = try #require(first.controller.storedDocumentID)
+            first.journal.flush(id)
+            first.abandon()
+            // The harness journal debounces for 60 s: only an explicit flush writes it in time.
+            let second = try await AnnotationHarness(file: url, folder: folder, store: first.store, journal: first.journal)
+            defer { second.close() }
+            #expect(second.editor.pending.changes == [.delete(ObjectRef(6))])
+            let hash = try #require(second.editor.originalSHA256)
+            guard case .matching(let live) = second.journal.read(second.journal.url(for: id), currentSHA256: hash) else {
+                Issue.record("a crash right after Restore would lose the changes")
+                return
+            }
+            #expect(live.changes == second.editor.pending.changes)
+        }
+
+        // 4. Error presentation keeps AppKit's behaviour.
+        @Test func aCancelledSaveShowsNothingAndStillAnswers() async throws {
+            let harness = try await AnnotationHarness(corpus: "classic-xref")
+            defer { harness.close() }
+            let recorder = PresentCallbackRecorder()
+            let cancelled = NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)
+            harness.document.presentError(cancelled, modalFor: harness.window, delegate: recorder,
+                                          didPresent: #selector(PresentCallbackRecorder.didPresentError(withRecovery:contextInfo:)), contextInfo: nil)
+            #expect(harness.presenter.presentedErrors.isEmpty)
+            #expect(recorder.presented == [false])
+        }
+
+        @Test func anErrorWithRecoveryGoesToAppKit() async throws {
+            let harness = try await AnnotationHarness(corpus: "classic-xref")
+            defer { harness.close() }
+            let error = NSError(domain: "test", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Recoverable",
+                NSLocalizedRecoveryOptionsErrorKey: ["Try Again", "Cancel"],
+                NSRecoveryAttempterErrorKey: RecoveryAttempter(),
+            ])
+            let attempted = UITripwire.shared.expecting {
+                harness.document.presentError(error, modalFor: harness.window, delegate: nil, didPresent: nil, contextInfo: nil)
+            }
+            #expect(harness.presenter.presentedErrors.isEmpty)
+            #expect(!attempted.isEmpty, "AppKit's own presentation (blocked by the tripwire)")
+        }
+
+        @Test func theSheetPresenterShowsOneAlert() throws {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
+            let attempted = UITripwire.shared.expecting {
+                SheetPresenter().presentError(NSError(domain: "test", code: 2), on: window) {}
+            }
+            #expect(attempted.count == 1)
+            #expect(attempted.first?.hasPrefix("NSAlert.beginSheetModal") == true)
+        }
+
+        // 6. Undo after a save is a new change, even back to "no colour".
+        @Test func undoingARecolourAfterASaveIsANewChange() async throws {
+            let harness = try await AnnotationHarness(data: ReviewFixtures.highlightWithoutColor())
+            defer { harness.close() }
+            let highlight = try #require(harness.pdf.page(at: 0)?.annotations.first { $0.type == "Highlight" })
+            try harness.editor.setColor(AnnotationColorPreset.green.pdfColor, of: highlight)
+            try await harness.save()
+            harness.undo.undo()
+            #expect(harness.editor.pending.count == 1)
+            #expect(harness.document.isDocumentEdited)
+        }
+
+        // 7. The tripwire ends a blocked sheet with Cancel.
+        @Test func aBlockedSheetStillFinishes() async throws {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
+            var response: NSApplication.ModalResponse?
+            UITripwire.shared.expecting {
+                NSAlert().beginSheetModal(for: window) { response = $0 }
+            }
+            for _ in 0..<50 where response == nil { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(response == .cancel)
+        }
+
+        // 8. The same-file check repeats when the bytes are written.
+        @Test func theWriteChecksTheDestinationAgain() async throws {
+            let harness = try await AnnotationHarness(corpus: "classic-xref")
+            defer { harness.close() }
+            try harness.highlight("quick brown fox")
+            // The save began while the file was unchanged; another app writes it before the write.
+            harness.document.saveDestination = harness.fileURL
+            let other = try IncrementalWriter().saveInPlace(original: harness.fileBytes, changes: [
+                .addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 50, y: 50), contents: "x")),
+            ]).data
+            try other.write(to: harness.fileURL)
+            let temporary = harness.folder.url.appending(path: "temporary.pdf")
+            #expect(throws: (any Error).self) {
+                try harness.document.write(to: temporary, ofType: "com.adobe.pdf", for: .saveAsOperation, originalContentsURL: harness.fileURL)
+            }
+            #expect(!FileManager.default.fileExists(atPath: temporary.path))
+            harness.document.saveDestination = nil
+        }
+
+        // 9. A touched file with the same bytes saves normally.
+        @Test func aTouchedButUnchangedFileSavesWithoutAQuestion() async throws {
+            let harness = try await AnnotationHarness(corpus: "classic-xref")
+            defer { harness.close() }
+            try harness.highlight("quick brown fox")
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: harness.fileURL.path)
+            harness.document.save(nil)
+            await harness.settle { !harness.document.isDocumentEdited }
+            #expect(!harness.document.isDocumentEdited)
+            #expect(try SavedFile(harness.fileBytes).lecternDescriptors.count == 1)
+            #expect(harness.presenter.changedFileQuestions == 0)
         }
     }
 }

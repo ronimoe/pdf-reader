@@ -4,7 +4,7 @@ import ReaderCore
 import Testing
 @testable import Lectern
 
-@Suite struct ReaderDocumentTests {
+@Suite(.noUI) struct ReaderDocumentTests {
     @Test func readsPDFAndKeepsOriginalBytes() throws {
         let data = try #require(TestPDF.make(pageCount: 3))
         let document = try ReaderDocument.loaded(data)

@@ -10,7 +10,7 @@ import Testing
 /// Parent suite for M4b (annotations and saving). Serialized: the tests share the app's event
 /// queue, open real windows and write real files.
 @MainActor
-@Suite(.serialized, .timeLimit(.minutes(10)))
+@Suite(.serialized, .timeLimit(.minutes(10)), .noUI)
 struct M4Tests {}
 
 /// Files from `Tests/Corpus/public`, bundled with the tests (the test host is sandboxed).
@@ -77,7 +77,8 @@ final class AnnotationHarness {
     /// Opens `file` again, sharing the store and journal of an earlier harness (a relaunch).
     init(
         file: URL, folder: TemporaryFolder, store: DocumentStateStore? = nil, journal: AnnotationJournal? = nil, password: String? = nil,
-        journalChoice: JournalChoice = .restore, staleJournalChoice: JournalChoice = .discard, defersJournalOffer: Bool = false
+        journalChoice: JournalChoice = .restore, staleJournalChoice: JournalChoice = .discard, defersJournalOffer: Bool = false,
+        inspectionDelay: Duration = .zero
     ) async throws {
         self.folder = folder
         fileURL = file
@@ -85,6 +86,7 @@ final class AnnotationHarness {
         self.journal = journal ?? AnnotationJournal(directory: folder.url.appending(path: "Journal", directoryHint: .isDirectory), debounce: .seconds(60))
         document = try ReaderDocument.opened(file)
         document.undoManager?.groupsByEvent = false
+        document.inspectionDelay = inspectionDelay
         controller = ReaderWindowController(
             document: document, passwordStore: InMemoryPasswordStore(), presenter: presenter, stateStore: self.store,
             previewPresenter: TestPreviewPresenter(), urlOpener: RecordingURLOpener(), preferences: preferences, journal: self.journal
@@ -103,7 +105,7 @@ final class AnnotationHarness {
         window.orderFrontRegardless()
         controller.splitViewController.view.layoutSubtreeIfNeeded()
         if let password { _ = controller.submitPassword(password, remember: false, purpose: .open) }
-        await waitForInspection()
+        if inspectionDelay == .zero { await waitForInspection() }
         Spin.runLoop(0.05)
     }
 

@@ -9,7 +9,7 @@ import Testing
 /// Parent suite for M3 (links, previews, split). Serialized: the click and
 /// key tests share the app's event queue and the NSWorkspace tripwire.
 @MainActor
-@Suite(.serialized, .timeLimit(.minutes(5)))
+@Suite(.serialized, .timeLimit(.minutes(5)), .noUI)
 struct M3Tests {}
 
 /// The M3 fixture: eight pages, with every kind of link on page 1, links

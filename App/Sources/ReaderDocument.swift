@@ -62,8 +62,13 @@ final class ReaderDocument: NSDocument {
     var savePanelMessage: String?
     /// What the current save wrote, until it completes.
     var lastWrite: WrittenSave?
+    /// Where the current Save, Save As or Save To goes, until it completes.
+    var saveDestination: URL?
     /// The background look at the file for saving (Saveability, descriptors, hash).
     var inspection: Task<Void, Never>?
+    /// Tests only: how long the first background check waits before reporting, so a reload can
+    /// happen while it runs. Zero in the app.
+    var inspectionDelay: Duration = .zero
 
     func resetCachedKey() { cachedKey = nil }
 

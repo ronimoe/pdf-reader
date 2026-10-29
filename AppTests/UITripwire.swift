@@ -1,5 +1,6 @@
 import AppKit
 import ObjectiveC
+import Testing
 
 /// No test may put UI on screen: alerts, save panels, error presentation and modal sessions are
 /// replaced, for the whole test process, with recorders that show nothing. A test (or a harness's
@@ -8,14 +9,32 @@ import ObjectiveC
 nonisolated final class UITripwire: @unchecked Sendable {
     static let shared = UITripwire()
 
-    private let state = Locked<(installed: Bool, calls: [String])>((false, []))
+    private let state = Locked<(installed: Bool, calls: [String], expected: [String], expecting: Int)>((false, [], [], 0))
 
+    /// Attempts to show UI that no test asked for: each one fails a test.
     var calls: [String] { state.current.calls }
+    /// Attempts a test made on purpose, inside `expecting`.
+    var expected: [String] { state.current.expected }
     var isInstalled: Bool { state.current.installed }
-    func reset() { state.withLock { $0.calls.removeAll() } }
     func record(_ call: String) {
-        state.withLock { $0.calls.append(call) }
-        print("UITripwire: blocked \(call)")
+        let wasExpected = state.withLock { s -> Bool in
+            if s.expecting > 0 { s.expected.append(call) } else { s.calls.append(call) }
+            return s.expecting > 0
+        }
+        print("UITripwire: blocked \(call)\(wasExpected ? " (expected)" : "")")
+    }
+
+    /// Runs `body`, which tries to show UI on purpose; what it tries is recorded in `expected`
+    /// and returned, not counted against any test.
+    @discardableResult
+    func expecting(_ body: () throws -> Void) rethrows -> [String] {
+        let start = state.withLock { s -> Int in
+            s.expecting += 1
+            return s.expected.count
+        }
+        defer { state.withLock { $0.expecting -= 1 } }
+        try body()
+        return Array(state.current.expected.dropFirst(start))
     }
 
     func install() {
@@ -28,8 +47,9 @@ nonisolated final class UITripwire: @unchecked Sendable {
         let tripwire = self
 
         typealias RunModal = @convention(block) (AnyObject) -> Int
-        typealias SheetModal = @convention(block) (AnyObject, NSWindow?, AnyObject?) -> Void
-        typealias Begin = @convention(block) (AnyObject, AnyObject?) -> Void
+        typealias Response = @convention(block) (Int) -> Void
+        typealias SheetModal = @convention(block) (AnyObject, NSWindow?, Response?) -> Void
+        typealias Begin = @convention(block) (AnyObject, Response?) -> Void
         typealias PresentError = @convention(block) (NSApplication, NSError) -> Bool
         typealias PresentErrorModal = @convention(block) (NSApplication, NSError, NSWindow?, AnyObject?, Selector?, UnsafeMutableRawPointer?) -> Void
         typealias RunModalForWindow = @convention(block) (NSApplication, NSWindow) -> Int
@@ -47,18 +67,28 @@ nonisolated final class UITripwire: @unchecked Sendable {
             tripwire.record("NSAlert.runModal: \((alert as? NSAlert)?.messageText ?? "?")")
             return cancel
         } as RunModal)
-        replace(NSAlert.self, "beginSheetModalForWindow:completionHandler:", { (alert: AnyObject, _, _) in
+        // Each blocked sheet still ends: its handler gets Cancel, so no flow waits forever.
+        func finish(_ handler: Response?) {
+            guard let handler else { return }
+            // AppKit calls these on the main thread and expects the answer there, later.
+            nonisolated(unsafe) let unsafeHandler = handler
+            DispatchQueue.main.async { unsafeHandler(cancel) }
+        }
+        replace(NSAlert.self, "beginSheetModalForWindow:completionHandler:", { (alert: AnyObject, _, handler) in
             tripwire.record("NSAlert.beginSheetModal: \((alert as? NSAlert)?.messageText ?? "?")")
+            finish(handler)
         } as SheetModal)
         replace(NSSavePanel.self, "runModal", { (_: AnyObject) in
             tripwire.record("NSSavePanel.runModal")
             return cancel
         } as RunModal)
-        replace(NSSavePanel.self, "beginSheetModalForWindow:completionHandler:", { (_: AnyObject, _, _) in
+        replace(NSSavePanel.self, "beginSheetModalForWindow:completionHandler:", { (_: AnyObject, _, handler) in
             tripwire.record("NSSavePanel.beginSheetModal")
+            finish(handler)
         } as SheetModal)
-        replace(NSSavePanel.self, "beginWithCompletionHandler:", { (_: AnyObject, _) in
+        replace(NSSavePanel.self, "beginWithCompletionHandler:", { (_: AnyObject, handler) in
             tripwire.record("NSSavePanel.begin")
+            finish(handler)
         } as Begin)
         replace(NSApplication.self, "presentError:", { (_, error) in
             tripwire.record("NSApplication.presentError: \(error.localizedDescription)")
@@ -81,4 +111,30 @@ nonisolated final class LecternTestPrincipal: NSObject {
         super.init()
         UITripwire.shared.install()
     }
+}
+
+/// Fails any test during which UI was attempted that the test didn't expect. Applied to every
+/// top-level suite, and recursive, so it covers every test in the bundle. With suites running in
+/// parallel an attempt may be reported against a test running at the same moment; either way a
+/// test fails.
+struct NoUITrait: SuiteTrait, TestTrait, TestScoping {
+    var isRecursive: Bool { true }
+
+    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+        guard testCase != nil else {
+            try await function()
+            return
+        }
+        let before = UITripwire.shared.calls.count
+        try await function()
+        let attempted = UITripwire.shared.calls.dropFirst(before)
+        if !attempted.isEmpty {
+            Issue.record("A test tried to show UI: \(Array(attempted))")
+        }
+    }
+}
+
+extension Trait where Self == NoUITrait {
+    /// No UI may appear: see `UITripwire`.
+    static var noUI: Self { Self() }
 }

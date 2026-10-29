@@ -4,7 +4,7 @@ import Testing
 @testable import Lectern
 
 @MainActor
-@Suite struct MainMenuTests {
+@Suite(.noUI) struct MainMenuTests {
     private let menu = MainMenu.make()
 
     private func item(_ action: Selector, key: String? = nil) -> NSMenuItem? {
@@ -76,7 +76,7 @@ import Testing
 }
 
 @MainActor
-@Suite struct EmptyStateTests {
+@Suite(.noUI) struct EmptyStateTests {
     @Test func showsOnlyWhileNoDocumentIsOpen() {
         let recent = URL(fileURLWithPath: "/tmp/Recent Paper.pdf")
         let controller = EmptyStateController(recentURLs: { [recent] }, openDocument: {}, openURLs: { _ in })
@@ -134,7 +134,7 @@ import Testing
 /// Exercises the real shared document controller. Serialized: it opens and
 /// closes documents in the running app.
 @MainActor
-@Suite(.serialized) struct DocumentControllerTests {
+@Suite(.serialized, .noUI) struct DocumentControllerTests {
     @Test func sharedControllerIsTheReaderSubclass() {
         #expect(NSDocumentController.shared is ReaderDocumentController)
     }

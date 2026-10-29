@@ -132,7 +132,7 @@ extension ReaderPDFView {
 
     /// Tab and Shift-Tab never reach PDFKit while the document has form fields: they move
     /// between the window's controls instead, so no field can take focus (A5, M0b Q3).
-    public func handleFormKey(_ event: NSEvent) -> Bool {
+    func handleFormKey(_ event: NSEvent) -> Bool {
         guard event.keyCode == 48, documentHasFormFields else { return false }
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         guard modifiers.subtracting(.shift).isEmpty else { return false }

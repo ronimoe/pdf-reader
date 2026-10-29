@@ -7,7 +7,7 @@ import Testing
 @testable import Lectern
 
 @MainActor
-@Suite(.serialized) struct LifecycleTests {
+@Suite(.serialized, .noUI) struct LifecycleTests {
     @Test func quittingWritesEveryOpenDocumentsPosition() throws {
         // The shared store, as the app uses it (a throwaway folder in tests).
         let store = try #require(AppEnvironment.stateStore)
@@ -57,7 +57,7 @@ import Testing
 }
 
 @MainActor
-@Suite struct TrashTests {
+@Suite(.noUI) struct TrashTests {
     @Test func aTrashOnAnyVolumeCounts() {
         #expect(ReaderDocument.isInTrash(URL(fileURLWithPath: "/Volumes/Backup/.Trashes/501/paper.pdf")))
         #expect(ReaderDocument.isInTrash(URL(fileURLWithPath: "/Users/someone/.Trash/paper.pdf")))
@@ -75,7 +75,7 @@ import Testing
 }
 
 @MainActor
-@Suite struct TextInventoryRaceTests {
+@Suite(.noUI) struct TextInventoryRaceTests {
     @Test func aStaleTextCheckNeverOverwritesTheReloadedDocument() async throws {
         // A long document's check is still running when the file reloads as
         // a short scanned one, whose check finishes first.

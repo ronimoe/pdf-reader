@@ -69,8 +69,10 @@ extension ReaderDocument {
         guard let editor = annotations else { return nil }
         let data = originalData
         let readOnly = isReadOnlyLocation
+        let delay = inspectionDelay
         let task = Task { [weak self, weak editor] in
             let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly)
+            if delay > .zero { try? await Task.sleep(for: delay) }
             guard let self, let editor, editor === self.annotations, editor.original == data else { return }
             editor.load(info)
             self.readerWindowController?.annotationInfoDidLoad()
@@ -116,6 +118,13 @@ extension ReaderDocument {
     override func save(withDelegate delegate: Any?, didSave didSaveSelector: Selector?, contextInfo: UnsafeMutableRawPointer?) {
         switch saveRoute {
         case .inPlace:
+            // The bytes are what was loaded (the route checked). A file only touched since, with
+            // the same bytes, is the same file: NSDocument mustn't treat it as changed by another
+            // app and ask over B7's head.
+            if let url = fileURL, let onDisk = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+               onDisk != fileModificationDate {
+                fileModificationDate = onDisk
+            }
             super.save(withDelegate: delegate, didSave: didSaveSelector, contextInfo: contextInfo)
         case .nothingToSave:
             // Nothing changed, so nothing is written; a caller waiting for an answer still gets one.
@@ -174,6 +183,8 @@ extension ReaderDocument {
 
     /// True when both URLs are the same file on disk (hard links and other paths included).
     nonisolated static func isSameFile(_ a: URL, _ b: URL) -> Bool {
+        // A symbolic link's own identifier is the link's, not its target's.
+        let a = a.resolvingSymlinksInPath(), b = b.resolvingSymlinksInPath()
         let first = try? a.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
         let second = try? b.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
         guard let first = first as? NSObject, let second = second as? NSObject else { return false }
@@ -208,6 +219,11 @@ extension ReaderDocument {
         guard let editor = annotations else { throw Self.saveError("There is nothing to save.") }
         let original = originalData
         let changes = editor.pending.changes
+        if operation != .saveOperation, let destination = saveDestination, let refusal = refusalToSave(to: destination) {
+            // Checked again just before the bytes are written: the file may have changed since
+            // the save began (another app, or a link made meanwhile).
+            throw refusal
+        }
         if operation == .saveOperation {
             guard editor.saveability == .inPlace, !fileWasRemoved else { throw Self.saveError(.copyOnly([])) }
             // Never append to bytes that are no longer the file (B7, Rule 7).
@@ -250,8 +266,10 @@ extension ReaderDocument {
             completionHandler(refusal)
             return
         }
+        saveDestination = url
         super.save(to: url, ofType: typeName, for: saveOperation) { error in
             MainActor.assumeIsolated {
+                self.saveDestination = nil
                 let written = self.lastWrite
                 self.lastWrite = nil
                 if error == nil, let written { self.didWrite(written, to: url) }
@@ -308,15 +326,23 @@ extension ReaderDocument {
     /// NSDocument reports save errors here. They go through the window's presenter, which tests
     /// replace, so no test ever puts an alert on screen. The didPresent callback still fires.
     override func presentError(_ error: any Error, modalFor window: NSWindow, delegate: Any?, didPresent didPresentSelector: Selector?, contextInfo: UnsafeMutableRawPointer?) {
-        guard let controller = readerWindowController else {
-            super.presentError(error, modalFor: window, delegate: delegate, didPresent: didPresentSelector, contextInfo: contextInfo)
-            return
-        }
-        controller.presenter.presentError(error, on: window) {
+        let nsError = error as NSError
+        func didPresent() {
             guard let target = delegate as? NSObject, let selector = didPresentSelector, target.responds(to: selector) else { return }
             typealias DidPresent = @convention(c) (NSObject, Selector, ObjCBool, UnsafeMutableRawPointer?) -> Void
             unsafeBitCast(target.method(for: selector), to: DidPresent.self)(target, selector, false, contextInfo)
         }
+        // A cancelled save isn't an error to show, as AppKit's own presentation knows.
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSUserCancelledError {
+            didPresent()
+            return
+        }
+        // Errors that offer recovery need AppKit's alert, which runs the recovery attempter.
+        guard let controller = readerWindowController, nsError.recoveryAttempter == nil else {
+            super.presentError(error, modalFor: window, delegate: delegate, didPresent: didPresentSelector, contextInfo: contextInfo)
+            return
+        }
+        controller.presenter.presentError(error, on: window) { didPresent() }
     }
 
     static func saveError(_ error: PDFSaveError) -> NSError {

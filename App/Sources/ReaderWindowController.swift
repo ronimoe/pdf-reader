@@ -689,7 +689,12 @@ final class ReaderWindowController: NSWindowController {
         annotationEditorDidChange()
         configureSidebar(for: readerDocument, pdf: pdf)
         refreshStoredIdentity()
-        if let storedDocumentID { journal?.remove(storedDocumentID) }
+        if let storedDocumentID {
+            // A journal not yet offered (the file changed while it was being checked, or behind a
+            // password prompt) is set aside, to be offered as no longer fitting. Only a journal of
+            // this session's own changes, already superseded by the reload, is deleted.
+            if didCheckJournal { journal?.remove(storedDocumentID) } else { journal?.setAside(storedDocumentID) }
+        }
         readerDocument.inspectForAnnotations()
         if let query, !query.isEmpty {
             // Same session: no new history entry.

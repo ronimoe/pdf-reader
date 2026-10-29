@@ -7,7 +7,7 @@ import Testing
 /// Parent suite for the M0b PDFKit spikes. Everything runs serialized: the
 /// tests share the main run loop, a process-wide NSWorkspace tripwire, and
 /// some of them take timing measurements.
-@Suite(.serialized, .timeLimit(.minutes(5)))
+@Suite(.serialized, .timeLimit(.minutes(5)), .noUI)
 struct M0bSpikes {}
 
 /// Observations are printed with a fixed prefix so a run can be grepped:

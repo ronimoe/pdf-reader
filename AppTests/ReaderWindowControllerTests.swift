@@ -53,7 +53,7 @@ private struct Harness {
 }
 
 @MainActor
-@Suite struct ReaderWindowLayoutTests {
+@Suite(.noUI) struct ReaderWindowLayoutTests {
     @Test func windowIsTabbedFullScreenCapableAndTitled() throws {
         let harness = try Harness(try #require(TestPDF.make(pageCount: 2)))
         defer { harness.close() }
@@ -161,7 +161,7 @@ private struct Harness {
 }
 
 @MainActor
-@Suite struct ReaderWindowZoomTests {
+@Suite(.noUI) struct ReaderWindowZoomTests {
     @Test func zoomCommandsStepAndActualSizeIsOne() throws {
         let harness = try Harness(try #require(TestPDF.make(pageCount: 2)))
         defer { harness.close() }
@@ -262,7 +262,7 @@ private struct Harness {
 }
 
 @MainActor
-@Suite struct ReaderWindowPasswordTests {
+@Suite(.noUI) struct ReaderWindowPasswordTests {
     @Test func lockedDocumentAsksForThePasswordBeforeShowingPages() throws {
         let harness = try Harness(try #require(TestPDF.encrypted(user: "user", owner: "owner")))
         defer { harness.close() }
@@ -415,7 +415,7 @@ private struct Harness {
 }
 
 @MainActor
-@Suite struct ReaderWindowPermissionTests {
+@Suite(.noUI) struct ReaderWindowPermissionTests {
     @Test func blockedCopyIsExplainedNotIgnored() throws {
         let harness = try Harness(try #require(TestPDF.encrypted(user: nil, owner: "owner", allowsPrinting: true)))
         defer { harness.close() }
@@ -512,7 +512,7 @@ private struct Harness {
 }
 
 @MainActor
-@Suite struct ReaderToolbarTests {
+@Suite(.noUI) struct ReaderToolbarTests {
     @Test func everyToolbarItemHasALabelAnImageAndATooltip() throws {
         let harness = try Harness(try #require(TestPDF.make(pageCount: 1)))
         defer { harness.close() }
@@ -563,7 +563,7 @@ private struct Harness {
 }
 
 @MainActor
-@Suite struct ReaderContextMenuTests {
+@Suite(.noUI) struct ReaderContextMenuTests {
     private func rightClick(in harness: Harness) throws -> NSEvent {
         try #require(NSEvent.mouseEvent(
             with: .rightMouseDown, location: NSPoint(x: 100, y: 100), modifierFlags: [], timestamp: 0,
