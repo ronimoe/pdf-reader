@@ -569,8 +569,8 @@ The policy is to use system frameworks first. Every dependency shipped inside th
   - that the kernel reports the process sandboxed, inside its container,
   - PDFKit and the incremental writer on a PDF made in memory.
 
-  The script requires exit 0 within 30 s, no window owned by the process at any point, and no crash report.
-  - A probe that the sandbox refuses to read a file outside the container was tried and dropped: started directly from a shell, the read succeeded, so it proved nothing.
+  The script requires exit 0 within 30 s, no window owned by the process (polled every 0.1 s while it runs, which is under a second), and no crash report.
+  - **Unexplained:** a probe that the sandbox refuses to read a file outside the container was tried and dropped. Started directly from a shell, the self-check read a file in `$TMPDIR` and one in the home folder, although the kernel reported the process sandboxed and it ran in its container. The xcodebuild-hosted test host can't read the repository, so the direct launch is the likely difference, but that is inferred, not shown. A normally launched copy still has to be checked by hand ([release-checklist.md](release-checklist.md) §5).
 - **Publishing is manual** ([release-checklist.md](release-checklist.md)): tag `v1.0.0`, upload the DMG, its `.sha256`, the zip and `appcast.xml` to a full (not draft, not pre-release) GitHub Release, and push the cask to `ronimoe/homebrew-lectern`. Nothing in the scripts publishes.
 
 ## 9. Testing

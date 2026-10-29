@@ -43,7 +43,8 @@ Lectern 1.0 is a reader first, with highlights and notes. This page lists what i
 ## Performance
 
 - **The performance targets are provisional.** They were measured on an M3 Pro, not on the base M1 with 8 GB of memory that Lectern's target hardware is, so a slower Mac may not meet them yet. [performance.md](performance.md) has the numbers.
-- **Saving runs on the main thread.** A save of one highlight into a 3,270-page manual takes well under a second; the window doesn't respond during it.
+- **Saving runs on the main thread.** On an ordinary paper it takes milliseconds, but saving one highlight into a 3,270-page, 15 MB manual took 0.73 s on an M3 Pro, and the window doesn't respond during it. Most of that is the check that the written file is intact.
+- **Memory grows on very long documents.** macOS's PDF engine keeps a cache for every page it has drawn while a document is open. In a headless measurement, drawing every page of the 3,270-page manual once added about 3 GB, released only when the document closes. Closing and reopening a long document frees it. How this behaves when reading on screen with 8 GB of memory hasn't been checked yet.
 
 ## Not verified by hand yet
 

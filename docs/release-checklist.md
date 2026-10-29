@@ -72,7 +72,7 @@ None of these can be done headlessly; the automated suites cover what they can (
 
 | Check | How | From |
 |---|---|---|
-| **Performance on a base M1 with 8 GB** (A6) | `scripts/perf.sh` on that Mac; adjust the thresholds in `AppTests/M6/RepresentativePerformanceTests.swift` and [performance.md](performance.md) from its numbers | M6 |
+| **Performance on a base M1 with 8 GB** (A6) | `scripts/perf.sh` on that Mac; adjust the thresholds in `AppTests/M6/RepresentativePerformanceTests.swift` and [performance.md](performance.md) from its numbers. Watch especially the 0.73 s main-thread save on the 3,270-page manual, and the footprint in Activity Monitor while reading through that manual on screen | M6 |
 | **Open Anyway** | Download the DMG in Safari, drag to Applications, open, click Done, then System Settings ▸ Privacy & Security ▸ Open Anyway | M0c, M6a |
 | **The live first-launch alert** | On a clean account, first launch asks once about update checks; "Don't Check" is the default | M5 |
 | **Sparkle's own windows, HTTPS from GitHub** | With 1.0.0 installed and checks on, publish a 1.0.1 (build 2) and let the app find, download and install it from GitHub; a wrongly signed archive must be refused | M0c, M5 |
@@ -85,6 +85,7 @@ None of these can be done headlessly; the automated suites cover what they can (
 | **A cancelled quit through AppKit's real prompt** | Make an unsaved highlight, ⌘Q, Cancel; the session must still be saved on the next quit | M5 |
 | **The cask's `zap`** | `brew uninstall --zap --cask ronimoe/lectern/lectern`; both folders listed in INSTALL.md are gone or in the Trash | M6a |
 | **Real drag-and-drop** | Drag a PDF onto the Dock icon and onto a window; drag across text to select | M1, M4b |
+| **The sandbox refuses reads outside the container** | In a normally launched copy, open a PDF, then check Console for a `Sandbox: Lectern deny file-read-data` line when it touches anything you didn't open; the headless self-check, started directly from a shell, was able to read files in the home folder (architecture §8) | M6 |
 | **The Keychain prompt after an update** | Remember a password, update, reopen the PDF; expect one Keychain question (B6) | M0c |
 
 Record the outcome of each in `docs/progress.md` (or a release note), and move anything that fails into `docs/known-limitations.md`.
