@@ -14,19 +14,24 @@ public struct DocumentState: Codable, Hashable, Sendable {
     /// One history per pane (B2).
     public var history: [PaneID: HistoryStack]
     public var viewSettings: ViewSettings
+    /// The split view (B3), or nil for a single pane. `anchor` is always the
+    /// first pane's place.
+    public var split: SplitState?
 
     public init(
         identity: DocumentIdentity,
         lastOpened: Date = Date(),
         anchor: ReadingAnchor? = nil,
         history: [PaneID: HistoryStack] = [:],
-        viewSettings: ViewSettings = ViewSettings()
+        viewSettings: ViewSettings = ViewSettings(),
+        split: SplitState? = nil
     ) {
         self.identity = identity
         self.lastOpened = lastOpened
         self.anchor = anchor
         self.history = history
         self.viewSettings = viewSettings
+        self.split = split
     }
 
     /// The positions moved onto a file that changed at the same place and
@@ -35,11 +40,12 @@ public struct DocumentState: Codable, Hashable, Sendable {
         var copy = self
         copy.anchor = anchor?.clamped(toPageCount: pageCount)
         copy.history = history.mapValues { $0.clamped(toPageCount: pageCount) }
+        copy.split?.secondaryAnchor = split?.secondaryAnchor?.clamped(toPageCount: pageCount)
         return copy
     }
 
     private enum CodingKeys: String, CodingKey {
-        case identity, lastOpened, anchor, history, viewSettings
+        case identity, lastOpened, anchor, history, viewSettings, split
     }
 
     public init(from decoder: any Decoder) throws {
@@ -49,5 +55,28 @@ public struct DocumentState: Codable, Hashable, Sendable {
         anchor = (try? container.decodeIfPresent(ReadingAnchor.self, forKey: .anchor)) ?? nil
         history = (try? container.decodeIfPresent([PaneID: HistoryStack].self, forKey: .history)) ?? [:]
         viewSettings = (try? container.decodeIfPresent(ViewSettings.self, forKey: .viewSettings)) ?? ViewSettings()
+        split = (try? container.decodeIfPresent(SplitState.self, forKey: .split)) ?? nil
+    }
+}
+
+/// A split tab's second pane (B3): its place, and which pane had focus.
+/// Its history is stored under `PaneID.secondary` in `DocumentState.history`.
+public struct SplitState: Codable, Hashable, Sendable {
+    public var secondaryAnchor: ReadingAnchor?
+    public var focusedPane: PaneID
+
+    public init(secondaryAnchor: ReadingAnchor?, focusedPane: PaneID = .primary) {
+        self.secondaryAnchor = secondaryAnchor
+        self.focusedPane = focusedPane
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case secondaryAnchor, focusedPane
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        secondaryAnchor = (try? container.decodeIfPresent(ReadingAnchor.self, forKey: .secondaryAnchor)) ?? nil
+        focusedPane = (try? container.decodeIfPresent(PaneID.self, forKey: .focusedPane)) ?? .primary
     }
 }

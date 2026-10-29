@@ -348,6 +348,27 @@ private struct BrokenBookmarks: FileBookmarking {
         #expect(state.anchor?.pageIndex == 3)
         #expect(state.history.isEmpty)
         #expect(state.viewSettings == ViewSettings())
+        // State written before the split view (M3) has none.
+        #expect(state.split == nil)
+    }
+
+    @Test func theSplitRoundTripsWithEachPanesHistory() throws {
+        let identity = DocumentIdentity(bookmark: nil, fileIdentifiers: ["aa"], pageCount: 9, fileSize: 1, lastKnownPath: "/a.pdf", fingerprint: "f")
+        let second = ReadingAnchor(pageIndex: 7, pointInPage: CGPoint(x: 0, y: 400), scale: 1)
+        var state = DocumentState(identity: identity)
+        state.history[.primary] = HistoryStack(backList: [ReadingAnchor(pageIndex: 1, pointInPage: .zero, scale: 1)])
+        state.history[.secondary] = HistoryStack(backList: [ReadingAnchor(pageIndex: 2, pointInPage: .zero, scale: 1)])
+        state.split = SplitState(secondaryAnchor: second, focusedPane: .secondary)
+        let data = try JSONEncoder().encode(state)
+        let decoded = try DocumentStateStore.decoder.decode(DocumentState.self, from: data)
+        #expect(decoded.split == state.split)
+        #expect(decoded.history == state.history)
+        // A file that shrank clamps the second pane's place too.
+        #expect(decoded.clamped(toPageCount: 3).split?.secondaryAnchor?.pageIndex == 2)
+        // A damaged split entry is dropped, not the whole state.
+        let damaged = #"{"identity":{"lastKnownPath":"/a.pdf","fileIdentifiers":["aa"]},"split":{"focusedPane":42}}"#
+        let partial = try DocumentStateStore.decoder.decode(DocumentState.self, from: Data(damaged.utf8))
+        #expect(partial.split?.focusedPane == .primary)
     }
 
     @Test func pathsThroughSymlinksCompareEqual() throws {
