@@ -17,19 +17,33 @@ final class KeyableWindow: NSWindow {
     override var isKeyWindow: Bool { pretendsKey || super.isKeyWindow }
 }
 
-/// Hosts a view in a window placed far off every screen. Nothing is visible
-/// and no privacy prompt is involved.
+/// Hosts a view in a window nobody can see or click: fully transparent
+/// (`alphaValue = 0`) and click-through (`ignoresMouseEvents`). No privacy
+/// prompt is involved.
+///
+/// It sits on a real screen rather than far off-screen: events that pass
+/// through the app's event queue are converted to screen coordinates and
+/// back, and for a window outside every display that round trip corrupts
+/// `locationInWindow` (observed: a queued mouse-up at (237, 791) came back
+/// as (-3153, -2508)). PDFKit's link tracking peeks the queued mouse-up, so
+/// this matters.
 final class OffscreenHost {
     let window: KeyableWindow
 
     init(content: NSView, size: NSSize = NSSize(width: 700, height: 900)) {
+        // At the primary screen's origin, so window and screen coordinates
+        // coincide (see `Synth.cgMouse`).
+        let origin = NSScreen.screens.first?.frame.origin ?? .zero
         window = KeyableWindow(
-            contentRect: NSRect(origin: CGPoint(x: -30_000, y: -30_000), size: size),
+            contentRect: NSRect(origin: origin, size: size),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
         window.isReleasedWhenClosed = false
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.hasShadow = false
         window.acceptsMouseMovedEvents = true
         window.contentView = content
         window.orderFrontRegardless()
@@ -84,6 +98,22 @@ enum Synth {
         )!
     }
 
+    /// A mouse event built from a CGEvent with an explicit global location.
+    /// `NSEvent.mouseEvent(with:location:…)` events that pass through the
+    /// app's queue come back carrying the live cursor position instead of
+    /// their own; CGEvent-backed ones keep theirs. Only ever handed to
+    /// `NSApp.postEvent` or a view, never posted to a system event tap.
+    static func cgMouse(_ type: CGEventType, at point: NSPoint, in window: NSWindow) -> NSEvent {
+        let screenPoint = window.convertPoint(toScreen: point)
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let global = CGPoint(x: screenPoint.x, y: primaryHeight - screenPoint.y)
+        let cgEvent = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: global, mouseButton: .left)!
+        cgEvent.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.windowNumber))
+        cgEvent.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.windowNumber))
+        cgEvent.setIntegerValueField(.mouseEventClickState, value: 1)
+        return NSEvent(cgEvent: cgEvent)!
+    }
+
     /// The view AppKit would deliver a click at `point` to.
     static func hitView(at point: NSPoint, in window: NSWindow) -> NSView? {
         guard let content = window.contentView else { return nil }
@@ -96,15 +126,19 @@ enum Synth {
     /// as a window-activating first click and drops it.) The mouse-up is
     /// queued first, so a view that runs its own tracking loop finds it
     /// instead of hanging; if nobody consumed it, it is delivered afterwards.
+    ///
+    /// The queued copy is CGEvent-backed so it keeps its location (PDFKit's
+    /// link tracking reads it; see `cgMouse`); `mouseUp` itself gets the
+    /// original NSEvent.
     @discardableResult
     static func click(at point: NSPoint, in window: NSWindow) -> NSView? {
         guard let target = hitView(at: point, in: window) else { return nil }
         let down = mouse(.leftMouseDown, at: point, in: window)
         let up = mouse(.leftMouseUp, at: point, in: window)
-        NSApp.postEvent(up, atStart: true)
+        NSApp.postEvent(cgMouse(.leftMouseUp, at: point, in: window), atStart: true)
         target.mouseDown(with: down)
-        if let pending = NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) {
-            target.mouseUp(with: pending)
+        if NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) != nil {
+            target.mouseUp(with: up)
         }
         Spin.runLoop(0.1)
         return target
@@ -114,6 +148,8 @@ enum Synth {
         window.sendEvent(mouse(.mouseMoved, at: point, in: window, clickCount: 0))
     }
 
+    /// A key press delivered to the window's first responder, as an active
+    /// key window would.
     static func key(_ characters: String, keyCode: UInt16, in window: NSWindow, modifiers: NSEvent.ModifierFlags = []) {
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             let event = NSEvent.keyEvent(
@@ -123,9 +159,14 @@ enum Synth {
                 characters: characters, charactersIgnoringModifiers: characters,
                 isARepeat: false, keyCode: keyCode
             )!
-            window.sendEvent(event)
+            let responder = window.firstResponder ?? window
+            if type == .keyDown { responder.keyDown(with: event) } else { responder.keyUp(with: event) }
         }
         Spin.runLoop(0.05)
+    }
+
+    static func type(_ text: String, in window: NSWindow) {
+        for character in text { key(String(character), keyCode: 0, in: window) }
     }
 
     static let tabKeyCode: UInt16 = 48

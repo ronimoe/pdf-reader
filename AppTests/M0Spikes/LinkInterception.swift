@@ -84,8 +84,12 @@ final class InterceptingPDFView: PDFView {
         return LinkClassifier.classify(annotation)
     }
 
+    var eventLog: [String] = []
+
     override func mouseDown(with event: NSEvent) {
-        if let target = linkTarget(atWindowPoint: event.locationInWindow) {
+        let target = linkTarget(atWindowPoint: event.locationInWindow)
+        eventLog.append("down at \(event.locationInWindow) target=\(String(describing: target))")
+        if let target {
             pendingLink = target   // swallow: PDFKit never starts link tracking
             return
         }
@@ -93,6 +97,7 @@ final class InterceptingPDFView: PDFView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        eventLog.append("up at \(event.locationInWindow) pending=\(String(describing: pendingLink))")
         if let target = pendingLink {
             pendingLink = nil
             if linkTarget(atWindowPoint: event.locationInWindow) == target { route(target) }

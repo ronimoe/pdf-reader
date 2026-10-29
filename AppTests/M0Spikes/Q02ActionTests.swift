@@ -143,7 +143,7 @@ extension M0bSpikes {
             view.spikeLoad(document)
             let point = view.windowPoint(centerOf: try link("goto-explicit", in: document))
             let target = try #require(Synth.hitView(at: point, in: host.window))
-            NSApp.postEvent(Synth.mouse(.leftMouseUp, at: point, in: host.window), atStart: true)
+            NSApp.postEvent(Synth.cgMouse(.leftMouseUp, at: point, in: host.window), atStart: true)
             target.mouseDown(with: Synth.mouse(.leftMouseDown, at: point, in: host.window))
             let performedDuringDown = view.performed
             let upStillQueued = NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) != nil

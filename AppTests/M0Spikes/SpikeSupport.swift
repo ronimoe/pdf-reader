@@ -118,17 +118,50 @@ nonisolated enum PDFBytes {
         String(data: data, encoding: .isoLatin1) ?? ""
     }
 
+    /// The file as text with every run of whitespace collapsed to one space.
+    /// PDFKit wraps dictionaries across lines (`/Subtype\n/Highlight`), so
+    /// every token search works on this form.
+    static func flat(_ data: Data) -> String {
+        flatten(text(data))
+    }
+
+    static func flatten(_ string: String) -> String {
+        var out = String.UnicodeScalarView()
+        var lastWasSpace = false
+        for scalar in string.unicodeScalars {
+            let isSpace = scalar == " " || scalar == "\n" || scalar == "\r" || scalar == "\t"
+            if isSpace {
+                if !lastWasSpace { out.append(" ") }
+                lastWasSpace = true
+            } else {
+                out.append(scalar)
+                lastWasSpace = false
+            }
+        }
+        return String(out)
+    }
+
     static func count(_ needle: String, in data: Data) -> Int {
-        text(data).components(separatedBy: needle).count - 1
+        flat(data).components(separatedBy: needle).count - 1
     }
 
     static func contains(_ needle: String, in data: Data) -> Bool {
-        text(data).contains(needle)
+        flat(data).contains(needle)
     }
 
-    /// Every top-level `N G obj … endobj` body, in file order.
+    /// Whether the PDF name `/Name` occurs as a whole token (so `/AA` does
+    /// not match `/AAAAAB+Helvetica`).
+    static func containsName(_ name: String, in data: Data) -> Bool {
+        let escaped = NSRegularExpression.escapedPattern(for: name)
+        guard let regex = try? NSRegularExpression(pattern: "\(escaped)(?![A-Za-z0-9+_.-])") else { return false }
+        let source = flat(data)
+        return regex.firstMatch(in: source, range: NSRange(location: 0, length: (source as NSString).length)) != nil
+    }
+
+    /// Every top-level `N G obj … endobj` body, in file order, with
+    /// whitespace collapsed.
     static func objects(in data: Data) -> [(number: Int, body: String)] {
-        let source = text(data)
+        let source = flat(data)
         guard let regex = try? NSRegularExpression(
             pattern: "(\\d+) \\d+ obj(.*?)endobj", options: [.dotMatchesLineSeparators]
         ) else { return [] }
@@ -246,6 +279,24 @@ nonisolated enum BigPDF {
         }
         context.closePDF()
         return data as Data
+    }
+}
+
+/// Writes spike outputs into the test host's (sandbox container) temporary
+/// directory, so they can be inspected by hand, e.g. with `qpdf --check`.
+nonisolated enum SpikeArtifacts {
+    static var directory: URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("m0b-spikes", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    @discardableResult
+    static func save(_ data: Data, as name: String) -> URL {
+        let url = directory.appendingPathComponent(name)
+        try? data.write(to: url)
+        SpikeLog.note("artifact", url.path)
+        return url
     }
 }
 

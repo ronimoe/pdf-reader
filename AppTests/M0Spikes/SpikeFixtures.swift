@@ -62,12 +62,12 @@ nonisolated enum SpikeFixtures {
         let calcOrder = "[\(20 + names.firstIndex(of: "out_calc")!) 0 R \(20 + names.firstIndex(of: "n_sum")!) 0 R]"
         objects[1] = "<< /Type /Catalog /Pages 2 0 R /OpenAction 40 0 R /Names << /JavaScript 41 0 R >> /AcroForm << /Fields [\(fieldRefs.joined(separator: " "))] /CO \(calcOrder) /DA (/Helv 12 Tf 0 g) /DR << /Font << /Helv 10 0 R >> >> >> /AA << /WC 43 0 R >> >>"
         objects[2] = "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"
-        objects[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 10 0 R >> >> /Annots [\(fieldRefs.joined(separator: " ")) 30 0 R] /AA << /O 42 0 R >> >>"
+        objects[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 10 0 R >> >> /Annots [\(fieldRefs.joined(separator: " ")) 50 0 R] /AA << /O 42 0 R >> >>"
         objects[4] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 10 0 R >> >> >>"
         objects[6] = RawPDF.textContent(["JavaScript probe, page 1"], top: 760)
         objects[7] = RawPDF.textContent(["JavaScript probe, page 2"], top: 760)
         objects[10] = RawPDF.helvetica
-        objects[30] = "<< /Type /Annot /Subtype /Link /Rect [72 100 300 140] /Border [0 0 1] /Contents (js-link) /A \(setField("out_link")) >>"
+        objects[50] = "<< /Type /Annot /Subtype /Link /Rect [72 100 300 140] /Border [0 0 1] /Contents (js-link) /A \(setField("out_link")) >>"
         objects[40] = js("this.getField(\"out_open\").value = \"JS\" + \"_RAN\"; this.pageNum = 1;")
         objects[41] = "<< /Names [(lectern) 44 0 R] >>"
         objects[42] = setField("out_page")
