@@ -31,6 +31,12 @@ This document answers the technical questions that [product-spec.md](product-spe
 - the empty state,
 - the password prompt.
 
+**The sidebar's lists are AppKit** *(Amended 2026-10-29, M2)*
+- The outline, thumbnails and search results are `NSOutlineView` and `NSTableView`, not SwiftUI lists. The section picker and its container are AppKit too (`SidebarViewController` in ReaderUI).
+- **Why:** a click and Return must jump and add one history entry, while the arrow keys only move the selection. A SwiftUI `List` can't tell a keyboard selection change from a click. Table rows are also created lazily, which is what lazy thumbnails need, and tables can be driven in tests without rendering.
+- Go to Page is a SwiftUI sheet, like the password prompt.
+- **Adding a section (M4, M5):** add a `SidebarSection` case and a `SidebarSectionViewController` subclass.
+
 **The empty state and untitled documents** *(Amended 2026-10-29, M1)*
 - A reader has no untitled documents. `ReaderDocumentController`, an `NSDocumentController` subclass, refuses to make one, and New opens the Open panel instead.
 - The subclass must be created in `main.swift` before `NSApplicationMain`, because the first instance becomes `.shared`.
@@ -63,7 +69,11 @@ PDFKit (system framework) is used for rendering, text extraction and selection, 
 - **Interactive actions.** How `Launch`, `GoToR` (links to other files) and form-submit actions are exposed, and whether the app can stop them from running.
 - **Form fields.** Whether they can be made non-editable without changing the document model (see §4.3).
 - **Thread safety.** Whether thumbnails can be generated on a background thread with a second `PDFDocument` instance, and how fast that is.
+  - *(Measured 2026-10-29, M2, macOS 26.)* Yes. A second `PDFDocument` built from the same bytes on a background thread drew 100 thumbnails in 70 ms while the main thread drew from its own document at the same time.
 - **Search.** Whether `beginFindString` returns results progressively (B8) without blocking the main thread.
+  - *(Measured 2026-10-29, M2, macOS 26.)* Yes. It returns in microseconds. Matches arrive on the main thread, page by page, through `PDFDocumentDidFindMatch` and the delegate. On a 600-page document the run loop kept turning, with the longest gap about 20 ms, and the whole search took 1.2 s against 0.02 s for the blocking `findString`.
+  - `cancelFindString` stops the callbacks at once. `.diacriticInsensitive` works. There is no whole-word option, so Whole Word filters the matches.
+  - The M0b spike branch had published nothing when M2 started, so these numbers come from M2's own probe.
 
 ### 3.2 Saving annotations: **open, decided by the A1 prototype**
 
@@ -132,6 +142,15 @@ App (AppKit shell)
 - The document watches its file through `NSFilePresenter` (or `NSDocument`'s built-in handling).
 - It applies B7's rules: reload silently when there are no unsaved annotations; otherwise ask.
 
+**How M2 builds this** *(Amended 2026-10-29, M2)*
+- **Panes.** `ReaderPane` (ReaderKit) pairs a `ReaderPDFView` with a `PaneID` and its `HistoryStack`. Every jump goes through the pane, so each is recorded once. The window has one pane, `.primary`, until M3.
+- **Watching the file.** `ReaderDocument` overrides `NSDocument`'s presenter methods rather than relying on its default revert:
+  - `presentedItemDidChange` waits 0.3 s for the writer to settle, then reads the file through `NSFileCoordinator`. It reloads only if the bytes differ and parse; a half-written file is skipped until the next change.
+  - **Reload.** The bytes, the model, the original rotations, the hints, the labels and the document key are all replaced. The document is unlocked again with the session password, which is kept in memory only. The window keeps the anchor, clamps the history to the new page count, re-runs a running search in the same session, rebuilds the background workers, and shows "Reloaded" for 1.5 s.
+  - **Removed.** A deletion, or a move into a `.Trash` folder, keeps the document open with a lasting notice.
+  - **Moved or renamed.** `NSDocument` updates `fileURL`, and the stored identity is refreshed.
+- **Not done until M4:** the unsaved-annotations question.
+
 ### 4.3 Rule: what's on screen must never leak into a saved file
 
 PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's author all change the `PDFDocument` itself. So:
@@ -148,6 +167,11 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
 - **Save a Copy** and the fallback path build a **fresh `PDFDocument` from the original bytes**, then copy across only the annotations the user created, edited or deleted. They never write the on-screen model directly.
 
 ### 4.4 Link interception and preview (A3, A4)
+
+*(Amended 2026-10-29, M2)* Until M3 takes over, PDFKit still follows internal links itself. On macOS 26 a click goes through `PDFView.perform(_:)` (`PDFActionGoTo`), then `go(to: PDFDestination)`.
+- `ReaderPDFView` overrides `perform(_:)`. A `GoTo` that moved the view records the departure in the pane's history.
+- Named `GoBack` and `GoForward` actions use the pane's history, not PDFKit's own.
+- PDFView's own `goBack:`, `goForward:` and page actions are never the menu commands' selectors. A test checks that `ReaderPDFView` responds to none of them.
 
 **Owning link clicks.** `ReaderPDFView` handles clicks on links itself, using annotation hit-testing, instead of PDFKit's default handling. Clicks are routed like this:
 
@@ -193,6 +217,20 @@ The same type is stored as the reading position (A2) and used for history entrie
 - A pinch or other direct zoom turns the mode into a fixed scale.
 - Until M2's anchors land, layout and rotation changes keep the current page in view but not the exact point on it.
 
+**How the anchor works** *(Amended 2026-10-29, M2)*
+- **What it records.** The anchor is the page-space point at the top-left corner of the area below the toolbar (the safe area). Page space is the unrotated crop box, so the same anchor holds across a rotation.
+- **What restoring does.** It scrolls that point back to the same corner, as far as the document's edges allow. It does not apply the anchor's `scale`: zoom belongs to `ViewSettings`.
+- **One kept anchor.** `ReaderPDFView` keeps one anchor from the last restore, or from where the user last scrolled to. Zoom, resize, layout and rotation run inside `preservingAnchor`, which restores that anchor rather than measuring again. Reload restores it too. This avoids three problems:
+  - drift over the many steps of a live resize,
+  - the moment mid-resize when `safeAreaInsets` reads as zero,
+  - content that a later layout pass moves, such as a scroller appearing or disappearing with "Show scroll bars: Always". A scroll the user didn't make puts the kept anchor back.
+- **What counts as the user scrolling.** Scroll-wheel, mouse, gesture and non-command key events in the view (a local event monitor), and nothing else. A pinch keeps whatever place it leaves.
+- **PDFKit workarounds, measured on macOS 26:**
+  - Scrolling clamps the clip view to the document by hand. PDFKit's `constrainBoundsRect` snaps to rows in two-up layouts, which moved the reader by about a line.
+  - The anchor is measured from a point on the page. `convert(_:to: page)` for a point beside the page, in the gutter, doesn't invert `convert(_:from: page)`.
+- **History and stored positions** use the same type. A jump to a page lands on the page's visual top-left corner, rotation included. A destination with unspecified coordinates (`/Fit`) does the same.
+- **Search results** are shown a third of the way down the area below the toolbar. PDFKit's `go(to: PDFSelection)` ignores the safe area.
+
 ### 4.6 Concurrency
 
 **Main thread:** all UI, and the `PDFDocument` shared by the panes.
@@ -204,6 +242,15 @@ The same type is stored as the reading position (A2) and used for history entrie
 - The actor opens its own `PDFDocument` from the same bytes.
 - Results are cached in memory, keyed by page index and the size and scale they were drawn at.
 
+**As built in M2** *(Amended 2026-10-29)*
+- **`PageRenderer`** (ReaderKit) is an actor holding its own `PDFDocument`, unlocked with the session password. It returns `CGImage`s and applies the view rotation (B9) to its own pages. Its cache holds up to 400 images, keyed by page, pixel size and rotation. It is rebuilt when the document reloads.
+- **Thumbnail rows** ask for their image only when the table creates them. A reused row cancels its request, so pages that scrolled past are skipped before they're drawn.
+- **`TextInventory`** is a second actor with its own copy of the document. It finds the pages with no text for B8's messages, so the main thread never reads `page.string` for that.
+- **`DocumentSearch`** (ReaderKit) wraps `beginFindString`. It listens to the find notifications rather than taking over the document's delegate, and coalesces updates to every 100 ms.
+  - Whole Word reads only the text of pages that have matches, and caches it.
+  - Excerpts are built when a row is shown.
+  - The results list shows the first 5,000 matches; the count covers them all.
+
 **Saving**
 - Serialising and verifying run off the main thread, from a snapshot of the annotation state.
 - The swap into place happens on the main thread through `NSDocument`'s safe-save.
@@ -213,9 +260,13 @@ The same type is stored as the reading position (A2) and used for history entrie
 | Type | Module | Purpose |
 |------|--------|---------|
 | `ReadingAnchor` | ReaderCore | `pageIndex`, `pointInPage`, `scale`. Used for keeping your place, the stored position, and history entries |
-| `HistoryStack` | ReaderCore | Back and forward lists of `ReadingAnchor`, one per pane. A search session adds one entry (B2) |
-| `DocumentIdentity` | ReaderCore | File bookmark data, the PDF's internal `/ID` pair, page count, file size, last known path (A2) |
-| `ViewSettings` | ReaderCore | Pages, Scrolling, cover-page and right-to-left overrides (B1), rotation (B9), zoom mode. The sidebar section is added with the sidebar in M2 *(Amended 2026-10-29, M1)* |
+| `HistoryStack` | ReaderCore | Back and forward lists of `ReadingAnchor`, one per pane. A search session adds one entry (B2). *(Amended 2026-10-29, M2: the entry is the position when the session began, added when the first result is shown, so a search that never moves the view adds none. Back or Forward inside a session restarts it from the new place. Up to 100 entries each way.)* |
+| `PaneID` | ReaderCore | Names a pane (`primary`, `secondary`). Keys the stored per-pane history *(Added 2026-10-29, M2)* |
+| `DocumentIdentity` | ReaderCore | File bookmark data, the PDF's internal `/ID` pair, page count, file size, last known path (A2). *(Amended 2026-10-29, M2: also a fingerprint and a file number. The fingerprint is a SHA-256 of the size and the first and last 64 KB, and tells a changed file from an unchanged one. The file number is "device:inode", so a renamed or moved file without an `/ID` finds the record whose bookmark to resolve. Stays in ReaderCore, as this table says. The task's "in Persistence" means stored by Persistence. `DocumentMatcher`, next to it, holds the pure matching rules.)* |
+| `ViewSettings` | ReaderCore | Pages, Scrolling, cover-page and right-to-left overrides (B1), rotation (B9), zoom mode. The sidebar section is added with the sidebar in M2 *(Amended 2026-10-29, M1)*. *(Amended 2026-10-29, M2: `sidebar` holds visibility and section. Every key decodes with a default, so state from other versions loads.)* |
+| `PageNumbering` | ReaderCore | Page labels, and whether the catalog defines `/PageLabels`. PDFKit makes up "1", "2"… otherwise. Go to Page matches a defined label first, ignoring case, then a page number *(Added 2026-10-29, M2)* |
+| `SearchOptions`, `SearchText`, `SearchSummary` | ReaderCore | Match Case and Whole Word, the whole-word test and result excerpts, and the status line, including "This document has no searchable text" and the count of pages without text (B8) *(Added 2026-10-29, M2)* |
+| `DocumentStateStore` | Persistence | Reads and writes `DocumentState` (§6). Matches an opening file to its record *(Added 2026-10-29, M2)* |
 | `DocumentLayoutHints` | ReaderCore | The catalog's `/PageLayout` (`TwoPageRight`/`TwoColumnRight` puts the cover page alone) and `/ViewerPreferences /Direction /R2L`, read through `CGPDFDocument` once the document is unlocked. These are the defaults the `ViewSettings` overrides replace (B1) *(Added 2026-10-29, M1)* |
 | `DocumentKey` | ReaderCore | `id:` plus the trailer's first `/ID` element as hex. Encrypted files add `;enc:` plus a SHA-256 of the encryption dictionary's `/O` and `/U` entries, because the `/ID` survives re-encryption with another password. Files with no `/ID`, or an unreadable encryption dictionary, get `sha256:` plus a hash of the first 64 KB. Readable while the document is locked. Keys remembered passwords (B6) *(Added 2026-10-29, M1)* |
 | `DocumentPasswordStore` | Persistence | Protocol for remembered passwords, keyed by `DocumentKey`. `KeychainPasswordStore` in the app, `InMemoryPasswordStore` in tests *(Added 2026-10-29, M1)* |
@@ -230,6 +281,18 @@ The same type is stored as the reading position (A2) and used for history entrie
 - Files are written atomically, and only after a debounce interval.
 - **Why JSON:** a person can read it, it's trivial to export (A2's bookmark export), and the volume is small. There's no need for SQLite or SwiftData.
 - **Identity index:** `index.json` maps document identities to UUIDs.
+
+**As built in M2** *(Amended 2026-10-29)*
+- **Layout.** `index.json` sits beside `Documents/`, in `Application Support/<bundle-id>/`. Each state file holds the identity, the last anchor, per-pane history and `ViewSettings`, which includes the sidebar.
+- **Writing.** Changes are kept in memory and written atomically after a 1 s debounce, on the store's private queue. The window flushes when it closes, and the app flushes when it quits. The reading position is saved half a second after scrolling settles. The root folder is injected: package tests use temporary folders, and while the app hosts its tests the shared store lives in a temporary folder too.
+- **Matching an opening file (A2).** Only records related to the file are considered: the same path, file number, permanent `/ID` or fingerprint. Then:
+  1. A record whose security-scoped bookmark resolves to this file is the same document. That covers moves and renames. If the fingerprint changed, the anchor and history are clamped to the new page count.
+  2. Otherwise, a record with the same permanent `/ID`, or the same fingerprint when there's no `/ID`, whose bookmark no longer resolves is adopted.
+  3. If that record's bookmark resolves to another file that still exists, this file is a duplicate: it gets a new record copied from the original's state.
+  4. Otherwise a new record starts.
+
+  A fresh bookmark is recorded on every open, which replaces a stale one.
+- **First open.** A document with a table of contents opens the sidebar on that section.
 
 **Crash journal (A1)**
 - `Journal/<uuid>.json` holds the unsaved `AnnotationChange` list.
