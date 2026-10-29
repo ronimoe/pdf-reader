@@ -28,11 +28,17 @@ case .unsupported(let why):   break                 // .encrypted, .malformed(St
 // 2. What's in the file, and which file object is each PDFAnnotation?
 let doc = try PDFSaveDocument(data: bytes)
 let descriptors = try doc.annotations()             // or annotations(onPage:)
-let queries = pdfAnnotations.map { a in             // built by the app from PDFKit, when the file is opened
-    AnnotationQuery(pageIndex: index, subtype: a.type ?? "", rect: PDFRect(a.bounds),
-                    contents: a.contents, name: a.value(forAnnotationKey: .name) as? String)
+var queries: [AnnotationQuery] = []                 // built by the app from PDFKit, when the file is opened
+for index in 0..<pdfDocument.pageCount {
+    for a in pdfDocument.page(at: index)!.annotations {
+        let b = a.bounds
+        queries.append(AnnotationQuery(
+            pageIndex: index, subtype: a.type ?? "",
+            rect: PDFRect(x: b.minX, y: b.minY, width: b.width, height: b.height),
+            contents: a.contents, name: a.value(forAnnotationKey: .name) as? String))
+    }
 }
-let matches = AnnotationMatcher().match(queries, in: descriptors)
+let matches = AnnotationMatcher().match(queries, in: descriptors)   // one result per query, same order
 // [.matched(ObjectRef, .name | .nameAndGeometry | .geometry | .geometryAndContents),
 //  .ambiguous([ObjectRef]), .notFound, .unaddressable]
 

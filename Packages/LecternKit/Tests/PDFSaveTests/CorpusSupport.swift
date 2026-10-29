@@ -23,15 +23,6 @@ enum Repo {
         if let custom = ProcessInfo.processInfo.environment["LECTERN_CORPUS_OUT"] { return URL(fileURLWithPath: custom) }
         return FileManager.default.temporaryDirectory.appending(path: "lectern-corpus-\(root.lastPathComponent)")
     }()
-
-    /// Every committed PDF: the generated files and the real-world ones.
-    static func corpusFiles(includeEncrypted: Bool = false) throws -> [URL] {
-        let fm = FileManager.default
-        let all = try fm.contentsOfDirectory(at: corpus, includingPropertiesForKeys: nil)
-            + fm.contentsOfDirectory(at: realWorld, includingPropertiesForKeys: nil)
-        return all.filter { $0.pathExtension == "pdf" && (includeEncrypted || !$0.lastPathComponent.hasPrefix("encrypted")) }
-            .sorted { $0.path < $1.path }
-    }
 }
 
 enum Tools {
