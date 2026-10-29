@@ -111,7 +111,7 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
 // MARK: Keeping your place (A3)
 
 @MainActor
-@Suite struct KeepingYourPlaceTests {
+@Suite(.noUI) struct KeepingYourPlaceTests {
     @Test func zoomKeepsThePlace() throws {
         let harness = try NavigationHarness(FixturePDF.prose(pages: 20))
         defer { harness.close() }
@@ -219,7 +219,7 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
 // MARK: History (B2)
 
 @MainActor
-@Suite struct HistoryTests {
+@Suite(.noUI) struct HistoryTests {
     @Test func outlineJumpsAddAnEntryAndBackReturns() throws {
         let harness = try NavigationHarness(FixturePDF.book())
         defer { harness.close() }
@@ -342,7 +342,7 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
 // MARK: Go to page
 
 @MainActor
-@Suite struct GoToPageTests {
+@Suite(.noUI) struct GoToPageTests {
     @Test func labelsAndNumbersBothWork() throws {
         let harness = try NavigationHarness(FixturePDF.book())
         defer { harness.close() }
@@ -385,7 +385,7 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
 // MARK: Sidebar (spec §4.1)
 
 @MainActor
-@Suite struct SidebarTests {
+@Suite(.noUI) struct SidebarTests {
     @Test func togglesAndRemembersItsSection() throws {
         let harness = try NavigationHarness(FixturePDF.book())
         defer { harness.close() }
@@ -443,8 +443,8 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
         let sidebar = harness.controller.sidebar
         _ = sidebar.view
         // Search results appear only while a search runs.
-        #expect(sidebar.availableSections == [.thumbnails, .outline])
-        #expect(sidebar.picker.segmentCount == 2)
+        #expect(sidebar.availableSections == [.thumbnails, .outline, .annotations])
+        #expect(sidebar.picker.segmentCount == 3)
         for segment in 0..<sidebar.picker.segmentCount {
             #expect(sidebar.picker.image(forSegment: segment)?.accessibilityDescription?.isEmpty == false)
         }
@@ -454,7 +454,7 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
 
 // MARK: Thumbnails off the main thread (architecture §4.6)
 
-@Suite struct PageRendererTests {
+@Suite(.noUI) struct PageRendererTests {
     @Test func drawsThumbnailsAtTheRequestedSizeAndCachesThem() async throws {
         let renderer = PageRenderer(data: FixturePDF.prose(pages: 3))
         let image = try #require(await renderer.thumbnail(pageIndex: 1, fitting: CGSize(width: 93, height: 120), scale: 2, rotation: 0))
@@ -492,7 +492,7 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
     }
 }
 
-@Suite struct TextInventoryTests {
+@Suite(.noUI) struct TextInventoryTests {
     @Test func findsPagesWithoutText() async {
         let data = FixturePDF.make(pageTexts: ["words", nil, "more words", nil])
         #expect(await TextInventory(data: data).pagesWithoutText() == [1, 3])

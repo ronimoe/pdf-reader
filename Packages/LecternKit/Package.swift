@@ -18,12 +18,12 @@ let package = Package(
         .target(name: "ReaderCore"),
         // Incremental writer and save verification, nonisolated.
         .target(name: "PDFSave"),
-        .target(name: "Persistence", dependencies: ["ReaderCore"]),
+        .target(name: "Persistence", dependencies: ["ReaderCore", "PDFSave"]),
         // PDFView layer: main-actor by default.
         .target(name: "ReaderKit", dependencies: ["ReaderCore"], swiftSettings: mainActorByDefault),
         .target(name: "ReaderUI", dependencies: ["ReaderCore", "ReaderKit"], swiftSettings: mainActorByDefault),
         .testTarget(name: "ReaderCoreTests", dependencies: ["ReaderCore"]),
         .testTarget(name: "PDFSaveTests", dependencies: ["PDFSave"]),
-        .testTarget(name: "PersistenceTests", dependencies: ["Persistence"]),
+        .testTarget(name: "PersistenceTests", dependencies: ["Persistence", "PDFSave"]),
     ]
 )

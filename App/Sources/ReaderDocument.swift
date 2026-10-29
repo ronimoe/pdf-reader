@@ -1,12 +1,17 @@
 import AppKit
 import PDFKit
+import PDFSave
 import ReaderCore
 
 /// One open PDF. Holds the bytes exactly as loaded (the incremental writer
 /// appends to these, decision A1/B7) and the PDFKit model built from them.
 final class ReaderDocument: NSDocument {
-    private(set) var originalData = Data()
+    /// The file's bytes as loaded or last saved. Saving appends to these (A1); B7's Save a Copy
+    /// writes them plus the unsaved annotations.
+    var originalData = Data()
     private(set) var pdfDocument: PDFDocument?
+    /// The annotations and their unsaved changes (B4, A1). Replaced whenever the model is.
+    var annotations: AnnotationEditor?
 
     /// Each page's `/Rotate` as loaded, before any view rotation (B9). The
     /// save path uses these to write pages back unrotated (architecture §4.3).
@@ -53,16 +58,37 @@ final class ReaderDocument: NSDocument {
     private(set) var sessionPassword: String?
     /// True once the file has been deleted or moved to the Trash (B7).
     private(set) var fileWasRemoved = false
+    /// Shown in the next Save As panel: why the file itself can't be saved (A1).
+    var savePanelMessage: String?
+    /// What the current save wrote, until it completes.
+    var lastWrite: WrittenSave?
+    /// Where the current Save, Save As or Save To goes, until it completes.
+    var saveDestination: URL?
+    /// The background look at the file for saving (Saveability, descriptors, hash).
+    var inspection: Task<Void, Never>?
+    /// Tests only: how long every background check waits before reporting, so a reload or a save
+    /// can happen while it runs. Zero in the app.
+    /// Tests only: runs as a save starts writing, so a test can change the file in between.
+    var willWriteForTesting: (() -> Void)?
+    var inspectionDelay: Duration = .zero
+
+    func resetCachedKey() { cachedKey = nil }
+
+    /// After a Save As, the document has a file again (B7).
+    func fileIsBack() {
+        guard fileWasRemoved else { return }
+        fileWasRemoved = false
+        readerWindowController?.hideFileRemovedNotice()
+    }
 
     // A1: nothing is ever written without an explicit Save.
     override nonisolated class var autosavesInPlace: Bool { false }
     override nonisolated class var autosavesDrafts: Bool { false }
     override nonisolated class var preservesVersions: Bool { false }
 
-    // Saving lands with the incremental writer in M4. Until then no type is
-    // writable, so Save stays disabled instead of hitting NSDocument's
-    // default data(ofType:), which raises.
-    override nonisolated class var writableTypes: [String] { [] }
+    // PDF is writable, but only through the incremental writer (`write(to:ofType:for:…)`),
+    // never PDFKit's own save, and never by autosave (A1).
+    override nonisolated class var writableTypes: [String] { ["com.adobe.pdf"] }
 
     // read(from:ofType:) assumes the main actor; keep NSDocument from
     // calling it on a background thread.
@@ -76,6 +102,7 @@ final class ReaderDocument: NSDocument {
         MainActor.assumeIsolated {
             self.originalData = data
             self.pdfDocument = parsed
+            self.makeAnnotationEditor()
             self.documentDidBecomeReadableIfUnlocked()
         }
     }
@@ -201,6 +228,22 @@ final class ReaderDocument: NSDocument {
         // A file caught half-written doesn't parse; the next change notice
         // brings the finished one.
         guard let pdf = PDFDocument(data: data) else { return false }
+        // Unsaved annotations are never dropped silently: the user chooses (B7).
+        if hasUnsavedAnnotations {
+            readerWindowController?.fileChangedWithUnsavedAnnotations()
+            return false
+        }
+        reload(with: data, pdf: pdf)
+        return true
+    }
+
+    /// B7 Reload, after the user confirmed: reads the file and reloads it, dropping the unsaved
+    /// annotations. Returns whether it reloaded.
+    @discardableResult
+    func reloadDiscardingAnnotations() async -> Bool {
+        guard let url = fileURL else { return false }
+        let data = await Self.coordinatedRead(of: url, presenter: self)
+        guard fileURL == url, let data, let pdf = PDFDocument(data: data) else { return false }
         reload(with: data, pdf: pdf)
         return true
     }
@@ -225,6 +268,10 @@ final class ReaderDocument: NSDocument {
     func reload(with data: Data, pdf: PDFDocument) {
         originalData = data
         pdfDocument = pdf
+        // A new model: the old annotations, their changes and every undo step that refers to
+        // them go. The window drops the journal.
+        undoManager?.removeAllActions()
+        makeAnnotationEditor()
         cachedKey = nil
         hasRecordedOriginals = false
         originalPageRotations = []

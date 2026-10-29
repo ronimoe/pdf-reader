@@ -5,12 +5,14 @@
 public enum SidebarSection: String, Codable, Hashable, Sendable, CaseIterable {
     case thumbnails
     case outline
+    case annotations
     case search
 
     public var title: String {
         switch self {
         case .thumbnails: "Thumbnails"
         case .outline: "Table of Contents"
+        case .annotations: "Annotations"
         case .search: "Search Results"
         }
     }
@@ -20,6 +22,7 @@ public enum SidebarSection: String, Codable, Hashable, Sendable, CaseIterable {
         switch self {
         case .thumbnails: "square.grid.2x2"
         case .outline: "list.bullet.indent"
+        case .annotations: "highlighter"
         case .search: "magnifyingglass"
         }
     }

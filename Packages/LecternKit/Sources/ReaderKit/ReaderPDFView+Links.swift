@@ -129,6 +129,7 @@ extension ReaderPDFView {
         let point = convert(event.locationInWindow, from: nil)
         guard let link = link(at: point) else {
             pendingLink = nil
+            if handleAnnotationMouseDown(event, at: point) { return }
             super.mouseDown(with: event)
             return
         }
@@ -141,13 +142,19 @@ extension ReaderPDFView {
 
     public override func mouseDragged(with event: NSEvent) {
         if pendingLink != nil { return }
+        handleAnnotationMouseDragged(at: convert(event.locationInWindow, from: nil))
+        if let pending = pendingAnnotationClick, !["Highlight", "Underline", "StrikeOut", "Squiggly"].contains(pending.annotation.type ?? "") {
+            return
+        }
         super.mouseDragged(with: event)
     }
 
     public override func mouseUp(with event: NSEvent) {
         lastPressureStage = 0
         guard let pending = pendingLink else {
-            super.mouseUp(with: event)
+            let swallowed = pendingAnnotationClick.map { !["Highlight", "Underline", "StrikeOut", "Squiggly"].contains($0.annotation.type ?? "") } ?? false
+            if !swallowed { super.mouseUp(with: event) }
+            handleAnnotationMouseUp()
             return
         }
         pendingLink = nil

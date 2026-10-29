@@ -6,7 +6,7 @@ import Testing
 
 /// PDFKit calls into its view from background queues (form detection, page
 /// analysis). These guard the crash seen in the field and the analysis switch.
-@Suite struct PDFKitBackgroundQueueTests {
+@Suite(.noUI) struct PDFKitBackgroundQueueTests {
     @Test func documentCanBeReadOffTheMainThread() throws {
         let data = try #require(TestPDF.make(pageCount: 2))
         let view = ReaderPDFView(frame: NSRect(x: 0, y: 0, width: 400, height: 500))

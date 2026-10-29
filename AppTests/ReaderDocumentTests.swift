@@ -4,7 +4,7 @@ import ReaderCore
 import Testing
 @testable import Lectern
 
-@Suite struct ReaderDocumentTests {
+@Suite(.noUI) struct ReaderDocumentTests {
     @Test func readsPDFAndKeepsOriginalBytes() throws {
         let data = try #require(TestPDF.make(pageCount: 3))
         let document = try ReaderDocument.loaded(data)
@@ -25,10 +25,15 @@ import Testing
         #expect(ReaderDocument.preservesVersions == false)
     }
 
-    @Test func saveIsUnavailableUntilTheWriterLands() {
+    @Test func savesPDFButNeverAutosaves() {
         let document = ReaderDocument()
-        #expect(document.writableTypes(for: .saveOperation).isEmpty)
-        #expect(document.writableTypes(for: .saveAsOperation).isEmpty)
+        #expect(document.writableTypes(for: .saveOperation) == ["com.adobe.pdf"])
+        #expect(document.writableTypes(for: .saveAsOperation) == ["com.adobe.pdf"])
+        #expect(document.writableTypes(for: .saveToOperation) == ["com.adobe.pdf"])
+        #expect(document.writableTypes(for: .autosaveInPlaceOperation).isEmpty)
+        #expect(document.writableTypes(for: .autosaveElsewhereOperation).isEmpty)
+        #expect(document.writableTypes(for: .autosaveAsOperation).isEmpty)
+        #expect(!document.hasUnautosavedChanges)
     }
 
     // MARK: Rotation (B9)

@@ -15,7 +15,7 @@ private func waitForSearch(_ harness: NavigationHarness) {
 // MARK: Search (B8)
 
 @MainActor
-@Suite struct SearchTests {
+@Suite(.noUI) struct SearchTests {
     @Test func resultsArriveWithoutBlockingAndAreCounted() throws {
         let harness = try NavigationHarness(FixturePDF.prose(pages: 40))
         defer { harness.close() }
@@ -201,7 +201,7 @@ private func waitForSearch(_ harness: NavigationHarness) {
 // MARK: Stored state (A2, Journey A step 5, Journey D step 6)
 
 @MainActor
-@Suite struct StoredStateTests {
+@Suite(.noUI) struct StoredStateTests {
     @Test func reopeningRestoresPositionSettingsSidebarAndHistory() throws {
         let folder = try TemporaryFolder()
         let file = try folder.write(FixturePDF.prose(pages: 30, id: "0A0B0C0D"), to: "Long Read.pdf")
@@ -268,7 +268,7 @@ private func waitForSearch(_ harness: NavigationHarness) {
 // MARK: Changes on disk (B7)
 
 @MainActor
-@Suite struct FileChangeTests {
+@Suite(.noUI) struct FileChangeTests {
     @Test func aChangedFileReloadsSilentlyAndSaysSo() async throws {
         let folder = try TemporaryFolder()
         let file = try folder.write(FixturePDF.prose(pages: 10), to: "draft.pdf")
@@ -369,7 +369,7 @@ private func waitForSearch(_ harness: NavigationHarness) {
 // MARK: Commands
 
 @MainActor
-@Suite struct NavigationCommandTests {
+@Suite(.noUI) struct NavigationCommandTests {
     private let menu = MainMenu.make()
 
     private func allItems(_ menu: NSMenu) -> [NSMenuItem] {
@@ -401,6 +401,8 @@ private func waitForSearch(_ harness: NavigationHarness) {
             #selector(ReaderWindowController.navigateBack(_:)),
             #selector(ReaderWindowController.navigateForward(_:)),
             #selector(ReaderWindowController.showGoToPage(_:)),
+            #selector(ReaderWindowController.showNextAnnotation(_:)),
+            #selector(ReaderWindowController.showPreviousAnnotation(_:)),
         ])
     }
 

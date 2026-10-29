@@ -61,12 +61,41 @@ targets:
       # so it reads the paper from its own bundle, not the repository.
       - path: Tests/Corpus/public/realworld/arxiv-2310.12457v2.pdf
         buildPhase: resources
+      # M4b: saving annotations end to end, on generated and real-world files.
+      - path: Tests/Corpus/public/realworld/arxiv-2208.04284v5.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/realworld/arxiv-2402.16746v1.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/realworld/arxiv-2502.20639v1.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/realworld/arxiv-2503.00201v1.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/realworld/nasa-tm-20180002207.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/realworld/nasa-tm-2020-220520.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/classic-xref.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/signed-approval.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/certified-docmdp.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-aes256.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-aes256-owner-only.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/acroform-filled.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/third-party-annots.pdf
+        buildPhase: resources
     dependencies:
       - target: Lectern
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ronimoe.LecternTests
         GENERATE_INFOPLIST_FILE: YES
+        # Installs the UI tripwire before any test runs: no test may show an alert or panel.
+        INFOPLIST_KEY_NSPrincipalClass: LecternTestPrincipal
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Lectern.app/Contents/MacOS/Lectern"
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

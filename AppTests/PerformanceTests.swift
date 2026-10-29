@@ -13,7 +13,7 @@ import Testing
 /// and taken out: what remains is what this app adds for a long document,
 /// and it must stay under 50 ms on a 2,000-page file.
 @MainActor
-@Suite(.serialized) struct OpeningPerformanceTests {
+@Suite(.serialized, .noUI) struct OpeningPerformanceTests {
     private struct Timing {
         var pdfKit: TimeInterval
         var open: TimeInterval

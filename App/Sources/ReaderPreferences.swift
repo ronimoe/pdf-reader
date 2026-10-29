@@ -1,4 +1,5 @@
 import Foundation
+import ReaderCore
 
 /// App-wide reading preferences, kept in `UserDefaults`. Settings arrive in
 /// M5; until then the View menu changes them.
@@ -21,6 +22,25 @@ final class ReaderPreferences {
             setValue(newValue, Self.previewLinksOnHoverKey)
             NotificationCenter.default.post(name: Self.didChange, object: self)
         }
+    }
+
+    static let annotationColorKey = "AnnotationColor"
+    /// The author written into new annotations' `/T` (B4). Empty by default; Settings (M5) sets it.
+    static let annotationAuthorKey = "annotationAuthor"
+
+    /// The colour of the last annotation created or recoloured (B4). Yellow at first.
+    var annotationColor: AnnotationColorPreset {
+        get { (value(Self.annotationColorKey) as? String).flatMap(AnnotationColorPreset.init(rawValue:)) ?? .default }
+        set {
+            setValue(newValue.rawValue, Self.annotationColorKey)
+            NotificationCenter.default.post(name: Self.didChange, object: self)
+        }
+    }
+
+    /// Never filled in from the Mac account (B4).
+    var annotationAuthor: String {
+        get { value(Self.annotationAuthorKey) as? String ?? "" }
+        set { setValue(newValue, Self.annotationAuthorKey) }
     }
 
     /// Preferences that live only in memory, for tests: the test host is the
