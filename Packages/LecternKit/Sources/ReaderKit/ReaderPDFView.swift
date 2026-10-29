@@ -32,12 +32,45 @@ public final class ReaderPDFView: PDFView {
     /// The visible size the current fit was computed for.
     private var fittedSize: CGSize = .zero
 
-    /// Called after PDFKit followed an internal link by itself, with where
-    /// reading was before the jump (B2). M3 replaces PDFKit's link handling.
-    public var onLinkJump: ((ReadingAnchor) -> Void)?
-    /// Called for a link's named GoBack or GoForward action, so it moves
-    /// through the pane's history instead of PDFKit's own.
-    public var onNamedHistoryAction: ((_ forward: Bool) -> Void)?
+    // MARK: Links (A3, A4, architecture §4.4)
+
+    /// Called for every link the user activates: a click, Return in link
+    /// focus, a PDFKit path that ends in `perform(_:)`, the delegate, or the
+    /// private "Open Link" action. Nothing else ever acts on a link; without
+    /// a handler a link does nothing.
+    public var onActivateLink: ((LinkTarget) -> Void)?
+    /// Called to preview an internal link (hover, Force Click, Space in link
+    /// focus). The view's own place never changes.
+    public var onPreviewLink: ((LinkPreviewRequest) -> Void)?
+    /// Called when the link under the pointer, or the focused link, changes,
+    /// so its full URL can be shown (A4). Nil when there is none.
+    public var onHighlightedLinkChange: ((LinkTarget?) -> Void)?
+    /// Hover previews (A3). The window sets this from the user's preference.
+    public var previewsOnHover = true
+    /// How long the pointer rests on a link before it previews.
+    public static var hoverDelay: TimeInterval = 0.5
+
+    /// The link a swallowed mouse-down landed on; followed on mouse-up.
+    var pendingLink: PendingLink?
+    var lastPressureStage = 0
+    var hoveredLink: PDFAnnotation?
+    var hoverWork: DispatchWorkItem?
+    var hoverTrackingArea: NSTrackingArea?
+    /// Links collected for keyboard link focus, in reading order.
+    public internal(set) var focusableLinks: [FocusableLink] = []
+    public internal(set) var focusedLinkIndex: Int?
+    var linkElements: [LinkAccessibilityElement] = []
+    let focusRing = LinkFocusRingView()
+    let targetMarkerView = TargetMarkerView()
+    /// The place a preview marks (A3): drawn over this view only, never
+    /// as an annotation on the shared document.
+    public var targetMarker: ReadingAnchor? {
+        didSet { updateLinkOverlays() }
+    }
+    /// Retained here: PDFView's delegate is weak. Its URL and remote-GoTo
+    /// callbacks route through the same policy instead of PDFKit's defaults.
+    private let linkDelegate = LinkSafetyDelegate()
+
     /// Called whenever the visible part of the document moves, for saving
     /// the reading position. Never a history entry.
     public var onVisibleAreaChange: (() -> Void)?
@@ -78,6 +111,13 @@ public final class ReaderPDFView: PDFView {
             MainActor.assumeIsolated { self?.noteInputIfMine(event) }
             return event
         }
+        delegate = linkDelegate
+        // Force Click goes to pressureChange only, never to PDFKit's own
+        // immediate action (Look Up, link previews that could fetch a page).
+        pressureConfiguration = NSPressureConfiguration(pressureBehavior: .primaryDeepClick)
+        removeImmediateActionRecognizers()
+        addSubview(targetMarkerView)
+        addSubview(focusRing)
     }
 
     @available(*, unavailable)
@@ -91,6 +131,10 @@ public final class ReaderPDFView: PDFView {
         didSet {
             keptAnchor = nil
             fitReferencePageIndex = 0
+            endLinkFocus()
+            cancelHover()
+            pendingLink = nil
+            targetMarker = nil
             applyZoom()
             observeClipView()
         }
@@ -216,6 +260,7 @@ public final class ReaderPDFView: PDFView {
             lastSafeAreaInsets = insets
             if let keptAnchor { restore(keptAnchor) }
         }
+        updateLinkOverlays()
     }
 
     // MARK: Keeping your place (A3)
@@ -335,6 +380,18 @@ public final class ReaderPDFView: PDFView {
         if let anchor { restore(anchor) }
     }
 
+    /// Re-assigns the same document, keeping the place and zoom. Another view
+    /// on the shared `PDFDocument` that changed an annotation leaves this one
+    /// stale until it does (M0b Q7: five cheaper refreshes don't work).
+    public func rebindDocument() {
+        guard let document else { return }
+        let anchor = currentAnchor
+        self.document = nil
+        self.document = document
+        layoutDocumentView()
+        if let anchor { restore(anchor) }
+    }
+
     /// The anchor that shows a page from its visual top-left corner, taking
     /// the page's rotation into account.
     public func topAnchor(forPageAt index: Int) -> ReadingAnchor? {
@@ -416,6 +473,7 @@ public final class ReaderPDFView: PDFView {
 
     @objc private func clipBoundsDidChange(_ notification: Notification) {
         onVisibleAreaChange?()
+        updateLinkOverlays()
         guard !isAdjustingGeometry else { return }
         if isUserScrolling {
             keptAnchor = visibleAnchor
@@ -468,47 +526,21 @@ public final class ReaderPDFView: PDFView {
         noteUserInput()
     }
 
-    // MARK: Links PDFKit follows itself
-
-    /// PDFKit follows internal links through here. Until M3 intercepts link
-    /// clicks, a `GoTo` that moved the view still makes a history entry, and
-    /// named GoBack and GoForward use the pane's history.
-    public override func perform(_ action: PDFAction) {
-        if let named = action as? PDFActionNamed, let onNamedHistoryAction {
-            switch named.name {
-            case .goBack:
-                onNamedHistoryAction(false)
-                return
-            case .goForward:
-                onNamedHistoryAction(true)
-                return
-            default:
-                break
-            }
-        }
-        let departure = currentAnchor
-        let wasAdjusting = isAdjustingGeometry
-        isAdjustingGeometry = true
-        super.perform(action)
-        isAdjustingGeometry = wasAdjusting
-        // Wherever the action leads is the new place.
-        keptAnchor = visibleAnchor
-        guard action.type == "GoTo", let departure, let arrival = visibleAnchor,
-              !arrival.isSamePlace(as: departure)
-        else { return }
-        onLinkJump?(departure)
-    }
-
     // MARK: Escape
 
     /// PDFView consumes Escape itself, so it never reaches the window's
-    /// commands; hand it to the owner first.
+    /// commands; link focus ends first, then the owner gets it.
     public override func cancelOperation(_ sender: Any?) {
+        if isLinkFocusActive {
+            endLinkFocus()
+            return
+        }
         if onCancel?() == true { return }
         super.cancelOperation(sender)
     }
 
     public override func keyDown(with event: NSEvent) {
+        if handleLinkFocusKey(event) { return }
         if event.keyCode == 53, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty, onCancel?() == true {
             return
         }
@@ -555,7 +587,9 @@ public final class ReaderPDFView: PDFView {
     }
 
     public override func quickLook(with event: NSEvent) {
-        // Force-click and three-finger tap Look Up.
+        // Force-click and three-finger tap Look Up. Over an internal link it
+        // previews the destination instead.
+        if previewLink(at: convert(event.locationInWindow, from: nil), trigger: .forceClick) { return }
         guard isCopyAllowed else { return }
         super.quickLook(with: event)
     }
@@ -599,6 +633,10 @@ public final class ReaderPDFView: PDFView {
     /// own items stay.
     public override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
+        // PDFKit's "Open Link" calls NSWorkspace directly (M0b Q2).
+        for item in menu.items.reversed() where item.action == Self.openRepresentedLinkSelector {
+            menu.removeItem(item)
+        }
         guard !isCopyAllowed else { return }
         for item in menu.items.reversed() where !ownContextMenuItems.contains(ObjectIdentifier(item)) {
             menu.removeItem(item)
