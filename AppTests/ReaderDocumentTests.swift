@@ -21,7 +21,14 @@ import Testing
 
     @Test func neverAutosaves() {
         #expect(ReaderDocument.autosavesInPlace == false)
+        #expect(ReaderDocument.autosavesDrafts == false)
         #expect(ReaderDocument.preservesVersions == false)
+    }
+
+    @Test func saveIsUnavailableUntilTheWriterLands() {
+        let document = ReaderDocument()
+        #expect(document.writableTypes(for: .saveOperation).isEmpty)
+        #expect(document.writableTypes(for: .saveAsOperation).isEmpty)
     }
 }
 
