@@ -155,9 +155,9 @@ enum Corpus {
 
     /// A real-world file: a highlight on a known phrase, an underline and a strike-out on wide text
     /// lines, and a note.
-    static func realWorld(_ name: String, phrase: String, page: Int = 1,
+    static func realWorld(_ name: String, phrase: String, page: Int = 1, folder: String = "realworld",
                           saveability: Saveability = .inPlace) -> CorpusCase {
-        CorpusCase(name: name, input: "realworld/\(name).pdf", saveability: saveability) { _, pk in
+        CorpusCase(name: name, input: "\(folder)/\(name).pdf", saveability: saveability) { _, pk in
             let highlighted = try quads(pk, page: page, phrase: phrase)
             return [.addMarkup(NewMarkup(kind: .highlight, pageIndex: page, quads: highlighted, contents: "Highlight on \(name)",
                                          author: author)),
@@ -167,7 +167,14 @@ enum Corpus {
         }
     }
 
-    static let cases: [CorpusCase] = [
+    /// Every case. Files under `fetched/` exist only after `scripts/corpus/bootstrap`; without them
+    /// their cases are left out, unless tools are required (`scripts/test.sh`), where a missing
+    /// file fails the run.
+    static let cases: [CorpusCase] = allCases.filter { c in
+        !c.input.hasPrefix("fetched/") || Tools.required || FileManager.default.fileExists(atPath: Repo.corpus.appending(path: c.input).path)
+    }
+
+    static let allCases: [CorpusCase] = [
         CorpusCase(name: "classic-xref", input: "classic-xref.pdf") { _, pk in
             [try highlight(pk, page: 0, "Highlight on a classic xref file"), note(pk, page: 0, "Sticky note, page 1"),
              try highlight(pk, page: 1, "Second page highlight ✓ ünïcode"),
@@ -238,6 +245,21 @@ enum Corpus {
         realWorld("nasa-tm-2020-220520", phrase: "dedicated"),
         realWorld("irs-fw9", phrase: "social security number", saveability: .copyOnly([.readerExtended])),
         realWorld("irs-f1040", phrase: "adjusted gross income", saveability: .copyOnly([.readerExtended])),
+        // M6 representative documents (spec §9.1): a long text-heavy book, a 3,270-page manual,
+        // a scan with no text layer, and (fetched by scripts/corpus/bootstrap) an image-heavy report.
+        // GovInfo signs and certifies its PDFs (a real DocMDP certification), so this one is copy-only.
+        realWorld("gpo-style-manual-2016", phrase: "vegetable oil-based ink", saveability: .copyOnly([.certified, .signed])),
+        realWorld("postgresql-17.11-US", phrase: "PostgreSQL Global Development Group"),
+        CorpusCase(name: "annals-surgery-1886-anthrax-scan", input: "realworld/annals-surgery-1886-anthrax-scan.pdf") { _, _ in
+            // No text layer, so no phrase to find: markup over fixed rectangles in the text block.
+            let name = "annals-surgery-1886-anthrax-scan"
+            return [.addMarkup(NewMarkup(kind: .highlight, pageIndex: 1, quads: [Quad(rect: PDFRect(x: 60, y: 330, width: 210, height: 12))],
+                                         contents: "Highlight on \(name)", author: author)),
+                    .addMarkup(NewMarkup(kind: .underline, pageIndex: 1, quads: [Quad(rect: PDFRect(x: 60, y: 250, width: 210, height: 12))],
+                                         color: red, contents: "Underline on \(name)")),
+                    .addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 280, y: 450), contents: "Note on \(name)", author: author))]
+        },
+        realWorld("nasa-earth-at-night", phrase: "brilliance of our planet", page: 9, folder: "fetched"),
         // A second save on a real-world output: edit and delete what the first save added.
         CorpusCase(name: "arxiv-2208.04284v5-second-save", input: "@arxiv-2208.04284v5") { doc, pk in
             [.editColor(try find(doc, page: 1, subtype: "Highlight", lectern: true), green),

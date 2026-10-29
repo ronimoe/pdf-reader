@@ -142,6 +142,13 @@ public struct AnnotationMatcher: Sendable {
     static func sameContents(_ a: String?, _ b: String?) -> Bool { (a ?? "") == (b ?? "") }
 
     public func match(_ query: AnnotationQuery, in descriptors: [AnnotationDescriptor]) -> AnnotationMatch {
+        let named = query.name.map { name in descriptors.filter { $0.name == name } } ?? []
+        return match(query, named: named, onPage: descriptors.filter { $0.pageIndex == query.pageIndex })
+    }
+
+    /// `named`: every descriptor with the query's `/NM`, on any page; `onPage`: every descriptor on
+    /// the query's page. Both in file order, as filtering the whole list gives them.
+    private func match(_ query: AnnotationQuery, named: [AnnotationDescriptor], onPage: [AnnotationDescriptor]) -> AnnotationMatch {
         let subtype = Self.normalizedSubtype(query.subtype)
         func fits(_ d: AnnotationDescriptor) -> Bool { d.pageIndex == query.pageIndex && d.subtype == subtype }
         func close(_ d: AnnotationDescriptor) -> Bool {
@@ -157,7 +164,6 @@ public struct AnnotationMatcher: Sendable {
         }
 
         if let name = query.name, !name.isEmpty {
-            let named = descriptors.filter { $0.name == name }
             if named.isEmpty { return .notFound }
             let here = named.filter(fits)
             switch here.count {
@@ -169,7 +175,7 @@ public struct AnnotationMatcher: Sendable {
             }
         }
 
-        let candidates = descriptors.filter { fits($0) && close($0) }
+        let candidates = onPage.filter { fits($0) && close($0) }
         switch candidates.count {
         case 0: return .notFound
         case 1: return resolved(candidates[0], .geometry)
@@ -187,7 +193,14 @@ public struct AnnotationMatcher: Sendable {
 
     /// Matches every query, then makes the result one-to-one.
     public func match(_ queries: [AnnotationQuery], in descriptors: [AnnotationDescriptor]) -> [AnnotationMatch] {
-        let results = queries.map { match($0, in: descriptors) }
+        // Indexed by page and by /NM, so a batch costs the size of the pages involved rather than
+        // queries × descriptors (18,553 links in the 3,270-page PostgreSQL manual).
+        let byPage = Dictionary(grouping: descriptors, by: \.pageIndex)
+        var byName: [String: [AnnotationDescriptor]] = [:]
+        for d in descriptors { if let name = d.name { byName[name, default: []].append(d) } }
+        let results = queries.map { query in
+            match(query, named: query.name.flatMap { byName[$0] } ?? [], onPage: byPage[query.pageIndex] ?? [])
+        }
         var claims: [ObjectRef: Int] = [:]
         for r in results { if let ref = r.ref { claims[ref, default: 0] += 1 } }
         return results.map { r in

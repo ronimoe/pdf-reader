@@ -246,11 +246,24 @@ def check_signature(case):
         if not sigs:
             return "n/a: unsigned"
         cert = Path(case["input"]).with_suffix(".cert.pem")
-        if not cert.exists():
-            return f"fail: signed but trust root {cert.name} missing"
         # pyHanko logs a traceback when its diff analysis meets annotation changes it has no rule
         # for; the outcome is reported through modification_level below instead.
         logging.getLogger("pyhanko").setLevel(logging.CRITICAL)
+        if not cert.exists():
+            # A real-world signed file (GovInfo's): its certificate chain isn't ours to trust and
+            # its signing certificate has since expired, so trust isn't evaluated. The criterion is
+            # that the signature is untouched: intact, covering its whole revision, as before.
+            if "/realworld/" not in case["input"]:
+                return f"fail: signed but trust root {cert.name} missing"
+            vc = ValidationContext(allow_fetching=False)
+            details = []
+            ok = True
+            for sig in sigs:
+                st = validate_pdf_signature(sig, vc)
+                details.append(f"{sig.field_name}: intact={st.intact} coverage={st.coverage.name} "
+                               f"modification={st.modification_level.name} (trust not evaluated)")
+                ok &= bool(st.intact and st.coverage.name == "ENTIRE_REVISION")
+            return ("pass: " if ok else "fail: ") + "; ".join(details)
         vc = ValidationContext(trust_roots=[load_cert_from_pemder(str(cert))], allow_fetching=False)
         details = []
         ok = True

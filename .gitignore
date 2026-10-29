@@ -16,6 +16,8 @@ Lectern.xcodeproj/
 
 # Private, non-redistributable test PDFs (decision A6)
 Tests/Corpus/private/
+# Representative test PDFs too large to commit; scripts/corpus/bootstrap fetches them by checksum
+Tests/Corpus/public/fetched/
 
 # Python virtual environment for corpus tooling
 .venv/

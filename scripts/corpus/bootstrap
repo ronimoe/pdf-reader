@@ -1,14 +1,53 @@
 #!/bin/zsh
-# One-time setup for corpus tooling: Python .venv at the repo root and pdfjs-dist under scripts/corpus.
+# One-time setup for corpus tooling: Python .venv at the repo root and pdfjs-dist under scripts/corpus,
+# plus the representative test PDFs too large to commit (Tests/Corpus/public/fetched/, git-ignored).
 # Homebrew tools (qpdf, mupdf-tools, poppler) are expected to be installed already.
+#
+# Usage: scripts/corpus/bootstrap            tools and fetched PDFs
+#        scripts/corpus/bootstrap --fetch    only the fetched PDFs
 set -euo pipefail
 here="${0:A:h}"
 root="${here:h:h}"
-[[ -x "$root/.venv/bin/python" ]] || python3 -m venv "$root/.venv"
-"$root/.venv/bin/pip" install -q --upgrade pip
-"$root/.venv/bin/pip" install -q -r "$here/requirements.txt"
-(cd "$here" && npm ci --silent)
-for t in qpdf mutool pdftoppm node; do
-  command -v $t >/dev/null || echo "bootstrap: warning: $t not on PATH" >&2
+
+fetch_only=0
+[[ ${1:-} == --fetch ]] && fetch_only=1
+
+if (( ! fetch_only )); then
+  [[ -x "$root/.venv/bin/python" ]] || python3 -m venv "$root/.venv"
+  "$root/.venv/bin/pip" install -q --upgrade pip
+  "$root/.venv/bin/pip" install -q -r "$here/requirements.txt"
+  (cd "$here" && npm ci --silent)
+  for t in qpdf mutool pdftoppm node; do
+    command -v $t >/dev/null || echo "bootstrap: warning: $t not on PATH" >&2
+  done
+fi
+
+# Representative documents fetched instead of committed (Tests/Corpus/README.md lists source and
+# licence). Each download lands in its own new temporary folder, must match its SHA-256, and only
+# then moves into place. A file already present with the right checksum isn't downloaded again.
+# name | url | sha256
+fetched=(
+  "nasa-earth-at-night.pdf|https://www.nasa.gov/wp-content/uploads/2019/11/earth_at_night_508.pdf|8e622ca8f6d1ba0cf809549bddfee69e6754c3a3480d151c1fb54baf49b09be0"
+)
+dest="$root/Tests/Corpus/public/fetched"
+mkdir -p "$dest"
+for entry in $fetched; do
+  name=${entry%%|*}; rest=${entry#*|}; url=${rest%%|*}; sha=${rest#*|}
+  if [[ -f "$dest/$name" ]] && [[ $(shasum -a 256 "$dest/$name" | cut -d' ' -f1) == $sha ]]; then
+    echo "bootstrap: $name present"
+    continue
+  fi
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/lectern-fetch.XXXXXX")
+  echo "bootstrap: fetching $name"
+  if ! curl -fsSL --retry 2 --max-time 900 -o "$tmp/$name" "$url"; then
+    rm -rf "$tmp"; echo "bootstrap: download of $name failed ($url)" >&2; exit 1
+  fi
+  got=$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1)
+  if [[ $got != $sha ]]; then
+    rm -rf "$tmp"; echo "bootstrap: $name has SHA-256 $got, expected $sha; the source changed, so it is not used" >&2; exit 1
+  fi
+  xattr -c "$tmp/$name" 2>/dev/null || true
+  mv "$tmp/$name" "$dest/$name"
+  rm -rf "$tmp"
 done
 echo "bootstrap: done"
