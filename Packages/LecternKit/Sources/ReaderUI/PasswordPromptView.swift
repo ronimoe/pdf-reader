@@ -58,6 +58,8 @@ public final class PasswordPromptModel {
     public func submit() {
         guard !password.isEmpty else { return }
         if onSubmit(password, remember) {
+            // Don't keep the password in memory longer than needed.
+            password = ""
             errorMessage = nil
         } else {
             errorMessage = switch purpose {

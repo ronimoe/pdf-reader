@@ -25,11 +25,13 @@ private struct Harness {
     let controller: ReaderWindowController
     let presenter = RecordingPresenter()
     let store: InMemoryPasswordStore
+    let lookups: CountingPasswordStore
 
     init(_ data: Data, store: InMemoryPasswordStore = InMemoryPasswordStore()) throws {
         document = try ReaderDocument.loaded(data)
         self.store = store
-        controller = ReaderWindowController(document: document, passwordStore: store, presenter: presenter)
+        lookups = CountingPasswordStore(store)
+        controller = ReaderWindowController(document: document, passwordStore: lookups, presenter: presenter)
         document.addWindowController(controller)
         controller.window?.setContentSize(NSSize(width: 800, height: 600))
     }
@@ -295,6 +297,7 @@ private struct Harness {
         prompt.password = "user"
         prompt.submit()
         #expect(prompt.errorMessage == nil)
+        #expect(prompt.password.isEmpty)
         #expect(harness.presenter.dismissals == 1)
         #expect(harness.controller.passwordPrompt == nil)
         #expect(harness.controller.isShowingContent)
@@ -361,8 +364,44 @@ private struct Harness {
         let harness = try Harness(try #require(TestPDF.make(pageCount: 1)))
         defer { harness.close() }
         harness.controller.checkPasswordsIfNeeded()
+        #expect(harness.lookups.lookups == 0)
         #expect(harness.presenter.prompts.isEmpty)
         #expect(harness.document.hasOwnerAccess)
+    }
+
+    @Test func encryptedDocumentsDoConsultTheStore() throws {
+        // The positive control for the test above.
+        let harness = try Harness(try #require(TestPDF.encrypted(user: nil, owner: "owner")))
+        defer { harness.close() }
+        harness.controller.checkPasswordsIfNeeded()
+        #expect(harness.lookups.lookups == 1)
+    }
+
+    @Test func staleRememberedOwnerPasswordIsForgotten() throws {
+        // The document opens without a password, so PDFKit's unlock accepts
+        // any string; the stale entry must still be recognised and removed.
+        let data = try #require(TestPDF.encrypted(user: nil, owner: "owner"))
+        let store = InMemoryPasswordStore([DocumentKey(pdfData: data): "stale"])
+        let harness = try Harness(data, store: store)
+        defer { harness.close() }
+        harness.controller.checkPasswordsIfNeeded()
+        #expect(store.all.isEmpty)
+        #expect(!harness.document.hasOwnerAccess)
+        #expect(!harness.pdfView.isCopyAllowed)
+        #expect(harness.controller.isShowingContent)
+    }
+
+    @Test func passwordCheckRunsWhenARestoredWindowBecomesKey() throws {
+        let harness = try Harness(try #require(TestPDF.encrypted(user: "user", owner: "owner")))
+        defer { harness.close() }
+        let window = try #require(harness.controller.window)
+        #expect(window.delegate === harness.controller)
+
+        harness.controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification, object: window))
+        #expect(harness.presenter.prompts.count == 1)
+        // Only once, however often the window becomes key.
+        harness.controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification, object: window))
+        #expect(harness.presenter.prompts.count == 1)
     }
 }
 
@@ -372,6 +411,10 @@ private struct Harness {
         let harness = try Harness(try #require(TestPDF.encrypted(user: nil, owner: "owner", allowsPrinting: true)))
         defer { harness.close() }
         #expect(!harness.pdfView.isCopyAllowed)
+        // With restricted text actually selected, so only the override stands
+        // between the selection and the pasteboard.
+        harness.pdfView.selectAll(nil)
+        #expect(harness.pdfView.currentSelection?.string?.isEmpty == false)
         let changeCount = NSPasteboard.general.changeCount
         harness.pdfView.copy(nil)
         #expect(harness.presenter.explained == [.copy])
@@ -381,7 +424,7 @@ private struct Harness {
     @Test func copyStaysEnabledOnRestrictedDocumentsSoItCanExplain() throws {
         let harness = try Harness(try #require(TestPDF.encrypted(user: nil, owner: "owner", allowsPrinting: true)))
         defer { harness.close() }
-        // With and without a selection: PDFKit may refuse to select restricted text.
+        // With and without a selection (PDFKit does select restricted text).
         #expect(isCopyEnabled(on: harness.pdfView))
         harness.pdfView.selectAll(nil)
         #expect(isCopyEnabled(on: harness.pdfView))
@@ -502,5 +545,111 @@ private struct Harness {
         #expect(harness.controller.validateToolbarItem(item))
         harness.pdfView.scaleFactor = ZoomMode.maximumScale
         #expect(!harness.controller.validateToolbarItem(item))
+    }
+}
+
+@MainActor
+@Suite struct ReaderContextMenuTests {
+    private func rightClick(in harness: Harness) throws -> NSEvent {
+        try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: NSPoint(x: 100, y: 100), modifierFlags: [], timestamp: 0,
+            windowNumber: harness.controller.window?.windowNumber ?? 0, context: nil, eventNumber: 0,
+            clickCount: 1, pressure: 1
+        ))
+    }
+
+    /// Items AppKit and PDFKit add as a text context menu opens.
+    private func addSystemTextItems(to menu: NSMenu) {
+        menu.addItem(withTitle: "Look Up “text”", action: Selector(("_lookUpDefiniteRangeInDictionaryFromMenu:")), keyEquivalent: "")
+        menu.addItem(withTitle: "Translate “text”", action: Selector(("_translate:")), keyEquivalent: "")
+        menu.addItem(withTitle: "Search With Google", action: Selector(("_searchWithGoogleFromMenu:")), keyEquivalent: "")
+        let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        services.submenu = NSMenu(title: "Services")
+        menu.addItem(services)
+    }
+
+    private static let textSharingTitles = ["Look Up", "Translate", "Search", "Services"]
+
+    private func sharesText(_ menu: NSMenu) -> Bool {
+        menu.items.contains { item in Self.textSharingTitles.contains { item.title.hasPrefix($0) } }
+    }
+
+    @Test func restrictedDocumentsOfferNoWayToSendTextOut() throws {
+        let harness = try Harness(try #require(TestPDF.encrypted(user: nil, owner: "owner", allowsPrinting: true)))
+        defer { harness.close() }
+        harness.pdfView.selectAll(nil)
+        let event = try rightClick(in: harness)
+        let menu = try #require(harness.pdfView.menu(for: event))
+        #expect(!menu.allowsContextMenuPlugIns)
+        addSystemTextItems(to: menu)
+        harness.pdfView.willOpenMenu(menu, with: event)
+        #expect(!sharesText(menu))
+        // Services and Translate read the selection through these.
+        let pasteboard = NSPasteboard(name: .init("LecternTests-\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        #expect(harness.pdfView.validRequestor(forSendType: .string, returnType: nil) == nil)
+        #expect(!harness.pdfView.writeSelection(to: pasteboard, types: [.string]))
+        #expect(harness.pdfView.selectionDragOperations == [])
+    }
+
+    @Test func unrestrictedDocumentsKeepTheSystemTextItems() throws {
+        let harness = try Harness(try #require(TestPDF.make(pageCount: 1)))
+        defer { harness.close() }
+        harness.pdfView.selectAll(nil)
+        let event = try rightClick(in: harness)
+        let menu = try #require(harness.pdfView.menu(for: event))
+        addSystemTextItems(to: menu)
+        harness.pdfView.willOpenMenu(menu, with: event)
+        #expect(sharesText(menu))
+        #expect(harness.pdfView.validRequestor(forSendType: .string, returnType: nil) != nil)
+        #expect(harness.pdfView.selectionDragOperations == .copy)
+
+        let pasteboard = NSPasteboard(name: .init("LecternTests-\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        #expect(harness.pdfView.writeSelection(to: pasteboard, types: [.string]))
+        #expect(pasteboard.string(forType: .string)?.contains("Page 1") == true)
+    }
+
+    @Test func contextMenuHasNoneOfPDFKitsOwnLayoutItems() throws {
+        let harness = try Harness(try #require(TestPDF.make(pageCount: 2)))
+        defer { harness.close() }
+        let menu = try #require(harness.pdfView.menu(for: try rightClick(in: harness)))
+        let titles = menu.items.map(\.title)
+        #expect(!titles.contains("Automatically Resize"))
+        #expect(!titles.contains("Single Page Continuous"))
+        for item in menu.items where !item.isSeparatorItem && !item.isSectionHeader {
+            let action = try #require(item.action, "\(item.title)")
+            let isOurs = action == #selector(NSText.copy(_:)) || harness.controller.responds(to: action)
+            #expect(isOurs, "\(item.title) → \(action)")
+        }
+    }
+
+    @Test func contextMenuLayoutItemsKeepTheSettingsInStep() throws {
+        let harness = try Harness(try #require(TestPDF.make(pageCount: 4)))
+        defer { harness.close() }
+        let menu = try #require(harness.pdfView.menu(for: try rightClick(in: harness)))
+        let twoPages = try #require(menu.items.first { $0.action == #selector(ReaderWindowController.showTwoPages(_:)) })
+        #expect(NSApp.sendAction(try #require(twoPages.action), to: harness.controller, from: twoPages))
+        #expect(harness.controller.settings.pages == .twoUp)
+        #expect(harness.pdfView.displayMode == .twoUpContinuous)
+        #expect(harness.isChecked(#selector(ReaderWindowController.showTwoPages(_:))))
+
+        let fitWidth = try #require(menu.items.first { $0.action == #selector(ReaderWindowController.zoomToFitWidth(_:)) })
+        harness.controller.zoomToActualSize(nil)
+        #expect(NSApp.sendAction(try #require(fitWidth.action), to: harness.controller, from: fitWidth))
+        #expect(harness.controller.settings.zoom == .fitWidth)
+        #expect(harness.pdfView.zoomMode == .fitWidth)
+    }
+
+    @Test func allowedCopyIsNotExplainedAway() throws {
+        // The positive control for blockedCopyIsExplainedNotIgnored. No
+        // selection, so the user's pasteboard is left alone.
+        let harness = try Harness(try #require(TestPDF.make(pageCount: 1)))
+        defer { harness.close() }
+        #expect(harness.pdfView.isCopyAllowed)
+        let changeCount = NSPasteboard.general.changeCount
+        harness.pdfView.copy(nil)
+        #expect(harness.presenter.explained.isEmpty)
+        #expect(NSPasteboard.general.changeCount == changeCount)
     }
 }

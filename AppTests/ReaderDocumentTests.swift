@@ -86,6 +86,16 @@ import Testing
         #expect(!document.isPasswordLocked)
         #expect(document.originalPageRotations == [0, 0])
         #expect(!document.hasOwnerAccess)
+        // Once open, only the owner password counts as gaining access.
+        #expect(!document.unlock(withPassword: "anything"))
+        #expect(!document.unlock(withPassword: "user"))
+        #expect(document.unlock(withPassword: "owner"))
+    }
+
+    @Test func wrongOwnerPasswordOnAnOpenDocumentIsAFailure() throws {
+        let document = try ReaderDocument.loaded(try #require(TestPDF.encrypted(user: nil, owner: "owner")))
+        #expect(!document.unlock(withPassword: "stale"))
+        #expect(!document.hasOwnerAccess)
     }
 
     @Test func ownerPasswordLiftsRestrictions() throws {

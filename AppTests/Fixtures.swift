@@ -1,5 +1,8 @@
 import AppKit
 import PDFKit
+import Persistence
+import ReaderCore
+import Synchronization
 import ReaderUI
 @testable import Lectern
 
@@ -71,6 +74,32 @@ enum RawPDF {
         }
         output += "trailer\n<< /Size \(objects.count + 1) /Root 1 0 R >>\nstartxref\n\(xrefOffset)\n%%EOF\n"
         return Data(output.utf8)
+    }
+}
+
+/// Wraps an in-memory store and counts lookups, so a test can tell whether
+/// the store was consulted at all.
+nonisolated final class CountingPasswordStore: DocumentPasswordStore {
+    let base: InMemoryPasswordStore
+    private let count = Mutex(0)
+
+    init(_ base: InMemoryPasswordStore) {
+        self.base = base
+    }
+
+    var lookups: Int { count.withLock { $0 } }
+
+    func password(for key: DocumentKey) throws -> String? {
+        count.withLock { $0 += 1 }
+        return try base.password(for: key)
+    }
+
+    func setPassword(_ password: String, for key: DocumentKey) throws {
+        try base.setPassword(password, for: key)
+    }
+
+    func removePassword(for key: DocumentKey) throws {
+        try base.removePassword(for: key)
     }
 }
 

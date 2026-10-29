@@ -173,6 +173,80 @@ public final class ReaderPDFView: PDFView {
         super.copy(sender)
     }
 
+    // Every other way text leaves the view respects the same restriction:
+    // Services (which includes Search With Google), Translate, Look Up and
+    // dragging.
+
+    public override func validRequestor(
+        forSendType sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+        guard isCopyAllowed else { return nil }
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+
+    /// PDFView implements this privately; it is how Services and Translate
+    /// read the selection. Replaced so that the restriction applies.
+    @objc(writeSelectionToPasteboard:types:)
+    public func writeSelection(to pasteboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        guard isCopyAllowed, let text = currentSelection?.string, !text.isEmpty,
+              types.contains(.string)
+        else { return false }
+        pasteboard.clearContents()
+        return pasteboard.setString(text, forType: .string)
+    }
+
+    public override func quickLook(with event: NSEvent) {
+        // Force-click and three-finger tap Look Up.
+        guard isCopyAllowed else { return }
+        super.quickLook(with: event)
+    }
+
+    /// What a drag of the selection may do. PDFView is not a drag source
+    /// today (checked on macOS 26), so this only guards a future one.
+    public var selectionDragOperations: NSDragOperation {
+        isCopyAllowed ? .copy : []
+    }
+
+    // MARK: Context menu
+
+    /// The reading commands for the context menu, supplied by the window so
+    /// that they change the window's settings rather than PDFView's own
+    /// display mode behind its back.
+    public var contextMenuItems: () -> [NSMenuItem] = { [] }
+    private var ownContextMenuItems: Set<ObjectIdentifier> = []
+
+    /// Replaces PDFKit's menu, whose layout items (Two Pages, Automatically
+    /// Resize…) bypass the view settings.
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu(title: "")
+        let copy = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+        copy.target = self
+        menu.addItem(copy)
+        let reading = contextMenuItems()
+        if !reading.isEmpty {
+            menu.addItem(.separator())
+            reading.forEach(menu.addItem)
+        }
+        if !isCopyAllowed {
+            menu.allowsContextMenuPlugIns = false
+            menu.automaticallyInsertsWritingToolsItems = false
+        }
+        ownContextMenuItems = Set(menu.items.map(ObjectIdentifier.init))
+        return menu
+    }
+
+    /// AppKit and PDFKit add Look Up, Translate, Search With Google and
+    /// Services as the menu opens; on a copy-restricted document only our
+    /// own items stay.
+    public override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        guard !isCopyAllowed else { return }
+        for item in menu.items.reversed() where !ownContextMenuItems.contains(ObjectIdentifier(item)) {
+            menu.removeItem(item)
+        }
+    }
+
     // MARK: Opening dropped files
 
     public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
@@ -197,5 +271,11 @@ public final class ReaderPDFView: PDFView {
             .urlReadingContentsConformToTypes: [UTType.pdf.identifier],
         ]
         return pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL] ?? []
+    }
+}
+
+extension ReaderPDFView: NSDraggingSource {
+    public func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        selectionDragOperations
     }
 }

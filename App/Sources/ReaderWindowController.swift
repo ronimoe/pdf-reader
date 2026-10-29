@@ -46,6 +46,10 @@ final class ReaderWindowController: NSWindowController {
         pdfView.onUserZoom = { [weak self] scale in self?.settings.zoom = .scale(scale) }
         pdfView.onCopyBlocked = { [weak self] in self?.explainBlocked(.copy) }
         pdfView.onOpenFiles = { urls in ReaderDocumentController.openDocuments(at: urls) }
+        pdfView.contextMenuItems = {
+            ReaderCommands.zoomItems() + [.separator()] + ReaderCommands.readingOptionItems()
+        }
+        window.delegate = self
         showContentIfReadable()
     }
 
@@ -54,6 +58,12 @@ final class ReaderWindowController: NSWindowController {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        checkPasswordsIfNeeded()
+    }
+
+    // Restored windows can come back without showWindow; checking when the
+    // window first becomes key covers them.
+    func windowDidBecomeKey(_ notification: Notification) {
         checkPasswordsIfNeeded()
     }
 
@@ -83,7 +93,8 @@ final class ReaderWindowController: NSWindowController {
             if readerDocument.unlock(withPassword: stored) {
                 showContentIfReadable()
             } else {
-                // The file's password changed since it was remembered.
+                // The key includes this file's encryption entries, so the
+                // entry is this file's own and its password no longer works.
                 try? passwordStore.removePassword(for: readerDocument.documentKey)
             }
         }
@@ -103,10 +114,10 @@ final class ReaderWindowController: NSWindowController {
         presenter.showPasswordPrompt(model, on: window)
     }
 
-    /// Returns false for a wrong password, leaving the prompt up.
+    /// Returns false for a wrong password, leaving the prompt up. On an open
+    /// document only the owner password counts (see `ReaderDocument.unlock`).
     func submitPassword(_ password: String, remember: Bool, purpose: PasswordPromptModel.Purpose) -> Bool {
         guard let readerDocument, readerDocument.unlock(withPassword: password) else { return false }
-        if purpose == .removeRestrictions, !readerDocument.hasOwnerAccess { return false }
         if remember {
             // Failing to remember never blocks reading; the user is asked next time.
             try? passwordStore.setPassword(password, for: readerDocument.documentKey)
@@ -217,6 +228,8 @@ final class ReaderWindowController: NSWindowController {
         }
     }
 }
+
+extension ReaderWindowController: NSWindowDelegate {}
 
 extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {

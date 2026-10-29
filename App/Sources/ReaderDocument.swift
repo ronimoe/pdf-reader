@@ -62,13 +62,17 @@ final class ReaderDocument: NSDocument {
     var allowsCopying: Bool { !isPasswordLocked && (pdfDocument?.allowsCopying ?? false) }
     var allowsPrinting: Bool { !isPasswordLocked && (pdfDocument?.allowsPrinting ?? false) }
 
-    /// Tries a user or owner password. A wrong password never re-locks a
-    /// document that is already open.
+    /// Tries a user or owner password and returns whether it gained access:
+    /// a locked document opened, or an open one gained owner access. PDFKit's
+    /// own `unlock` returns true for any string once a document is open, so
+    /// its result alone can't tell a wrong owner password from a right one.
     @discardableResult
     func unlock(withPassword password: String) -> Bool {
-        guard let pdfDocument, pdfDocument.unlock(withPassword: password) else { return false }
+        guard let pdfDocument else { return false }
+        let wasLocked = pdfDocument.isLocked
+        guard pdfDocument.unlock(withPassword: password) else { return false }
         documentDidBecomeReadableIfUnlocked()
-        return true
+        return wasLocked ? !pdfDocument.isLocked : hasOwnerAccess
     }
 
     private var hasRecordedOriginals = false
