@@ -22,6 +22,10 @@ public struct DocumentIdentity: Codable, Hashable, Sendable {
     /// A hash of the file's size and its first and last 64 KB. The tail holds
     /// the newest trailer and cross-reference section, so any edit changes it.
     public var fingerprint: String
+    /// The file's volume and file number ("device:inode"). A rename or a move
+    /// within the volume keeps it, so it finds the record whose bookmark to
+    /// resolve without resolving every bookmark on record.
+    public var fileNumber: String?
 
     public init(
         bookmark: Data?,
@@ -29,7 +33,8 @@ public struct DocumentIdentity: Codable, Hashable, Sendable {
         pageCount: Int,
         fileSize: Int,
         lastKnownPath: String,
-        fingerprint: String
+        fingerprint: String,
+        fileNumber: String? = nil
     ) {
         self.bookmark = bookmark
         self.fileIdentifiers = fileIdentifiers
@@ -37,13 +42,14 @@ public struct DocumentIdentity: Codable, Hashable, Sendable {
         self.fileSize = fileSize
         self.lastKnownPath = lastKnownPath
         self.fingerprint = fingerprint
+        self.fileNumber = fileNumber
     }
 
     /// The permanent half of `/ID`, which a duplicated file shares.
     public var permanentIdentifier: String? { fileIdentifiers.first }
 
     private enum CodingKeys: String, CodingKey {
-        case bookmark, fileIdentifiers, pageCount, fileSize, lastKnownPath, fingerprint
+        case bookmark, fileIdentifiers, pageCount, fileSize, lastKnownPath, fingerprint, fileNumber
     }
 
     public init(from decoder: any Decoder) throws {
@@ -54,6 +60,7 @@ public struct DocumentIdentity: Codable, Hashable, Sendable {
         fileSize = try container.decodeIfPresent(Int.self, forKey: .fileSize) ?? 0
         lastKnownPath = try container.decodeIfPresent(String.self, forKey: .lastKnownPath) ?? ""
         fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint) ?? ""
+        fileNumber = try container.decodeIfPresent(String.self, forKey: .fileNumber)
     }
 
     // MARK: Reading a file
@@ -74,6 +81,15 @@ public struct DocumentIdentity: Codable, Hashable, Sendable {
             result.append(DocumentKey.hex(Data(bytes: bytes, count: length)))
         }
         return result
+    }
+
+    /// "device:inode" for the file at `url`, or nil if it can't be read.
+    public static func fileNumber(of url: URL) -> String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let device = attributes[.systemNumber] as? NSNumber,
+              let inode = attributes[.systemFileNumber] as? NSNumber
+        else { return nil }
+        return "\(device.uint64Value):\(inode.uint64Value)"
     }
 
     public static let fingerprintSpan = 64 * 1024
