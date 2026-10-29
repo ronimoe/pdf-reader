@@ -53,12 +53,38 @@ struct ReleaseTests {
         #expect(everyPage(harness).isEmpty)
     }
 
-    @Test(arguments: ["third-party-annots", "acroform-filled", "nasa-tm-2020-220520"])
+    @Test(arguments: ["third-party-annots", "acroform-filled", "nasa-tm-2020-220520", IndirectSubtypeFixture.name])
     func theListIsWhatReadingEveryPageGives(_ name: String) async throws {
-        let harness = try await AnnotationHarness(corpus: name)
+        let harness = name == IndirectSubtypeFixture.name
+            ? try await AnnotationHarness(data: IndirectSubtypeFixture.make(), name: "\(name).pdf")
+            : try await AnnotationHarness(corpus: name)
         defer { harness.close() }
+        if name == IndirectSubtypeFixture.name {
+            // PDFKit follows `/Subtype 9 0 R` and shows a highlight on page 2; so must the list.
+            #expect(harness.pdf.page(at: 1)?.annotations.map(\.type) == ["Highlight"])
+            #expect(listed(harness).count == 1)
+        }
         #expect(harness.editor.pagesThatCanHoldListedAnnotations() != nil)
         #expect(listed(harness) == everyPage(harness))
+    }
+
+    @Test func descriptorsReadAgainstAnotherPageCountArentTrusted() async throws {
+        let harness = try await AnnotationHarness(corpus: "third-party-annots")
+        defer { harness.close() }
+        let info = try #require(harness.editor.info)
+        #expect(info.pageCount == harness.pdf.pageCount)
+        // The parser saw a different number of pages than PDFKit: read every page.
+        var shifted = info
+        shifted.pageCount = harness.pdf.pageCount + 1
+        harness.editor.load(shifted)
+        #expect(harness.editor.pagesThatCanHoldListedAnnotations() == nil)
+        #expect(listed(harness) == everyPage(harness))
+        // Unknown, as for a file whose page count couldn't be read: read every page too.
+        shifted.pageCount = nil
+        harness.editor.load(shifted)
+        #expect(harness.editor.pagesThatCanHoldListedAnnotations() == nil)
+        harness.editor.load(info)
+        #expect(harness.editor.pagesThatCanHoldListedAnnotations() != nil)
     }
 
     @Test func anUnreadableFileFallsBackToReadingEveryPage() async throws {
@@ -174,5 +200,26 @@ struct ReleaseTests {
         // Page 2 is empty: the ink check must say so.
         #expect(!SelfCheck.drawsInk(try #require(document.page(at: 1))))
         #expect(SelfCheck.drawsInk(try #require(document.page(at: 0))))
+    }
+}
+
+/// Three pages; page 2 has a highlight whose `/Subtype` is an indirect reference to the name
+/// `/Highlight`. Legal PDF, and PDFKit shows it; the descriptors once read it as no subtype.
+nonisolated enum IndirectSubtypeFixture {
+    static let name = "indirect-subtype"
+
+    static func make() -> Data {
+        var objects: [Int: String] = [:]
+        objects[1] = "<< /Type /Catalog /Pages 2 0 R >>"
+        objects[2] = "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>"
+        let resources = "/Resources << /Font << /F1 7 0 R >> >>"
+        objects[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R \(resources) >>"
+        objects[4] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R \(resources) /Annots [8 0 R] >>"
+        objects[5] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R \(resources) >>"
+        objects[6] = SpikeRawPDF.stream("BT /F1 14 Tf 72 700 Td (A page of the indirect subtype fixture) Tj ET\n")
+        objects[7] = SpikeRawPDF.helvetica
+        objects[8] = "<< /Type /Annot /Subtype 9 0 R /Rect [72 696 340 716] /QuadPoints [72 716 340 716 72 696 340 696] /C [1 1 0] >>"
+        objects[9] = "/Highlight"
+        return SpikeRawPDF.build(objects: objects, root: 1).data
     }
 }
