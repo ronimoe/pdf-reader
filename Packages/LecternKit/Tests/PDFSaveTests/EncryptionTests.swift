@@ -393,6 +393,82 @@ struct EncryptedFixture: Sendable, CustomTestStringConvertible {
         #expect(try s.streamMethod(["Type": .name("Metadata")]) == .aesV2)
     }
 
+    // MARK: Apple's own encryption
+
+    /// The encrypted PDFs most Mac users have come from macOS itself (Preview, Print ▸ Save as
+    /// PDF), written by CoreGraphics or PDFKit. Make some here, then check PDFSave gets qpdf's key
+    /// for the user and the owner password, saves into them, and qpdf accepts the result.
+    enum AppleWriter: String, CaseIterable, Sendable { case coreGraphics40, coreGraphics128, pdfKit }
+
+    static func appleEncrypted(_ writer: AppleWriter, user: String?) throws -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        var info: [CFString: Any] = [kCGPDFContextOwnerPassword: "owner-pass"]
+        if let user { info[kCGPDFContextUserPassword] = user }
+        switch writer {
+        case .coreGraphics40: info[kCGPDFContextEncryptionKeyLength] = 40
+        case .coreGraphics128, .pdfKit: info[kCGPDFContextEncryptionKeyLength] = 128
+        }
+        let plain = writer == .pdfKit
+        let consumer = try #require(CGDataConsumer(data: data as CFMutableData))
+        let context = try #require(CGContext(consumer: consumer, mediaBox: &box, plain ? nil : info as CFDictionary))
+        context.beginPDFPage(nil)
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 72, y: 700, width: 200, height: 20))
+        context.endPDFPage()
+        context.closePDF()
+        guard plain else { return data as Data }
+        // Preview's route: PDFKit's own write with passwords.
+        let document = try #require(PDFDocument(data: data as Data))
+        var options: [PDFDocumentWriteOption: Any] = [.ownerPasswordOption: "owner-pass"]
+        if let user { options[.userPasswordOption] = user }
+        let url = FileManager.default.temporaryDirectory.appending(path: "lectern-apple-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try #require(document.write(to: url, withOptions: options))
+        return try Data(contentsOf: url)
+    }
+
+    @Test(.enabled(if: Tools.gate(Tools.has("qpdf")), "qpdf not installed"),
+          arguments: AppleWriter.allCases, [nil, "user-pass"] as [String?])
+    func applesEncryptionIsReadAndWritten(_ writer: AppleWriter, _ user: String?) throws {
+        let data = try Self.appleEncrypted(writer, user: user)
+        let url = FileManager.default.temporaryDirectory.appending(path: "lectern-apple-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try data.write(to: url)
+        let doc = try PDFSaveDocument(data: data, password: user)
+        let security = try #require(doc.security)
+        print("Apple \(writer) user=\(user ?? "-"): V\(security.version) R\(security.revision) key \(security.fileKey.count) bytes, strings \(security.strings), streams \(security.streams)")
+        let userKey = try #require(doc.fileEncryptionKey).map { String(format: "%02x", $0) }.joined()
+        #expect(try ExternalQpdf.fileKey(url, password: user ?? "") == userKey)
+        // The owner password gives the same key, except on CoreGraphics' 40-bit files: their /O
+        // doesn't decrypt with the owner password in any reader (PDFKit and CoreGraphics
+        // themselves, qpdf, MuPDF, pikepdf all refuse it), so only the user password opens them.
+        if writer == .coreGraphics40 {
+            if user != nil {
+                #expect(throws: PDFSaveError.encrypted(.passwordNotAuthenticated)) { try PDFSaveDocument(data: data, password: "owner-pass") }
+                let pk = try #require(PDFDocument(data: data))
+                #expect(!pk.unlock(withPassword: "owner-pass"))
+            }
+        } else {
+            let owner = try PDFSaveDocument(data: data, password: "owner-pass")
+            #expect(owner.security?.authenticatedAs == .owner)
+            #expect(owner.fileEncryptionKey == doc.fileEncryptionKey)
+            #expect(try ExternalQpdf.fileKey(url, password: "owner-pass") == userKey)
+        }
+        let result = try IncrementalWriter().saveInPlace(original: data, changes: [
+            .addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 300, y: 300), contents: "Note in Apple's encryption")),
+        ], password: user)
+        try SavedFileCheck.verify(result.data, original: data, against: result, password: user)
+        let out = url.deletingPathExtension().appendingPathExtension("saved.pdf")
+        defer { try? FileManager.default.removeItem(at: out) }
+        try result.data.write(to: out)
+        try Qpdf.run(["--check", out.path], password: user ?? "owner-pass")
+        // PDFKit reads the note back with the password.
+        let pk = try #require(PDFDocument(data: result.data))
+        if pk.isLocked { #expect(pk.unlock(withPassword: user ?? "")) }
+        #expect(pk.page(at: 0)?.annotations.contains { $0.contents == "Note in Apple's encryption" } == true)
+    }
+
     @Test func rc4MatchesAKnownVector() {
         // RFC 6229 is for longer keys; this is the classic "Key"/"Plaintext" vector.
         #expect(Crypto.rc4(key: Array("Key".utf8), data: Array("Plaintext".utf8))

@@ -170,7 +170,9 @@ struct StandardSecurity: Sendable {
                 case .owner:
                     // Algorithm 7: the owner password's key decrypts /O to the padded user password.
                     var k = Crypto.md5(Password.padded(pw))
-                    if r >= 3 { for _ in 0..<50 { k = Crypto.md5(k) } }
+                    // 50 rounds over the first n bytes (algorithm 3, step c), as qpdf and pdf.js
+                    // do; the same as the whole digest for 16-byte keys.
+                    if r >= 3 { for _ in 0..<50 { k = Crypto.md5(Array(k.prefix(n))) } }
                     let rc4Key = Array(k.prefix(n))
                     if r == 2 {
                         userPassword = Crypto.rc4(key: rc4Key, data: o)

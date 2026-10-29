@@ -139,14 +139,19 @@ import Testing
         if c.password != nil, !(c.password == "owner-pass") {
             #expect(throws: PDFSaveError.encrypted(.passwordNotAuthenticated)) { try PDFSaveDocument(data: result.data) }
         }
-        // Nothing the update wrote is in the clear: no annotation text, name or appearance operator.
+        // Nothing the update wrote is in the clear: no annotation text or name, in any of the forms
+        // the writer would use (a literal, or hex of PDFDocEncoding or UTF-16), and no appearance
+        // operator. Under /StrF /Identity the strings are meant to be in the clear: a positive control.
         let update = result.data.suffix(from: original.count)
+        let stringsInTheClear = before.security?.strings == .identity
         for change in o.changes {
             for text in [change.addedContents, change.addedName].compactMap({ $0 }) where !text.isEmpty {
-                #expect(update.range(of: Data(text.utf8)) == nil, "\(text) is in the clear")
+                let hex = PDFString(text: text).bytes.map { String(format: "%02X", $0) }.joined()
+                let found = update.range(of: Data(text.utf8)) != nil || update.range(of: Data(hex.utf8)) != nil
+                #expect(found == stringsInTheClear, "\(text): in the clear \(found), expected \(stringsInTheClear)")
             }
         }
-        if !(before.security?.streams == .identity) {
+        if before.security?.streams != .identity {
             #expect(update.range(of: Data("LecternHL gs".utf8)) == nil && update.range(of: Data(" re B".utf8)) == nil)
         }
     }
