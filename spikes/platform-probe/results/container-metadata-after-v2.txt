@@ -1,0 +1,3 @@
+total 0
+drwx------  12 ronimoe  staff  - 384 Oct 29 15:55 Data
+/Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbe/.com.apple.containermanagerd.metadata.plist: (The file “.com.apple.containermanagerd.metadata.plist” couldn’t be opened because you don’t have permission to view it.)

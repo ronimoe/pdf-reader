@@ -1,0 +1,25 @@
+2026-10-29 15:51:37.701 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:39.398 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:39.832 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:39.857 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:40.387 A  syspolicyd[498:357709] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:40.964 A  syspolicyd[498:357709] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:40.991 A  syspolicyd[498:357709] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:42.551 Df syspolicyd[498:357088] [com.apple.launchservices:code-evaluation] -[LSCodeEvaluation moveItemToTrashWithReply:]: info={<private>}
+2026-10-29 15:51:42.559 Df syspolicyd[498:357088] [com.apple.syspolicy.exec:default] Code evaluation completed: 7
+2026-10-29 15:51:42.580 A  syspolicyd[498:357709] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:42.583 A  syspolicyd[498:357709] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:42.632 E  syspolicyd[498:357953] [com.apple.syspolicy.exec:default] Terminating process due to Gatekeeper rejection: 85547, <private>
+2026-10-29 15:51:44.319 Df syspolicyd[498:357953] [com.apple.securityd:gk] rejecting due to lack of matching active rule
+2026-10-29 15:51:49.647 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:49.661 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:49.685 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:50.909 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:50.935 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:51.812 A  syspolicyd[498:357a14] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:51.821 A  syspolicyd[498:357a14] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:51.840 A  syspolicyd[498:357a14] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:55.221 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:55.246 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:55.255 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary
+2026-10-29 15:51:55.266 A  syspolicyd[498:357088] (Security) SecTrustEvaluateIfNecessary

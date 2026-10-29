@@ -1,0 +1,39 @@
+{
+  "buildTag" : "v1-nosandbox",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1-nosandbox\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:56:22Z",
+  "home" : "\/Users\/ronimoe",
+  "mode" : "keychain-delete",
+  "pid" : 90860,
+  "runID" : "kcn-4-delete-v1",
+  "sandboxed" : false,
+  "started" : "2026-10-29T08:56:22Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1-nosandbox\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "kcn-4-delete-v1",
+        "--mode",
+        "keychain-delete"
+      ],
+      "at" : "2026-10-29T08:56:22Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:56:22Z",
+      "message" : "No error.",
+      "status" : 0,
+      "step" : "delete-legacy"
+    },
+    {
+      "at" : "2026-10-29T08:56:22Z",
+      "message" : "A required entitlement isn't present.",
+      "status" : -34018,
+      "step" : "delete-dataProtection"
+    }
+  ]
+}

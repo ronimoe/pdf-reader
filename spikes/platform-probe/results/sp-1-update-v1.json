@@ -1,0 +1,85 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/Applications\/PlatformProbeSparkle.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:44:46Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbeSparkle\/Data",
+  "mode" : "sparkle-update",
+  "pid" : 80190,
+  "runID" : "sp-1-update-v1",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:44:46Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Applications\/PlatformProbeSparkle.app\/Contents\/MacOS\/PlatformProbeSparkle",
+        "--run-id",
+        "sp-1-update-v1",
+        "--mode",
+        "sparkle-update"
+      ],
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "feed" : "http:\/\/127.0.0.1:8765\/appcast.xml",
+      "installerLauncherService" : true,
+      "publicKeyPresent" : true,
+      "step" : "sparkle-config"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "ok" : true,
+      "step" : "updater-start"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "check-for-updates-called"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "driver-userInitiatedCheck"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "displayVersion" : "0.1.0 (2)",
+      "stage" : 0,
+      "step" : "driver-updateFound",
+      "version" : "2"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "driver-downloadInitiated"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "bytes" : 1040180,
+      "step" : "driver-expectedContentLength"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "driver-extracting"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "driver-readyToInstallAndRelaunch"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "driver-willInstallUpdate",
+      "version" : "2"
+    },
+    {
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "driver-willRelaunchApplication"
+    },
+    {
+      "applicationTerminated" : false,
+      "at" : "2026-10-29T08:44:46Z",
+      "step" : "driver-installing"
+    }
+  ]
+}

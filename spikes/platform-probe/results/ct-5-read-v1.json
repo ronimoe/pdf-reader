@@ -1,0 +1,46 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:55:11Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "container-read",
+  "pid" : 89658,
+  "runID" : "ct-5-read-v1",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:55:11Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "ct-5-read-v1",
+        "--mode",
+        "container-read"
+      ],
+      "at" : "2026-10-29T08:55:11Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:55:11Z",
+      "content" : {
+        "at" : "2026-10-29T08:55:10Z",
+        "writtenBy" : "v2"
+      },
+      "ok" : true,
+      "step" : "read-marker"
+    },
+    {
+      "at" : "2026-10-29T08:55:11Z",
+      "step" : "read-defaults",
+      "value" : "v2"
+    },
+    {
+      "at" : "2026-10-29T08:55:11Z",
+      "ok" : true,
+      "step" : "write-new-file"
+    }
+  ]
+}

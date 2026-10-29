@@ -1,0 +1,128 @@
+== throwaway EdDSA key (account lectern-m0c-probe)
+public key: qo9I8hRsyXP6DuGa7sSudMluSRlj28iEOQdjeHfC64M=
+== build v1 and v2
+-- /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbeSparkle.app
+Identifier=io.github.ronimoe.PlatformProbeSparkle
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=711 flags=0x10002(adhoc,runtime) hashes=11+7 location=embedded
+CDHash=96b71d31eb0880080449aee19bec48dc7ce9166d
+Signature=adhoc
+Info.plist entries=28
+TeamIdentifier=not set
+Runtime Version=27.0.0
+Designated requirement: # designated => cdhash H"96b71d31eb0880080449aee19bec48dc7ce9166d"
+{"com.apple.security.network.client":true,"com.apple.security.cs.disable-library-validation":true,"com.apple.security.files.bookmarks.app-scope":true,"com.apple.security.files.user-selected.read-write":true,"com.apple.security.get-task-allow":true,"com.apple.security.app-sandbox":true,"com.apple.security.temporary-exception.mach-lookup.global-name":["io.github.ronimoe.PlatformProbeSparkle-spks","io.github.ronimoe.PlatformProbeSparkle-spki"]}
+/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbeSparkle.app: satisfies its Designated Requirement
+-- /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbeSparkle.app
+Identifier=io.github.ronimoe.PlatformProbeSparkle
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=711 flags=0x10002(adhoc,runtime) hashes=11+7 location=embedded
+CDHash=e9c9926a532971a1084abf65ad318f2d3950bf7e
+Signature=adhoc
+Info.plist entries=28
+TeamIdentifier=not set
+Runtime Version=27.0.0
+Designated requirement: # designated => cdhash H"e9c9926a532971a1084abf65ad318f2d3950bf7e"
+{"com.apple.security.network.client":true,"com.apple.security.cs.disable-library-validation":true,"com.apple.security.files.bookmarks.app-scope":true,"com.apple.security.files.user-selected.read-write":true,"com.apple.security.get-task-allow":true,"com.apple.security.app-sandbox":true,"com.apple.security.temporary-exception.mach-lookup.global-name":["io.github.ronimoe.PlatformProbeSparkle-spks","io.github.ronimoe.PlatformProbeSparkle-spki"]}
+/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbeSparkle.app: satisfies its Designated Requirement
+== signatures of Sparkle's embedded helpers in v1
+Contents/Frameworks/Sparkle.framework: CodeDirectory v=20500 size=1116 flags=0x10002(adhoc,runtime) hashes=28+3 location=embedded Signature=adhoc TeamIdentifier=not set 
+Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc: CodeDirectory v=20500 size=550 flags=0x10002(adhoc,runtime) hashes=6+7 location=embedded Signature=adhoc TeamIdentifier=not set 
+Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate: CodeDirectory v=20500 size=1012 flags=0x10002(adhoc,runtime) hashes=20+7 location=embedded Signature=adhoc TeamIdentifier=not set 
+Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app: CodeDirectory v=20500 size=644 flags=0x10002(adhoc,runtime) hashes=9+7 location=embedded Signature=adhoc TeamIdentifier=not set 
+== install v1
+== archive, sign and publish v2
+sign_update: sparkle:edSignature="LoUOnkyNxpaZYiKWw96tP9EY2hOCTzQW5InqaXFWEBG+Nz0kXCVyE8sGK4PwZ3PR/A2dPVfOvM8rwWZzAZa1Bg==" length="1040180"
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+== installed v1 before update: CFBundleVersion 1
+== launch sp-1-update-v1: Applications PlatformProbeSparkle.app  --mode sparkle-update
+after run: no dialog windows on screen (100 on-screen windows checked);
+{
+  "runID": "sp-1-update-v1",
+  "mode": "sparkle-update",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Applications/PlatformProbeSparkle.app/Contents/MacOS/PlatformProbeSparkle",
+        "--run-id",
+        "sp-1-update-v1",
+        "--mode",
+        "sparkle-update"
+      ],
+      "step": "launched"
+    },
+    {
+      "feed": "http://127.0.0.1:8765/appcast.xml",
+      "installerLauncherService": true,
+      "publicKeyPresent": true,
+      "step": "sparkle-config"
+    },
+    {
+      "ok": true,
+      "step": "updater-start"
+    },
+    {
+      "step": "check-for-updates-called"
+    },
+    {
+      "step": "driver-userInitiatedCheck"
+    },
+    {
+      "displayVersion": "0.1.0 (2)",
+      "stage": 0,
+      "step": "driver-updateFound",
+      "version": "2"
+    },
+    {
+      "step": "driver-downloadInitiated"
+    },
+    {
+      "bytes": 1040180,
+      "step": "driver-expectedContentLength"
+    },
+    {
+      "step": "driver-extracting"
+    },
+    {
+      "step": "driver-readyToInstallAndRelaunch"
+    },
+    {
+      "step": "driver-willInstallUpdate",
+      "version": "2"
+    },
+    {
+      "step": "driver-willRelaunchApplication"
+    },
+    {
+      "applicationTerminated": false,
+      "step": "driver-installing"
+    }
+  ]
+}
+(system log excerpt: results/logs-sp-1-update-v1.txt)
+== waiting up to 60s for the relaunched app to record itself
+{
+  "runID": "launch-1793263486-80208",
+  "buildTag": "v2",
+  "codeVariant": "v2: rebuilt with a code change",
+  "bundleVersion": "2",
+  "bundlePath": "/Applications/PlatformProbeSparkle.app",
+  "sandboxed": true
+}
+== on disk after update
+CFBundleVersion: 2
+CDHash=e9c9926a532971a1084abf65ad318f2d3950bf7e
+v2 build CDHash: CDHash=e9c9926a532971a1084abf65ad318f2d3950bf7e
+xattrs: com.apple.provenance 
+installed app signature valid
+http requests served:
+  127.0.0.1 - - [29/Oct/2026 15:44:45] "GET /appcast.xml HTTP/1.1" 200 -
+  127.0.0.1 - - [29/Oct/2026 15:44:46] "GET /appcast.xml HTTP/1.1" 200 -
+  127.0.0.1 - - [29/Oct/2026 15:44:46] "GET /PlatformProbeSparkle-2.zip HTTP/1.1" 200 -

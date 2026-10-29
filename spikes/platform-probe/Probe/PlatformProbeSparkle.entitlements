@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Identical to App/Lectern.entitlements ... -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- ... plus what Sparkle 2 requires in a sandboxed app
+	     (https://sparkle-project.org/documentation/sandboxing/). -->
+	<!-- Needed only because the app is ad-hoc signed: with the hardened runtime,
+	     Library Validation rejects the embedded ad-hoc Sparkle.framework
+	     ("mapping process and mapped file have different Team IDs") and the app
+	     dies in dyld. See docs/spikes/m0c-platform.md, experiment 4. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+	</array>
+</dict>
+</plist>

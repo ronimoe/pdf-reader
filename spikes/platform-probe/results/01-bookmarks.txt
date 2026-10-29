@@ -1,0 +1,354 @@
+== signatures
+-- /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app
+Identifier=io.github.ronimoe.PlatformProbe
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=672 flags=0x10002(adhoc,runtime) hashes=10+7 location=embedded
+CDHash=2d3a5b654cd834eee89ca5b177f550f3cd3e2614
+Signature=adhoc
+Info.plist entries=22
+TeamIdentifier=not set
+Runtime Version=27.0.0
+Designated requirement: # designated => cdhash H"2d3a5b654cd834eee89ca5b177f550f3cd3e2614"
+{"com.apple.security.files.user-selected.read-write":true,"com.apple.security.network.client":true,"com.apple.security.get-task-allow":true,"com.apple.security.app-sandbox":true,"com.apple.security.files.bookmarks.app-scope":true}
+/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app: satisfies its Designated Requirement
+-- /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app
+Identifier=io.github.ronimoe.PlatformProbe
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=672 flags=0x10002(adhoc,runtime) hashes=10+7 location=embedded
+CDHash=e955a7bbf2df9ea70bebb942d0c174c301b9d19c
+Signature=adhoc
+Info.plist entries=22
+TeamIdentifier=not set
+Runtime Version=27.0.0
+Designated requirement: # designated => cdhash H"e955a7bbf2df9ea70bebb942d0c174c301b9d19c"
+{"com.apple.security.files.user-selected.read-write":true,"com.apple.security.network.client":true,"com.apple.security.get-task-allow":true,"com.apple.security.app-sandbox":true,"com.apple.security.files.bookmarks.app-scope":true}
+/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app: satisfies its Designated Requirement
+== step 1-2: v1 opens the file through LaunchServices and stores a bookmark
+== launch bm-1-create-v1: v1 PlatformProbe.app file=/Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf --mode bookmark-create
+after run: no dialog windows on screen (34 on-screen windows checked);
+{
+  "runID": "bm-1-create-v1",
+  "mode": "bookmark-create",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "bm-1-create-v1",
+        "--mode",
+        "bookmark-create"
+      ],
+      "step": "launched"
+    },
+    {
+      "ok": true,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf",
+      "step": "open-event"
+    },
+    {
+      "bytes": 346,
+      "checksum": 22572,
+      "ok": true,
+      "startsWithPDF": true,
+      "step": "read-via-open-event"
+    },
+    {
+      "bytes": 804,
+      "ok": true,
+      "step": "create-bookmark",
+      "storedAt": "/Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbe/Data/Library/Application Support/PlatformProbe/test.bookmark"
+    }
+  ]
+}
+(system log excerpt: results/logs-bm-1-create-v1.txt)
+== step 3 (control): v1 relaunched without the file
+== launch bm-2-resolve-v1: v1 PlatformProbe.app  --mode bookmark-resolve --direct-path /Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf
+after run: no dialog windows on screen (34 on-screen windows checked);
+{
+  "runID": "bm-2-resolve-v1",
+  "mode": "bookmark-resolve",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "bm-2-resolve-v1",
+        "--mode",
+        "bookmark-resolve",
+        "--direct-path",
+        "/Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf"
+      ],
+      "step": "launched"
+    },
+    {
+      "errno": 1,
+      "ok": false,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf",
+      "step": "control-direct-read",
+      "strerror": "Operation not permitted"
+    },
+    {
+      "bytes": 804,
+      "ok": true,
+      "step": "load-bookmark"
+    },
+    {
+      "isStale": false,
+      "ok": true,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf",
+      "step": "resolve-bookmark"
+    },
+    {
+      "ok": true,
+      "step": "start-accessing"
+    },
+    {
+      "bytes": 346,
+      "checksum": 22572,
+      "ok": true,
+      "startsWithPDF": true,
+      "step": "read-via-bookmark"
+    }
+  ]
+}
+== step 4: v2 (different CDHash) launched without the file
+== launch bm-3-resolve-v2: v2 PlatformProbe.app  --mode bookmark-resolve --direct-path /Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf
+after run: no dialog windows on screen (34 on-screen windows checked);
+{
+  "runID": "bm-3-resolve-v2",
+  "mode": "bookmark-resolve",
+  "buildTag": "v2",
+  "codeVariant": "v2: rebuilt with a code change",
+  "bundleVersion": "2",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "bm-3-resolve-v2",
+        "--mode",
+        "bookmark-resolve",
+        "--direct-path",
+        "/Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf"
+      ],
+      "step": "launched"
+    },
+    {
+      "errno": 1,
+      "ok": false,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf",
+      "step": "control-direct-read",
+      "strerror": "Operation not permitted"
+    },
+    {
+      "bytes": 804,
+      "ok": true,
+      "step": "load-bookmark"
+    },
+    {
+      "isStale": false,
+      "ok": true,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/bookmark-test.pdf",
+      "step": "resolve-bookmark"
+    },
+    {
+      "ok": true,
+      "step": "start-accessing"
+    },
+    {
+      "bytes": 346,
+      "checksum": -7199013733768746793,
+      "ok": true,
+      "startsWithPDF": true,
+      "step": "read-via-bookmark"
+    }
+  ]
+}
+(system log excerpt: results/logs-bm-3-resolve-v2.txt)
+== step 5a: rename the file in place, resolve with v2
+== launch bm-4-renamed-v2: v2 PlatformProbe.app  --mode bookmark-resolve --direct-path /Users/ronimoe/PlatformProbeFixtures/renamed.pdf
+after run: no dialog windows on screen (34 on-screen windows checked);
+{
+  "runID": "bm-4-renamed-v2",
+  "mode": "bookmark-resolve",
+  "buildTag": "v2",
+  "codeVariant": "v2: rebuilt with a code change",
+  "bundleVersion": "2",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "bm-4-renamed-v2",
+        "--mode",
+        "bookmark-resolve",
+        "--direct-path",
+        "/Users/ronimoe/PlatformProbeFixtures/renamed.pdf"
+      ],
+      "step": "launched"
+    },
+    {
+      "errno": 1,
+      "ok": false,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/renamed.pdf",
+      "step": "control-direct-read",
+      "strerror": "Operation not permitted"
+    },
+    {
+      "bytes": 804,
+      "ok": true,
+      "step": "load-bookmark"
+    },
+    {
+      "isStale": true,
+      "ok": true,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/renamed.pdf",
+      "step": "resolve-bookmark"
+    },
+    {
+      "ok": true,
+      "step": "start-accessing"
+    },
+    {
+      "bytes": 346,
+      "checksum": -7199013733768746793,
+      "ok": true,
+      "startsWithPDF": true,
+      "step": "read-via-bookmark"
+    },
+    {
+      "bytes": 796,
+      "ok": true,
+      "step": "refresh-stale-bookmark"
+    }
+  ]
+}
+== step 5b: move the file into another folder, resolve with v2
+== launch bm-5-moved-v2: v2 PlatformProbe.app  --mode bookmark-resolve --direct-path /Users/ronimoe/PlatformProbeFixtures/moved/deeper/moved.pdf
+after run: no dialog windows on screen (34 on-screen windows checked);
+{
+  "runID": "bm-5-moved-v2",
+  "mode": "bookmark-resolve",
+  "buildTag": "v2",
+  "codeVariant": "v2: rebuilt with a code change",
+  "bundleVersion": "2",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "bm-5-moved-v2",
+        "--mode",
+        "bookmark-resolve",
+        "--direct-path",
+        "/Users/ronimoe/PlatformProbeFixtures/moved/deeper/moved.pdf"
+      ],
+      "step": "launched"
+    },
+    {
+      "errno": 1,
+      "ok": false,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/moved/deeper/moved.pdf",
+      "step": "control-direct-read",
+      "strerror": "Operation not permitted"
+    },
+    {
+      "bytes": 796,
+      "ok": true,
+      "step": "load-bookmark"
+    },
+    {
+      "isStale": true,
+      "ok": true,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/moved/deeper/moved.pdf",
+      "step": "resolve-bookmark"
+    },
+    {
+      "ok": true,
+      "step": "start-accessing"
+    },
+    {
+      "bytes": 346,
+      "checksum": -7199013733768746793,
+      "ok": true,
+      "startsWithPDF": true,
+      "step": "read-via-bookmark"
+    },
+    {
+      "bytes": 876,
+      "ok": true,
+      "step": "refresh-stale-bookmark"
+    }
+  ]
+}
+== step 5c: back to v1 after v2 refreshed or used the bookmark
+== launch bm-6-resolve-v1-again: v1 PlatformProbe.app  --mode bookmark-resolve --direct-path /Users/ronimoe/PlatformProbeFixtures/moved/deeper/moved.pdf
+after run: no dialog windows on screen (34 on-screen windows checked);
+{
+  "runID": "bm-6-resolve-v1-again",
+  "mode": "bookmark-resolve",
+  "buildTag": "v1",
+  "codeVariant": "v1",
+  "bundleVersion": "1",
+  "sandboxed": true,
+  "complete": true,
+  "steps": [
+    {
+      "arguments": [
+        "/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v1/PlatformProbe.app/Contents/MacOS/PlatformProbe",
+        "--run-id",
+        "bm-6-resolve-v1-again",
+        "--mode",
+        "bookmark-resolve",
+        "--direct-path",
+        "/Users/ronimoe/PlatformProbeFixtures/moved/deeper/moved.pdf"
+      ],
+      "step": "launched"
+    },
+    {
+      "errno": 1,
+      "ok": false,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/moved/deeper/moved.pdf",
+      "step": "control-direct-read",
+      "strerror": "Operation not permitted"
+    },
+    {
+      "bytes": 876,
+      "ok": true,
+      "step": "load-bookmark"
+    },
+    {
+      "isStale": false,
+      "ok": true,
+      "path": "/Users/ronimoe/PlatformProbeFixtures/moved/deeper/moved.pdf",
+      "step": "resolve-bookmark"
+    },
+    {
+      "ok": true,
+      "step": "start-accessing"
+    },
+    {
+      "bytes": 346,
+      "checksum": 22572,
+      "ok": true,
+      "startsWithPDF": true,
+      "step": "read-via-bookmark"
+    }
+  ]
+}

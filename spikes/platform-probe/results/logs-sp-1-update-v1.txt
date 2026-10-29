@@ -1,0 +1,37 @@
+# containermanagerd (lines naming the probe, writes, errors)
+2026-10-29 15:44:46.083 Df containermanagerd[647:34df42] [com.apple.containermanager:fs] Wrote [/Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbeSparkle/.com.apple.containermanagerd.metadata.plist], length = 31355, options = 0x10000001, mode = 0666
+2026-10-29 15:44:46.083 Df containermanagerd[647:34df42] [com.apple.containermanager:fs] Wrote [/Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbeSparkle/.com.apple.containermanagerd.metadata.plist], length = 31247, options = 0x10000001, mode = 0666
+# TCC services requested (all processes)
+   2 service=kTCCServiceAddressBook
+   3 service=kTCCServiceAppleEvents
+   2 service=kTCCServiceCalendar
+   4 service=kTCCServiceDeveloperTool
+  16 service=kTCCServiceListenEvent
+   2 service=kTCCServiceReminders
+   2 service=kTCCServiceScreenCapture
+   2 service=kTCCServiceSystemPolicyAllFiles
+# TCC lines naming the probe
+2026-10-29 15:44:46.689 I  tccd[428:34de43] [com.apple.TCC:access] Handling access request to kTCCServiceListenEvent, from Sub:{io.github.ronimoe.PlatformProbeSparkle}Resp:{TCCDProcess: identifier=io.github.ronimoe.PlatformProbeSparkle, pid=80208, auid=501, euid=501, binary_path=/Applications/Platfo
+2026-10-29 15:44:46.709 I  tccd[428:34d0d6] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbeSparkle, pid=80208, auid=501, euid=501, binary_path=/Applications/PlatformProbeSparkle.app/Contents/MacOS/PlatformProbeSparkle}, requesting={TCCDProc
+2026-10-29 15:44:46.709 I  tccd[428:34d0d6] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbeSparkle, pid=80208, auid=501, euid=501, binary_path=/Applications/PlatformProbeSparkle.app/Contents/MacOS/PlatformProbeSparkle}, requesting={TCCDProc
+2026-10-29 15:44:46.710 I  tccd[428:34d0d6] [com.apple.TCC:access] IDENTITY_ATTRIBUTION: /Applications/PlatformProbeSparkle.app/Contents/MacOS/PlatformProbeSparkle[583]: from cache: = io.github.ronimoe.PlatformProbeSparkle, type 0 (74769/77963)
+2026-10-29 15:44:46.711 Df tccd[428:34d0d6] [com.apple.TCC:access] -[TCCDAccessIdentity staticCode]: static code for: identifier io.github.ronimoe.PlatformProbeSparkle, type: 0: 0x740f9c300 at /Applications/PlatformProbeSparkle.app
+2026-10-29 15:44:46.711 I  tccd[428:34d0d6] [com.apple.TCC:access] /Applications/PlatformProbeSparkle.app/Contents/MacOS/PlatformProbeSparkle (offset 0) linked against SDK version 0x1b0000, platform: 1
+2026-10-29 15:44:46.711 I  tccd[428:34d0d6] [com.apple.TCC:access] -[TCCDAccessIdentity matchesCodeRequirement:]: SecStaticCodeCheckValidity() static code (0x740f9c300) from io.github.ronimoe.PlatformProbeSparkle : anchor apple; status: -67050
+2026-10-29 15:44:46.711 I  tccd[428:34d0d6] [com.apple.TCC:access] For io.github.ronimoe.PlatformProbeSparkle: matches platform requirements: No
+2026-10-29 15:44:46.711 E  tccd[428:34d0d6] [com.apple.TCC:access] Prompting policy for hardened runtime; service: kTCCServiceAppleEvents requires entitlement com.apple.security.automation.apple-events but it is missing for accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbeSparkle, p
+2026-10-29 15:44:46.711 I  tccd[428:34d0d6] [com.apple.TCC:access] Derived team id of (null) for TCCDProcess: identifier=io.github.ronimoe.PlatformProbeSparkle, pid=80208, auid=501, euid=501, binary_path=/Applications/PlatformProbeSparkle.app/Contents/MacOS/PlatformProbeSparkle
+# SecurityAgent / securityd / secd / syspolicyd lines naming the probe, and SecurityAgent activity
+2026-10-29 15:44:45.963 I  syspolicyd[498:34d8d2] [com.apple.syspolicy.exec:default] GK Xprotect results: PST: (path: 9ba17d4b86605629), (team: (null)), (id: (null)), (bundle_id: (null)), XPScan: 0,4700360306302799431,2026-10-29 08:44:45 +0000,(null),(null),file:///Applications/PlatformProbeSparkle.
+2026-10-29 15:44:45.963 I  syspolicyd[498:34db14] [com.apple.syspolicy.exec:default] scan finished, waking up any waiters: PST: (path: 9ba17d4b86605629), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle)
+2026-10-29 15:44:45.963 Df syspolicyd[498:34d8d2] [com.apple.syspolicy.exec:default] GK evaluateScanResult: 2, PST: (path: 9ba17d4b86605629), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle), 0, 0, 1, 0, 0, 0, 0
+2026-10-29 15:44:45.963 I  syspolicyd[498:34d8d2] [com.apple.syspolicy.exec:default] Unregistering bundle for protection after scan: PST: (path: 9ba17d4b86605629), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle)
+2026-10-29 15:44:45.965 Df syspolicyd[498:34d8d2] [com.apple.syspolicy.exec:default] Found provenance data on target: TA(b716ec21f79b0e68, 2), PST: (path: 9ba17d4b86605629), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle)
+2026-10-29 15:44:45.966 Df syspolicyd[498:34d8d2] [com.apple.syspolicy.exec:default] Created provenance data for target: TA(b716ec21f79b0e68, 2), PST: (path: 9ba17d4b86605629), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle)
+2026-10-29 15:44:46.556 I  syspolicyd[498:34d8d2] [com.apple.syspolicy.exec:default] GK Xprotect results: PST: (path: 2d0e53dadc87dc9b), (team: (null)), (id: (null)), (bundle_id: (null)), XPScan: 0,4700360306302799431,2026-10-29 08:44:46 +0000,(null),(null),file:///Users/ronimoe/Library/Caches/io.gi
+2026-10-29 15:44:46.556 I  syspolicyd[498:34db14] [com.apple.syspolicy.exec:default] scan finished, waking up any waiters: PST: (path: 2d0e53dadc87dc9b), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle)
+2026-10-29 15:44:46.556 Df syspolicyd[498:34df1a] [com.apple.syspolicy.exec:default] GK evaluateScanResult: 2, PST: (path: 2d0e53dadc87dc9b), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle), 0, 0, 1, 0, 0, 0, 0
+2026-10-29 15:44:46.556 I  syspolicyd[498:34df1a] [com.apple.syspolicy.exec:default] Unregistering bundle for protection after scan: PST: (path: 2d0e53dadc87dc9b), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle)
+2026-10-29 15:44:46.557 Df syspolicyd[498:34df1a] [com.apple.syspolicy.exec:default] Found provenance data on target: TA(b716ec21f79b0e68, 2), PST: (path: 2d0e53dadc87dc9b), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle)
+2026-10-29 15:44:46.557 Df syspolicyd[498:34df1a] [com.apple.syspolicy.exec:default] Created provenance data for target: TA(b716ec21f79b0e68, 2), PST: (path: 2d0e53dadc87dc9b), (team: (null)), (id: io.github.ronimoe.PlatformProbeSparkle), (bundle_id: io.github.ronimoe.PlatformProbeSparkle)
+# sandbox denials for the probe

@@ -1,0 +1,27 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/Users\/ronimoe\/PlatformProbeFixtures\/gatekeeper\/blocked\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:52:11Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "info",
+  "pid" : 86110,
+  "runID" : "gk-b-after-block",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:52:11Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/PlatformProbeFixtures\/gatekeeper\/blocked\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "gk-b-after-block",
+        "--mode",
+        "info"
+      ],
+      "at" : "2026-10-29T08:52:11Z",
+      "step" : "launched"
+    }
+  ]
+}

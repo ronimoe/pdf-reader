@@ -1,0 +1,20 @@
+    Partitions =     (
+        "cdhash:2d3a5b654cd834eee89ca5b177f550f3cd3e2614"
+    Partitions =     (
+        "cdhash:2d3a5b654cd834eee89ca5b177f550f3cd3e2614"
+    Partitions =     (
+        "cdhash:2d3a5b654cd834eee89ca5b177f550f3cd3e2614"
+2026-10-29 15:24:09.139 I  securityd[400:114d] displaying keychain prompt for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app(68187)
+2026-10-29 15:24:09.139 Df securityd[400:114d] [com.apple.securityd:kcacl] displaying keychain prompt for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app(68187); ACL: <AclValidati
+2026-10-29 15:25:09.675 Df securityd[400:335e8e] [com.apple.securityd:integrity] ACL partition mismatch: client cdhash:cabadc83f51793e15e76d62581987c89d210e4bb ACL (
+    "cdhash:227d378e46b41bbb2844e28a9789d410268a4820"
+2026-10-29 15:25:15.392 Df securityd[400:335e8c] [com.apple.securityd:integrity] ACL partition mismatch: client cdhash:cabadc83f51793e15e76d62581987c89d210e4bb ACL (
+    "cdhash:227d378e46b41bbb2844e28a9789d410268a4820"
+2026-10-29 15:25:15.396 Df securityd[400:335e8e] [com.apple.securityd:integrity] ACL partition mismatch: client cdhash:cabadc83f51793e15e76d62581987c89d210e4bb ACL (
+    "cdhash:227d378e46b41bbb2844e28a9789d410268a4820"
+2026-10-29 15:25:15.396 Df securityd[400:335e8e] [com.apple.securityd:integrity] asking user about XARA partition for 'cdhash:cabadc83f51793e15e76d62581987c89d210e4bb'
+2026-10-29 15:25:15.396 I  securityd[400:335e8e] displaying keychain prompt for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app(68862)
+2026-10-29 15:25:15.396 Df securityd[400:335e8e] [com.apple.securityd:kcacl] displaying keychain prompt for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app(68862); ACL: <AclV
+2026-10-29 15:24:18.182 Df securityd[400:114d] [com.apple.securityd:kcacl] user approved 'always allow' for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app(68187)
+2026-10-29 15:24:18.184 Df securityd[400:114d] [com.apple.securityd:kcacl] user approved 'allow' for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2/PlatformProbe.app(68187)
+2026-10-29 15:26:45.191 Df securityd[400:335e8e] [com.apple.securityd:kcacl] user did not approve 'allow' for /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app(68862): MacOSErr
