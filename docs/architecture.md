@@ -122,7 +122,8 @@ App (AppKit shell)
 **Panes**
 - Each tab has one or two panes.
 - Each pane is a `ReaderPDFView` with its own `HistoryStack` (B2) and `ReadingAnchor`.
-- Both panes share the same `PDFDocument`, so an annotation added in one appears in the other at once.
+- Both panes share the same `PDFDocument`.
+- **Annotation changes don't reach the other pane on their own** *(Amended 2026-10-29, M0b Q7)*. A live annotation change shows only in the pane that last laid out the page. After every annotation change, the other pane must re-assign its `document`, keeping its anchor, to refresh. Five cheaper refresh calls were tried and none worked.
 
 **Focus (B3)**
 - The tab tracks which pane is focused.
@@ -142,12 +143,35 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
   - Printing uses the on-screen model, so a rotated view prints rotated, as in Preview.
 - **Form fields (A5)** stay non-editable because `ReaderPDFView` catches mouse and keyboard events aimed at them. Their `isReadOnly` flag is never set. Prototype check [verify]: whether keyboard focus can still reach a field.
 - **The author (B4)** is set only on new annotations, from Settings, where the default is empty.
+  - PDFKit fills in `/T` (the Mac account's full name) and `/M` (a date) on every new annotation, including its popup, on its own *(Amended 2026-10-29, M0b Q5)*.
+  - Clear both explicitly, and set them only from Settings. The incremental writer serialises only what we give it, so it is the final guard.
 
 **What gets written**
 - The **incremental writer** writes only the objects the app chose to create or change: annotation objects, plus the annotation lists of the pages involved. Changed rotation therefore can't reach the file.
-- **Save a Copy** and the fallback path build a **fresh `PDFDocument` from the original bytes**, then copy across only the annotations the user created, edited or deleted. They never write the on-screen model directly.
+- **Save a Copy is the original bytes plus the incremental writer's appended section, written to a new file.** PDFKit's own `write(to:)` and `dataRepresentation()` are never used to save *(Amended 2026-10-29, M0b Q6)*. They rewrite the whole file, which:
+  - drops page labels, `/ID`, custom metadata and the revision history,
+  - separates form fields from their widgets, so `qpdf` warns on every widget, which breaks A5.
+
+  The only case where the incremental writer can't produce the copy is an encrypted document (`PDFSaveError.encrypted`). Saving annotations into encrypted documents isn't supported in v1. The app explains this and saves nothing.
 
 ### 4.4 Link interception and preview (A3, A4)
+
+*Amended 2026-10-29, from M0b Q2, Q7 and Q8. See [spikes/m0b-pdfkit.md](spikes/m0b-pdfkit.md).*
+
+**Interception points.** Intercept link clicks in `mouseDown`, because PDFKit acts on mouse-down, and override `perform(_:)` as a catch-all.
+
+**Classifying actions**
+- Classify by `action.type`, not by Swift subclass.
+- `Launch` arrives as a URL action with no URL.
+- Reading `PDFActionRemoteGoTo.url` from Swift crashes, so never touch it.
+
+**Close PDFKit's side paths**
+- Its private "Open Link" context-menu method, which calls `NSWorkspace` directly. The custom context menu from M1 already removes it.
+- The `PDFViewDelegate` default, which opens URLs.
+- PDFKit's own Force Click gesture recogniser. Remove it, and handle `pressureChange` ourselves.
+
+**`/Fit` destinations.** `/Fit`, `/FitH` and `/FitR` all arrive as "no position", and PDFKit doesn't fit the page. The preview applies fit-to-page itself.
+
 
 **Owning link clicks.** `ReaderPDFView` handles clicks on links itself, using annotation hit-testing, instead of PDFKit's default handling. Clicks are routed like this:
 

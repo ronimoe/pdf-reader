@@ -94,3 +94,27 @@ A running log of the unattended v1 build. Each milestone records what landed, ho
 - Real drag-and-drop.
 - VoiceOver.
 - That AppKit adds exactly the expected text-sharing items to the context menu.
+
+## M0b: PDFKit behaviour prototype (branch `m0b-pdfkit`)
+
+**Result:** all 11 questions settled. 62 spike tests stay in `AppTests/M0Spikes` as regression evidence, and Thread Sanitizer found no data races. Architecture §4.2, §4.3 and §4.4 are amended.
+
+**Confirmed**
+- JavaScript never runs.
+- `PDFPage.rotation` is always written by PDFKit's own save, so the app never uses that save path.
+- **Thumbnails:** 600 pages in 0.36 s on a background actor.
+- **Search:** first result after 0.05 s, about 4.4 s for 2,400 pages. The main thread is never blocked for more than about 9 ms, and accent-insensitive matching works.
+- **Offscreen rendering:** `PDFPage.draw` captures annotations; `cacheDisplay` doesn't.
+
+**Changes for later milestones**
+- **M3:** link interception in `mouseDown` plus `perform(_:)`, actions classified by `action.type`, PDFKit's side paths closed, and `/Fit` handled by the app.
+- **M3/M4:** after an annotation change, the other pane re-assigns its `document`.
+- **M4:** clear PDFKit's automatic `/T` and `/M`. Save a Copy uses the incremental writer, never PDFKit's save.
+
+**Coordinator fix:** renamed the spike's `RawPDF` helper to `SpikeRawPDF`, after the merge with M1's fixtures.
+
+**Not verified**
+- Real hover delivery and physical Force Click pressure; needs a manual check in M3.
+- VoiceOver.
+- Baseline M1 hardware: the numbers above are from an M3 Pro.
+- The click tests need a logged-in display session.
