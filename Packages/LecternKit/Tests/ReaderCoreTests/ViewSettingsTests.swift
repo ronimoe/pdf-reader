@@ -171,4 +171,85 @@ import Testing
     @Test func nonPDFStillGetsAKey() {
         #expect(DocumentKey(pdfData: Data("not a pdf".utf8)).rawValue.hasPrefix("sha256:"))
     }
+
+    // MARK: Encrypted files
+
+    /// A one-page file with a standard encryption dictionary (object 4) whose
+    /// /O and /U are given as raw PDF string syntax.
+    private func encrypted(owner: String, user: String, id: String = "<0102> <0304>", extra: String = "") -> Data {
+        RawPDF.make(
+            catalogExtras: extra,
+            trailerExtras: "/ID [\(id)] /Encrypt 4 0 R",
+            extraObjects: ["<< /Filter /Standard /V 2 /R 3 /Length 128 /P -3904 /O \(owner) /U \(user) >>"]
+        )
+    }
+
+    private let ownerA = "<" + String(repeating: "a1", count: 32) + ">"
+    private let ownerB = "<" + String(repeating: "b2", count: 32) + ">"
+    private let userA = "<" + String(repeating: "c3", count: 32) + ">"
+
+    @Test func encryptedFilesAddTheirPasswordEntriesToTheKey() {
+        let key = DocumentKey(pdfData: encrypted(owner: ownerA, user: userA)).rawValue
+        #expect(key.hasPrefix("id:0102;enc:"))
+        #expect(key.count == "id:0102;enc:".count + 64)
+    }
+
+    @Test func reEncryptingWithAnotherPasswordChangesTheKey() {
+        // Same /ID first element, different owner password.
+        let a = DocumentKey(pdfData: encrypted(owner: ownerA, user: userA))
+        let b = DocumentKey(pdfData: encrypted(owner: ownerB, user: userA, id: "<0102> <9999>"))
+        #expect(a != b)
+    }
+
+    @Test func otherEditsKeepTheKey() {
+        let a = DocumentKey(pdfData: encrypted(owner: ownerA, user: userA))
+        let b = DocumentKey(pdfData: encrypted(owner: ownerA, user: userA, extra: "/PageLayout /TwoPageRight"))
+        #expect(a == b)
+    }
+
+    @Test func literalAndHexSpellingsOfTheSameStringsAgree() {
+        let hex = DocumentKey(pdfData: encrypted(owner: "<28295c0a>", user: "<41>"))
+        let literal = DocumentKey(pdfData: encrypted(owner: #"(\(\)\\\n)"#, user: "(A)"))
+        #expect(hex == literal)
+    }
+
+    @Test func coreGraphicsEncryptedFilesGetAStableEncryptionKey() throws {
+        let data = NSMutableData()
+        let consumer = try #require(CGDataConsumer(data: data as CFMutableData))
+        var box = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let info: [CFString: Any] = [kCGPDFContextOwnerPassword: "owner", kCGPDFContextUserPassword: "user"]
+        let context = try #require(CGContext(consumer: consumer, mediaBox: &box, info as CFDictionary))
+        context.beginPDFPage(nil)
+        context.endPDFPage()
+        context.closePDF()
+        let key = DocumentKey(pdfData: data as Data)
+        #expect(key.rawValue.hasPrefix("id:"))
+        #expect(key.rawValue.contains(";enc:"))
+        #expect(key == DocumentKey(pdfData: data as Data))
+    }
+}
+
+@Suite struct PDFTokenScannerTests {
+    private func strings(_ syntax: String) -> [String: Data]? {
+        var scanner = PDFTokenScanner(Data(syntax.utf8))
+        return scanner.dictionaryStrings()
+    }
+
+    @Test func readsStringEntriesAndSkipsTheRest() {
+        let result = strings("<< /A 1 /B /Name /C [1 (x) <00>] /D << /E (in) >> /F 5 0 R /O (own) /U <75> >>")
+        #expect(result == ["O": Data("own".utf8), "U": Data("u".utf8)])
+    }
+
+    @Test func decodesLiteralEscapesAndNestedParentheses() {
+        #expect(strings(#"<< /O (a(b)c\101\n\)) >>"#)?["O"] == Data("a(b)cA\n)".utf8))
+    }
+
+    @Test func padsOddHexDigits() {
+        #expect(strings("<< /U <4 1 7> >>")?["U"] == Data([0x41, 0x70]))
+    }
+
+    @Test func rejectsTruncatedDictionaries() {
+        #expect(strings("<< /O (open") == nil)
+        #expect(strings("<< /O (x)") == nil)
+    }
 }

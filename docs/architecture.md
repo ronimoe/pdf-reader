@@ -217,7 +217,7 @@ The same type is stored as the reading position (A2) and used for history entrie
 | `DocumentIdentity` | ReaderCore | File bookmark data, the PDF's internal `/ID` pair, page count, file size, last known path (A2) |
 | `ViewSettings` | ReaderCore | Pages, Scrolling, cover-page and right-to-left overrides (B1), rotation (B9), zoom mode. The sidebar section is added with the sidebar in M2 *(Amended 2026-10-29, M1)* |
 | `DocumentLayoutHints` | ReaderCore | The catalog's `/PageLayout` (`TwoPageRight`/`TwoColumnRight` puts the cover page alone) and `/ViewerPreferences /Direction /R2L`, read through `CGPDFDocument` once the document is unlocked. These are the defaults the `ViewSettings` overrides replace (B1) *(Added 2026-10-29, M1)* |
-| `DocumentKey` | ReaderCore | `id:` plus the trailer's first `/ID` element as hex, or `sha256:` plus a hash of the first 64 KB when there is no `/ID`. Readable while the document is locked. Keys remembered passwords (B6) *(Added 2026-10-29, M1)* |
+| `DocumentKey` | ReaderCore | `id:` plus the trailer's first `/ID` element as hex. Encrypted files add `;enc:` plus a SHA-256 of the encryption dictionary's `/O` and `/U` entries, because the `/ID` survives re-encryption with another password. Files with no `/ID`, or an unreadable encryption dictionary, get `sha256:` plus a hash of the first 64 KB. Readable while the document is locked. Keys remembered passwords (B6) *(Added 2026-10-29, M1)* |
 | `DocumentPasswordStore` | Persistence | Protocol for remembered passwords, keyed by `DocumentKey`. `KeychainPasswordStore` in the app, `InMemoryPasswordStore` in tests *(Added 2026-10-29, M1)* |
 | `DocumentState` | Persistence | Identity, last anchor, per-pane history, reader bookmarks, view settings. Written to disk as JSON |
 | `AnnotationChange` | PDFSave | Add, edit or delete of one annotation, with its full properties. Feeds the crash journal and the writer |
@@ -243,7 +243,7 @@ The same type is stored as the reading position (A2) and used for history entrie
 - **Passwords:** Keychain, only when "Remember in Keychain" is ticked (B6).
   - *(Amended 2026-10-29, M1)* These are generic-password items in the file-based login keychain: service `io.github.ronimoe.Lectern.document-password`, with the `DocumentKey` as the account.
   - The data-protection keychain would need a `keychain-access-groups` entitlement, which needs a team-signed build.
-  - A remembered password is tried when the document opens. It unlocks a locked document, and a remembered owner password also lifts a restricted document's limits. A remembered password that no longer works is deleted.
+  - A remembered password is tried when the document opens. It unlocks a locked document, and a remembered owner password also lifts a restricted document's limits. A remembered password that no longer gains access is deleted; because the key includes the encryption entries, the entry can only be this file's own. On an open document only the owner password counts as gaining access, since PDFKit's `unlock` then accepts any string.
   - **Known limitation while builds are ad-hoc signed:** each build has a different code signature, so a new build reading an item saved by an older one may get a Keychain access prompt. This is unverified.
 
 **Sandbox: on.** The App Sandbox is optional for direct DMG distribution, but turning it on limits the damage a hostile PDF could do through the rendering engine. It means:

@@ -7,7 +7,14 @@ enum RawPDF {
     ///   - catalogExtras: entries appended inside the catalog dictionary.
     ///   - trailerExtras: entries appended inside the trailer dictionary.
     ///   - pageRotations: one page per entry, with that `/Rotate`.
-    static func make(catalogExtras: String = "", trailerExtras: String = "", pageRotations: [Int] = [0]) -> Data {
+    ///   - extraObjects: bodies of further objects, numbered from
+    ///     `3 + pageRotations.count`.
+    static func make(
+        catalogExtras: String = "",
+        trailerExtras: String = "",
+        pageRotations: [Int] = [0],
+        extraObjects: [String] = []
+    ) -> Data {
         var objects: [String] = []
         let firstPage = 3
         let kids = pageRotations.indices.map { "\(firstPage + $0) 0 R" }.joined(separator: " ")
@@ -16,6 +23,7 @@ enum RawPDF {
         for rotation in pageRotations {
             objects.append("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Rotate \(rotation) >>")
         }
+        objects += extraObjects
 
         var output = "%PDF-1.7\n"
         var offsets: [Int] = []
