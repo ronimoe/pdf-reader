@@ -109,6 +109,16 @@ final class RecordingPresenter: ReaderPresenting {
     private(set) var dismissals = 0
     private(set) var explained: [BlockedAction] = []
     private(set) var enterOwnerPassword: (() -> Void)?
+    private(set) var goToPagePrompts: [GoToPageModel] = []
+    private(set) var goToPageDismissals = 0
+
+    func showGoToPage(_ model: GoToPageModel, on window: NSWindow) {
+        goToPagePrompts.append(model)
+    }
+
+    func dismissGoToPage(on window: NSWindow) {
+        goToPageDismissals += 1
+    }
 
     func showPasswordPrompt(_ model: PasswordPromptModel, on window: NSWindow) {
         prompts.append(model)

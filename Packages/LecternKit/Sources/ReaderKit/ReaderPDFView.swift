@@ -3,11 +3,16 @@ import PDFKit
 import ReaderCore
 import UniformTypeIdentifiers
 
-/// The reading surface. Later milestones add link interception, anchors and
-/// keyboard link focus here; this is the only type that subclasses PDFView.
+/// The reading surface. Later milestones add link interception and keyboard
+/// link focus here; this is the only type that subclasses PDFView.
 ///
 /// The view owns the zoom mode so that the fit modes can be recomputed when
 /// its size changes. Everything else in `ViewSettings` is applied by `apply`.
+///
+/// It also keeps the reader's place (A3, architecture §4.5): zoom, resize,
+/// layout and rotation changes capture a `ReadingAnchor` first and restore it
+/// afterwards, so the same point of the same page stays at the top-left of
+/// the visible area.
 public final class ReaderPDFView: PDFView {
     /// Called after the user changes the zoom directly (pinch, smart
     /// magnify), with the new fixed scale.
@@ -27,6 +32,25 @@ public final class ReaderPDFView: PDFView {
     /// The visible size the current fit was computed for.
     private var fittedSize: CGSize = .zero
 
+    /// Called after PDFKit followed an internal link by itself, with where
+    /// reading was before the jump (B2). M3 replaces PDFKit's link handling.
+    public var onLinkJump: ((ReadingAnchor) -> Void)?
+    /// Called for a link's named GoBack or GoForward action, so it moves
+    /// through the pane's history instead of PDFKit's own.
+    public var onNamedHistoryAction: ((_ forward: Bool) -> Void)?
+    /// Called whenever the visible part of the document moves, for saving
+    /// the reading position. Never a history entry.
+    public var onVisibleAreaChange: (() -> Void)?
+
+    /// The anchor last restored, kept until the user scrolls. Reusing it
+    /// across a live resize or repeated zooms stops rounding errors from
+    /// accumulating into drift.
+    private var stickyAnchor: ReadingAnchor?
+    /// True while the view itself is moving the content (restoring an anchor
+    /// or applying geometry), so those scrolls don't count as the user's.
+    private var isAdjustingGeometry = false
+    private var observedClipView: NSClipView?
+
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         autoScales = false
@@ -40,6 +64,7 @@ public final class ReaderPDFView: PDFView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(scaleDidChange(_:)), name: .PDFViewScaleChanged, object: self
         )
+        observeClipView()
     }
 
     @available(*, unavailable)
@@ -47,8 +72,10 @@ public final class ReaderPDFView: PDFView {
 
     public override var document: PDFDocument? {
         didSet {
+            stickyAnchor = nil
             fitReferencePageIndex = 0
             applyZoom()
+            observeClipView()
         }
     }
 
@@ -63,19 +90,19 @@ public final class ReaderPDFView: PDFView {
         }
     }
 
-    /// Applies the layout and zoom in `settings`, keeping the current page in
-    /// view. Rotation lives in the document model and is applied by its owner,
-    /// which then calls this to re-fit.
+    /// Applies the layout and zoom in `settings`, keeping the reader's place.
+    /// Rotation lives in the document model and is applied by its owner
+    /// inside `preservingAnchor`, which then calls this to re-fit.
     public func apply(_ settings: ViewSettings, hints: DocumentLayoutHints) {
-        let page = currentPage
-        withZoomApplied {
-            displayMode = Self.displayMode(pages: settings.pages, scrolling: settings.scrolling)
-            displaysAsBook = settings.effectiveCoverPageAlone(hints: hints)
-            displaysRTL = settings.effectiveRightToLeft(hints: hints)
-            layoutDocumentView()
+        preservingAnchor {
+            withZoomApplied {
+                displayMode = Self.displayMode(pages: settings.pages, scrolling: settings.scrolling)
+                displaysAsBook = settings.effectiveCoverPageAlone(hints: hints)
+                displaysRTL = settings.effectiveRightToLeft(hints: hints)
+                layoutDocumentView()
+            }
+            setZoomMode(settings.zoom)
         }
-        setZoomMode(settings.zoom)
-        if let page { go(to: page) }
     }
 
     // MARK: Zoom
@@ -85,7 +112,7 @@ public final class ReaderPDFView: PDFView {
         if mode.isFit, let document, let page = currentPage {
             fitReferencePageIndex = document.index(for: page)
         }
-        applyZoom()
+        preservingAnchor { applyZoom() }
     }
 
     /// The part of the view not covered by the toolbar (the window uses a
@@ -120,15 +147,17 @@ public final class ReaderPDFView: PDFView {
         fittedSize = size
         let index = min(fitReferencePageIndex, document.pageCount - 1)
         guard let page = document.page(at: index) else { return }
-        // rowSize(for:) is measured at the current scale and its margins don't
-        // scale with it, so refine once from the first estimate.
-        for _ in 0..<2 {
-            let row = rowSize(for: page)
-            guard row.width > 0, row.height > 0, scaleFactor > 0 else { return }
-            let widthScale = scaleFactor * size.width / row.width
-            let heightScale = scaleFactor * size.height / row.height
-            let target = zoomMode == .fitPage ? min(widthScale, heightScale) : widthScale
-            withZoomApplied { scaleFactor = min(max(target, minScaleFactor), maxScaleFactor) }
+        preservingAnchor {
+            // rowSize(for:) is measured at the current scale and its margins don't
+            // scale with it, so refine once from the first estimate.
+            for _ in 0..<2 {
+                let row = rowSize(for: page)
+                guard row.width > 0, row.height > 0, scaleFactor > 0 else { return }
+                let widthScale = scaleFactor * size.width / row.width
+                let heightScale = scaleFactor * size.height / row.height
+                let target = zoomMode == .fitPage ? min(widthScale, heightScale) : widthScale
+                withZoomApplied { scaleFactor = min(max(target, minScaleFactor), maxScaleFactor) }
+            }
         }
     }
 
@@ -141,13 +170,23 @@ public final class ReaderPDFView: PDFView {
 
     @objc private func scaleDidChange(_ notification: Notification) {
         guard !isApplyingZoom, document != nil else { return }
+        // A pinch zooms around the pointer; where it leaves the reader is
+        // the new place.
+        stickyAnchor = nil
         zoomMode = .scale(scaleFactor)
         onUserZoom?(scaleFactor)
     }
 
     public override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        refit(force: false)
+        guard newSize != frame.size, document != nil else {
+            super.setFrameSize(newSize)
+            refit(force: false)
+            return
+        }
+        preservingAnchor {
+            super.setFrameSize(newSize)
+            refit(force: false)
+        }
     }
 
     public override func layout() {
@@ -155,6 +194,190 @@ public final class ReaderPDFView: PDFView {
         // Safe-area changes (toolbar shown or hidden, full screen) arrive as
         // layout passes without a frame change.
         refit(force: false)
+    }
+
+    // MARK: Keeping your place (A3)
+
+    /// The scroll view PDFView keeps inside itself.
+    private var scrollView: NSScrollView? { documentView?.enclosingScrollView }
+
+    /// The top-left corner of the area not covered by the toolbar, in view
+    /// coordinates. Anchors are captured from and restored to this point.
+    private var anchorTarget: CGPoint {
+        let insets = safeAreaInsets
+        let y = isFlipped ? bounds.minY + insets.top : bounds.maxY - insets.top
+        return CGPoint(x: bounds.minX + insets.left, y: y)
+    }
+
+    /// Where reading is now: the page-space point at the top-left of the
+    /// visible area. Nil without a document.
+    public var currentAnchor: ReadingAnchor? {
+        if let stickyAnchor { return stickyAnchor }
+        return visibleAnchor
+    }
+
+    /// The anchor measured from the current scroll position, ignoring any
+    /// anchor kept from the last restore.
+    public var visibleAnchor: ReadingAnchor? {
+        guard let document, document.pageCount > 0 else { return nil }
+        let target = anchorTarget
+        guard let page = page(for: target, nearest: true) else { return nil }
+        let box = page.bounds(for: displayBox)
+        var point = convert(target, to: page)
+        point.x = min(max(point.x, box.minX), box.maxX)
+        point.y = min(max(point.y, box.minY), box.maxY)
+        return ReadingAnchor(pageIndex: document.index(for: page), pointInPage: point, scale: scaleFactor)
+    }
+
+    /// Scrolls so that the anchor's point sits at the top-left of the visible
+    /// area, as far as the document's edges allow. The page index is clamped
+    /// to the document. The anchor's scale is not applied: zoom belongs to
+    /// the view settings.
+    public func restore(_ anchor: ReadingAnchor) {
+        guard let document, document.pageCount > 0 else { return }
+        let anchor = anchor.clamped(toPageCount: document.pageCount)
+        guard let page = document.page(at: anchor.pageIndex) else { return }
+        let wasAdjusting = isAdjustingGeometry
+        isAdjustingGeometry = true
+        defer { isAdjustingGeometry = wasAdjusting }
+        // Paged modes show one page (or spread) at a time: bring it up first.
+        if !displayMode.isContinuous, !visiblePages.contains(page) {
+            go(to: page)
+        }
+        guard let scrollView else { return }
+        let clip = scrollView.contentView
+        let point = clip.convert(convert(anchor.pointInPage, from: page), from: self)
+        let target = clip.convert(anchorTarget, from: self)
+        var origin = clip.bounds.origin
+        origin.x += point.x - target.x
+        origin.y += point.y - target.y
+        let constrained = clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin
+        clip.scroll(to: constrained)
+        scrollView.reflectScrolledClipView(clip)
+        var kept = anchor
+        kept.scale = scaleFactor
+        stickyAnchor = kept
+    }
+
+    /// Runs `body`, which changes the geometry (zoom, size, layout or
+    /// rotation), then puts the reader back where they were. Nested calls
+    /// restore once, at the end of the outermost.
+    public func preservingAnchor(_ body: () -> Void) {
+        guard document != nil, !isAdjustingGeometry else {
+            body()
+            return
+        }
+        let anchor = currentAnchor
+        isAdjustingGeometry = true
+        body()
+        layoutDocumentView()
+        isAdjustingGeometry = false
+        if let anchor { restore(anchor) }
+    }
+
+    /// The anchor that shows a page from its visual top-left corner, taking
+    /// the page's rotation into account.
+    public func topAnchor(forPageAt index: Int) -> ReadingAnchor? {
+        guard let page = document?.page(at: index) else { return nil }
+        let box = page.bounds(for: displayBox)
+        let corner: CGPoint = switch ViewSettings.normalized(page.rotation) {
+        case 90: CGPoint(x: box.minX, y: box.minY)
+        case 180: CGPoint(x: box.maxX, y: box.minY)
+        case 270: CGPoint(x: box.maxX, y: box.maxY)
+        default: CGPoint(x: box.minX, y: box.maxY)
+        }
+        return ReadingAnchor(pageIndex: index, pointInPage: corner, scale: scaleFactor)
+    }
+
+    /// The anchor for a PDF destination. Unspecified coordinates (a `/Fit`
+    /// destination, say) fall back to the page's top-left corner.
+    public func anchor(for destination: PDFDestination) -> ReadingAnchor? {
+        guard let document, let page = destination.page else { return nil }
+        let index = document.index(for: page)
+        guard index != NSNotFound, var anchor = topAnchor(forPageAt: index) else { return nil }
+        let box = page.bounds(for: displayBox)
+        let point = destination.point
+        if point.x != kPDFDestinationUnspecifiedValue, point.x.isFinite {
+            anchor.pointInPage.x = min(max(point.x, box.minX), box.maxX)
+        }
+        if point.y != kPDFDestinationUnspecifiedValue, point.y.isFinite {
+            anchor.pointInPage.y = min(max(point.y, box.minY), box.maxY)
+        }
+        return anchor
+    }
+
+    /// Scrolls `selection` into the part of the view the toolbar doesn't
+    /// cover, a third of the way down, as PDFKit's own `go(to:)` ignores the
+    /// safe area.
+    public func reveal(_ selection: PDFSelection) {
+        guard let page = selection.pages.first, let scrollView else { return }
+        if !displayMode.isContinuous, !visiblePages.contains(page) { go(to: page) }
+        let rect = convert(selection.bounds(for: page), from: page)
+        let insets = safeAreaInsets
+        let visibleHeight = bounds.height - insets.top - insets.bottom
+        let clip = scrollView.contentView
+        // Where the selection's top edge should end up, in view coordinates.
+        let offset = insets.top + visibleHeight / 3
+        let current = isFlipped ? rect.minY : rect.maxY
+        let wanted = isFlipped ? bounds.minY + offset : bounds.maxY - offset
+        let from = clip.convert(CGPoint(x: rect.midX, y: current), from: self)
+        let to = clip.convert(CGPoint(x: rect.midX, y: wanted), from: self)
+        var origin = clip.bounds.origin
+        origin.y += from.y - to.y
+        let visibleWidth = bounds.width - insets.left - insets.right
+        if rect.minX < bounds.minX + insets.left || rect.maxX > bounds.minX + insets.left + visibleWidth {
+            let fromX = clip.convert(CGPoint(x: rect.midX, y: 0), from: self).x
+            let toX = clip.convert(CGPoint(x: bounds.minX + insets.left + visibleWidth / 2, y: 0), from: self).x
+            origin.x += fromX - toX
+        }
+        clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
+        scrollView.reflectScrolledClipView(clip)
+    }
+
+    /// Any scroll the view didn't make itself is the user's; from then on
+    /// the visible position is the place to keep.
+    private func observeClipView() {
+        guard let clip = scrollView?.contentView, clip !== observedClipView else { return }
+        if let observedClipView {
+            NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: observedClipView)
+        }
+        observedClipView = clip
+        clip.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(clipBoundsDidChange(_:)), name: NSView.boundsDidChangeNotification, object: clip
+        )
+    }
+
+    @objc private func clipBoundsDidChange(_ notification: Notification) {
+        onVisibleAreaChange?()
+        guard !isAdjustingGeometry else { return }
+        stickyAnchor = nil
+    }
+
+    // MARK: Links PDFKit follows itself
+
+    /// PDFKit follows internal links through here. Until M3 intercepts link
+    /// clicks, a `GoTo` that moved the view still makes a history entry, and
+    /// named GoBack and GoForward use the pane's history.
+    public override func perform(_ action: PDFAction) {
+        if let named = action as? PDFActionNamed, let onNamedHistoryAction {
+            switch named.name {
+            case .goBack:
+                onNamedHistoryAction(false)
+                return
+            case .goForward:
+                onNamedHistoryAction(true)
+                return
+            default:
+                break
+            }
+        }
+        let departure = currentAnchor
+        super.perform(action)
+        guard action is PDFActionGoTo, let departure, let arrival = visibleAnchor,
+              !arrival.isSamePlace(as: departure)
+        else { return }
+        onLinkJump?(departure)
     }
 
     // MARK: Copy (B6)
@@ -278,4 +501,8 @@ extension ReaderPDFView: NSDraggingSource {
     public func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         selectionDragOperations
     }
+}
+
+private extension PDFDisplayMode {
+    var isContinuous: Bool { self == .singlePageContinuous || self == .twoUpContinuous }
 }

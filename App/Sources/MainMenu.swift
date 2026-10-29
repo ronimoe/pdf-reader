@@ -37,9 +37,15 @@ enum MainMenu {
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        let findMenu = NSMenu(title: "Find")
+        ReaderCommands.findItems().forEach(findMenu.addItem)
+        editMenu.addItem(submenu: findMenu, title: "Find")
         main.addItem(submenu: editMenu, title: "Edit")
 
         let viewMenu = NSMenu(title: "View")
+        ReaderCommands.sidebarItems().forEach(viewMenu.addItem)
+        viewMenu.addItem(.separator())
         ReaderCommands.zoomItems().forEach(viewMenu.addItem)
         viewMenu.addItem(.separator())
         ReaderCommands.readingOptionItems().forEach(viewMenu.addItem)
@@ -49,6 +55,10 @@ enum MainMenu {
         let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
         fullScreen.keyEquivalentModifierMask = [.command, .control]
         main.addItem(submenu: viewMenu, title: "View")
+
+        let goMenu = NSMenu(title: "Go")
+        ReaderCommands.goItems().forEach(goMenu.addItem)
+        main.addItem(submenu: goMenu, title: "Go")
 
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
