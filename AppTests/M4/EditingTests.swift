@@ -261,7 +261,7 @@ extension M4Tests {
         /// whenever no annotation is selected on the page.
         @Test func aDisabledDeleteItemLetsBackspaceThrough() throws {
             let menu = MainMenu.make()
-            let annotate = try #require(menu.items.first { $0.title == "Annotate" }?.submenu)
+            let annotate = try #require(menu.items.first { $0.title == "Annotate" }?.submenu as? AnnotateMenu)
             let delete = try #require(annotate.items.first { $0.action == #selector(ReaderWindowController.deleteAnnotation(_:)) })
             let target = DeleteTarget()
             delete.target = target
@@ -269,9 +269,12 @@ extension M4Tests {
                 with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
                 characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", isARepeat: false, keyCode: 51
             ))
-            target.enabled = false
+            // Nothing selected on the page: the menu doesn't claim the key at all.
+            annotate.claimsDeleteKey = { false }
             #expect(!menu.performKeyEquivalent(with: backspace))
             #expect(target.deletes == 0)
+            // An annotation selected on the page: ⌫ deletes it.
+            annotate.claimsDeleteKey = { true }
             target.enabled = true
             #expect(menu.performKeyEquivalent(with: backspace))
             #expect(target.deletes == 1)

@@ -1,4 +1,5 @@
 import AppKit
+import ReaderKit
 
 /// Builds the menu bar in code (the project has no storyboards or nibs).
 enum MainMenu {
@@ -62,7 +63,7 @@ enum MainMenu {
         fullScreen.keyEquivalentModifierMask = [.command, .control]
         main.addItem(submenu: viewMenu, title: "View")
 
-        let annotateMenu = NSMenu(title: "Annotate")
+        let annotateMenu = AnnotateMenu(title: "Annotate")
         ReaderCommands.annotateItems().forEach(annotateMenu.addItem)
         main.addItem(submenu: annotateMenu, title: "Annotate")
 
@@ -77,6 +78,33 @@ enum MainMenu {
         NSApplication.shared.windowsMenu = windowMenu
 
         return main
+    }
+}
+
+/// The Annotate menu. Its Delete Annotation item has a bare ⌫, and AppKit lets a *disabled*
+/// item with a matching key equivalent swallow the key (measured on macOS 26). So the menu only
+/// claims ⌫ while the reading area has focus and an annotation is selected; otherwise the key
+/// goes on to whatever has focus, such as the search field.
+nonisolated final class AnnotateMenu: NSMenu {
+    /// Whether ⌫ should delete the selected annotation now. Tests replace it.
+    nonisolated(unsafe) var claimsDeleteKey: @MainActor () -> Bool = {
+        guard let view = NSApp.keyWindow?.firstResponder as? ReaderPDFView else { return false }
+        return view.selectedAnnotation != nil
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if Self.isBareDelete(event) {
+            // Key events arrive on the main thread; anywhere else, never claim the key.
+            let check = claimsDeleteKey
+            let claims = Thread.isMainThread && MainActor.assumeIsolated { check() }
+            if !claims { return false }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    static func isBareDelete(_ event: NSEvent) -> Bool {
+        event.type == .keyDown && event.charactersIgnoringModifiers == String(UnicodeScalar(UInt8(NSDeleteCharacter)))
+            && event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
     }
 }
 
