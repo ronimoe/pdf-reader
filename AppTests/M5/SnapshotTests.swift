@@ -129,6 +129,24 @@ enum Snapshot {
         return rep
     }
 
+    /// In points: how far the first content (anything unlike the background) is from the left
+    /// and right edges, looking only below the top `belowTop` points (the title and tab bars).
+    static func inkMargins(_ rep: NSBitmapImageRep, belowTop: CGFloat) -> (left: CGFloat, right: CGFloat) {
+        let scale = CGFloat(rep.pixelsWide) / rep.size.width
+        let top = Int(belowTop * scale)
+        let rows = stride(from: top, to: rep.pixelsHigh - Int(4 * scale), by: 2)
+        func luminance(_ x: Int, _ y: Int) -> CGFloat {
+            guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return 0 }
+            return (c.redComponent + c.greenComponent + c.blueComponent) / 3
+        }
+        let background = luminance(rep.pixelsWide / 2, rep.pixelsHigh - Int(6 * scale))
+        func hasInk(_ x: Int) -> Bool { rows.contains { abs(luminance(x, $0) - background) > 0.25 } }
+        let edge = Int(2 * scale)
+        let left = (edge..<rep.pixelsWide).first(where: hasInk) ?? rep.pixelsWide
+        let right = (0..<(rep.pixelsWide - edge)).reversed().first(where: hasInk) ?? 0
+        return (CGFloat(left) / scale, CGFloat(rep.pixelsWide - 1 - right) / scale)
+    }
+
     /// The fractions of near-white and near-black pixels, sampled.
     static func tones(_ rep: NSBitmapImageRep) -> (white: Double, dark: Double) {
         var white = 0, dark = 0, total = 0
@@ -183,8 +201,12 @@ extension M5Tests {
     @MainActor
     @Suite struct SnapshotTests {
         /// A reader window that is never ordered on screen.
+        /// Opened from a file, as the app opens documents, so the title is the file's name.
+        private static let folder = try! TemporaryFolder()
+
         private func reader(_ data: Data, size: NSSize = NSSize(width: 1100, height: 760)) throws -> (ReaderDocument, ReaderWindowController) {
-            let document = try ReaderDocument.loaded(data)
+            let file = try Self.folder.write(data, to: "MuseGNN \(UUID().uuidString.prefix(4)).pdf")
+            let document = try ReaderDocument.opened(file)
             let controller = ReaderWindowController(
                 document: document, passwordStore: InMemoryPasswordStore(), presenter: RecordingPresenter(), stateStore: nil,
                 previewPresenter: nil, urlOpener: RecordingURLOpener(), preferences: .ephemeral(), journal: nil
@@ -196,6 +218,7 @@ extension M5Tests {
             window.setContentSize(size)
             controller.splitViewController.view.layoutSubtreeIfNeeded()
             #expect(!window.isVisible)
+            #expect(window.title == document.displayName && window.title.hasPrefix("MuseGNN"), "the title is the file's name: \(window.title)")
             return (document, controller)
         }
 
@@ -260,8 +283,9 @@ extension M5Tests {
                 spin(timeout: 0.3) { false }
                 let base = try Snapshot.image(of: window)
                 #expect(Snapshot.tones(base).dark > 0.005, "annotation-popover-\(suffix): no page text")
-                let editor = AnnotationTextEditorController(heading: "Comment", text: "Check this against the second experiment before citing it.")
-                let size = editor.view.fittingSize.width > 0 ? editor.view.fittingSize : NSSize(width: 280, height: 160)
+                let editor = AnnotationTextEditorController(heading: "Comment", text: "Check this against the second experiment before citing it. The convergence bound in section 4 assumes a fixed sampling rate, which the ablation in the appendix doesn't use.")
+                _ = editor.view
+                let size = editor.preferredContentSize
                 let overlay = try Snapshot.image(of: editor.view, size: size, appearance: appearance)
                 try Snapshot.write(try Snapshot.composite(base, overlay, at: NSPoint(x: 240, y: window.frame.height - 470)), "annotation-popover-\(suffix)")
             }
@@ -280,6 +304,13 @@ extension M5Tests {
                 window.title = "Settings"
                 window.isReleasedWhenClosed = false
                 try shoot(window, "settings-\(tab.rawValue)")
+                // Standard form insets: nothing within 16 pt of either side.
+                for (suffix, appearance) in Snapshot.appearances {
+                    window.appearance = NSAppearance(named: appearance)
+                    let rep = try Snapshot.image(of: window)
+                    let (left, right) = Snapshot.inkMargins(rep, belowTop: 60)
+                    #expect(left >= 16 && right >= 16, "settings-\(tab.rawValue)-\(suffix): margins \(left), \(right)")
+                }
             }
         }
 

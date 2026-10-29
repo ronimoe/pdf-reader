@@ -190,6 +190,10 @@ final class AnnotationCellView: NSTableCellView {
         setAccessibilityRole(.staticText)
         kindLabel.font = .preferredFont(forTextStyle: .caption1)
         kindLabel.textColor = .secondaryLabelColor
+        kindLabel.lineBreakMode = .byTruncatingTail
+        for label in [kindLabel, excerptLabel, commentLabel] {
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         excerptLabel.maximumNumberOfLines = 2
         excerptLabel.lineBreakMode = .byTruncatingTail
         excerptLabel.font = .preferredFont(forTextStyle: .callout)
@@ -217,5 +221,7 @@ final class AnnotationCellView: NSTableCellView {
         commentLabel.stringValue = item.comment
         commentLabel.isHidden = item.comment.isEmpty
         setAccessibilityLabel(item.accessibilityLabel)
+        // The whole excerpt and comment, for when they're cut short.
+        toolTip = [item.excerpt, item.comment].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 }

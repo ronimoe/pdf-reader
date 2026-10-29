@@ -162,6 +162,7 @@ final class BookmarkCellView: NSTableCellView {
         icon.contentTintColor = .secondaryLabelColor
         icon.setAccessibilityElement(false)
         nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.maximumNumberOfLines = 1
         nameLabel.font = .preferredFont(forTextStyle: .body)
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         pageLabel.font = .preferredFont(forTextStyle: .caption1)
@@ -180,6 +181,7 @@ final class BookmarkCellView: NSTableCellView {
 
     func show(_ item: BookmarkListItem) {
         nameLabel.stringValue = item.name
+        toolTip = "\(item.name), page \(item.pageLabel)"
         pageLabel.stringValue = item.pageLabel
         setAccessibilityLabel(item.accessibilityLabel)
     }

@@ -190,6 +190,12 @@ extension NSScrollView {
     static func sidebarScrollView(for documentView: NSView) -> NSScrollView {
         let scrollView = NSScrollView()
         scrollView.documentView = documentView
+        // One column, as wide as the sidebar: rows never scroll sideways or get clipped.
+        if let table = documentView as? NSTableView {
+            table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+            table.tableColumns.forEach { $0.resizingMask = .autoresizingMask }
+        }
+        scrollView.hasHorizontalScroller = false
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false

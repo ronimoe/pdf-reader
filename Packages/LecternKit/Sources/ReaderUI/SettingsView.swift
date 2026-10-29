@@ -74,7 +74,7 @@ public struct SettingsView: View {
                 .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
                 .tag(Tab.updates)
         }
-        .frame(width: 500)
+        .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
     }
 
