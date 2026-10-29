@@ -79,17 +79,21 @@ struct AnnotationFileInfo: Sendable {
     var saveability: Saveability
     var descriptors: [AnnotationDescriptor]
     var sha256: String
+    /// False when the file's annotations couldn't be read (encrypted or malformed): the
+    /// descriptors are then empty, not a list of every annotation.
+    var descriptorsAreComplete = true
 
     /// Parses the file off the main thread: Saveability, every annotation's descriptor, and the
     /// SHA-256 the crash journal is keyed to.
     nonisolated static func inspect(_ data: Data, readOnlyLocation: Bool) async -> AnnotationFileInfo {
         await Task.detached(priority: .userInitiated) {
             let saveability = Saveability.evaluate(data, readOnlyLocation: readOnlyLocation)
-            var descriptors: [AnnotationDescriptor] = []
+            var descriptors: [AnnotationDescriptor]?
             if case .unsupported = saveability {} else {
-                descriptors = (try? PDFSaveDocument(data: data).annotations()) ?? []
+                descriptors = try? PDFSaveDocument(data: data).annotations()
             }
-            return AnnotationFileInfo(saveability: saveability, descriptors: descriptors, sha256: JournalHash.of(data))
+            return AnnotationFileInfo(saveability: saveability, descriptors: descriptors ?? [], sha256: JournalHash.of(data),
+                                      descriptorsAreComplete: descriptors != nil)
         }.value
     }
 }
@@ -424,11 +428,12 @@ final class AnnotationEditor {
 
     /// The save wrote `result`: these bytes are now the original, the list is empty, and matching
     /// starts again from the new file. The pages aren't reloaded.
-    func didSave(_ data: Data, descriptors: [AnnotationDescriptor], saveability: Saveability) {
+    func didSave(_ data: Data, descriptors: [AnnotationDescriptor], saveability: Saveability, descriptorsAreComplete: Bool = true) {
         original = data
         pending.removeAll()
         newNames = [:]
-        info = AnnotationFileInfo(saveability: saveability, descriptors: descriptors, sha256: JournalHash.of(data))
+        info = AnnotationFileInfo(saveability: saveability, descriptors: descriptors, sha256: JournalHash.of(data),
+                                  descriptorsAreComplete: descriptorsAreComplete)
         matches = [:]
         matchedPages = []
         didChange()
@@ -436,6 +441,24 @@ final class AnnotationEditor {
 
     func updateSaveability(_ saveability: Saveability) {
         info?.saveability = saveability
+    }
+
+    // MARK: The list
+
+    /// The pages that can hold an annotation the sidebar lists (spec §5.3): those the file has one
+    /// on, by the background inspection's descriptors, plus every page an annotation was added to
+    /// or put back on in this session. So the list reads only those pages, not every page of a
+    /// 3,000-page manual full of links (M6, docs/performance.md). Nil until the inspection is
+    /// done, or when it couldn't read the file's annotations: then every page has to be read.
+    func pagesThatCanHoldListedAnnotations() -> Set<Int>? {
+        guard let info, info.descriptorsAreComplete else { return nil }
+        var pages = Set(info.descriptors.filter { AnnotationKindName.isListed(subtype: $0.subtype) }.map(\.pageIndex))
+        for annotation in known.values {
+            guard let page = annotation.page else { continue }
+            let index = pdf.index(for: page)
+            if index != NSNotFound { pages.insert(index) }
+        }
+        return pages
     }
 
     // MARK: Matching

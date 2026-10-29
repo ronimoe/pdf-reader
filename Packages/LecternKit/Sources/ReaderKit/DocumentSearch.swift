@@ -68,7 +68,12 @@ public final class DocumentSearch {
     public var coalescingInterval: TimeInterval = 0.1
 
     private var pageTexts: [Int: NSString] = [:]
-    private var changeIsScheduled = false
+    /// The pending coalesced update. A run-loop timer, not `DispatchQueue.main.asyncAfter`: PDFKit
+    /// posts a notification per match and per page, and on a long document those flood the main
+    /// queue faster than it drains, so a block queued behind them ran only when the search ended
+    /// (7.5 s on the 3,270-page manual, with the first match found after 0.4 s; M6). A timer fires
+    /// between queue drains.
+    private var changeTimer: Timer?
     private var observers: [NSObjectProtocol] = []
 
     public init(document: PDFDocument) {
@@ -90,6 +95,7 @@ public final class DocumentSearch {
     }
 
     isolated deinit {
+        changeTimer?.invalidate()
         observers.forEach(NotificationCenter.default.removeObserver)
         if document.isFinding { document.cancelFindString() }
     }
@@ -178,18 +184,20 @@ public final class DocumentSearch {
 
     private func scheduleChange(now: Bool = false) {
         if now {
-            changeIsScheduled = false
+            changeTimer?.invalidate()
+            changeTimer = nil
             onChange?()
             return
         }
-        guard !changeIsScheduled else { return }
-        changeIsScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + coalescingInterval) { [weak self] in
+        guard changeTimer == nil else { return }
+        let timer = Timer(timeInterval: coalescingInterval, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.changeIsScheduled else { return }
-                self.changeIsScheduled = false
+                guard let self, self.changeTimer != nil else { return }
+                self.changeTimer = nil
                 self.onChange?()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        changeTimer = timer
     }
 }

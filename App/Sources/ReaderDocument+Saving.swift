@@ -291,9 +291,9 @@ extension ReaderDocument {
         resetCachedKey()
         // A Save As rescued a deleted or trashed file: the document is the new file now.
         if written.operation == .saveAsOperation { fileIsBack() }
-        let descriptors = written.descriptors ?? (try? PDFSaveDocument(data: written.data).annotations()) ?? []
+        let descriptors = written.descriptors ?? (try? PDFSaveDocument(data: written.data).annotations())
         let saveability = editor.saveability ?? .inPlace
-        editor.didSave(written.data, descriptors: descriptors, saveability: saveability)
+        editor.didSave(written.data, descriptors: descriptors ?? [], saveability: saveability, descriptorsAreComplete: descriptors != nil)
         updateChangeCount(.changeCleared)
         readerWindowController?.documentDidSave(asNewFile: written.operation == .saveAsOperation)
         // Re-check where it now lives (a Save As can make a copy-only document writable, or not).
