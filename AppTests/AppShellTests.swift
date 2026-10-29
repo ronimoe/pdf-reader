@@ -26,6 +26,9 @@ import Testing
         (#selector(ReaderWindowController.rotateDocumentRight(_:)), "r", .command),
         (#selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         (#selector(NSDocument.printDocument(_:)), "p", .command),
+        (#selector(ReaderWindowController.focusLinks(_:)), "\t", .option),
+        (#selector(ReaderWindowController.toggleSplitView(_:)), "t", [.command, .control]),
+        (#selector(ReaderWindowController.focusOtherPane(_:)), "o", [.command, .control]),
     ]
 
     @Test func everyCommandHasItsShortcut() throws {

@@ -6,16 +6,40 @@ import ReaderKit
 import ReaderUI
 
 /// One reader window (or tab) for one document. Owns the document's view
-/// settings, the pane and its history, the sidebar, search, the toolbar, the
-/// reading commands, the unlock flow (B6), and the document's stored state
-/// (A2).
+/// settings, the panes and their histories (one, or two when split, B3), the
+/// sidebar, search, the toolbar, the reading commands, link previews (A3),
+/// the unlock flow (B6), and the document's stored state (A2).
 final class ReaderWindowController: NSWindowController {
-    /// The one pane until the split view lands in M3.
-    let pane = ReaderPane(id: .primary)
-    var pdfView: ReaderPDFView { pane.view }
+    /// The first pane, always present. When the split closes, whichever pane
+    /// stays is this one.
+    let primaryPane = ReaderPane(id: .primary)
+    /// The second pane while the tab is split.
+    var secondaryPane: ReaderPane?
+    var focusedPaneID: PaneID = .primary
+    /// The focused pane: the sidebar, search, Go to Page, zoom and Back and
+    /// Forward act on it.
+    var pane: ReaderPane { focusedPane }
+    var focusedPane: ReaderPane { focusedPaneID == .secondary ? secondaryPane ?? primaryPane : primaryPane }
+    var pdfView: ReaderPDFView { focusedPane.view }
+    var panes: [ReaderPane] { [primaryPane] + (secondaryPane.map { [$0] } ?? []) }
+    var isSplit: Bool { secondaryPane != nil }
+    /// The panes side by side, inside the reading area.
+    let readingSplit = NSSplitViewController()
+    var paneContainers: [PaneID: PaneContainerView] = [:]
+    private var firstResponderObservation: NSKeyValueObservation?
+
+    // Links (A3, A4)
+    let previewPresenter: any LinkPreviewPresenting
+    let urlOpener: any URLOpening
+    let preferences: ReaderPreferences
+    /// The preview showing now, and the pane it previews from.
+    var linkPreview: LinkPreviewController?
+    weak var linkPreviewSource: ReaderPane?
+    var hoverDismissTimer: Timer?
+    private var preferencesObserver: (any NSObjectProtocol)?
     /// The layout, zoom, rotation and sidebar of this document (B1, B9),
     /// stored per document.
-    private(set) var settings = ViewSettings() {
+    var settings = ViewSettings() {
         didSet {
             if settings != oldValue { updateStoredState { $0.viewSettings = self.settings } }
         }
@@ -38,6 +62,8 @@ final class ReaderWindowController: NSWindowController {
 
     // Search (B8)
     private(set) var search: DocumentSearch?
+    /// The pane the search session started in; results show there.
+    weak var searchPane: ReaderPane?
     private(set) var searchOptions = SearchOptions()
     private(set) var currentResultIndex: Int?
     private(set) var searchField: NSSearchField?
@@ -66,21 +92,27 @@ final class ReaderWindowController: NSWindowController {
     /// user's choice (a search showing its results), so it isn't remembered.
     private var isMovingSidebarForSearch = false
 
-    private weak var readerDocument: ReaderDocument?
+    private(set) weak var readerDocument: ReaderDocument?
     private let passwordStore: any DocumentPasswordStore
-    private let presenter: any ReaderPresenting
+    let presenter: any ReaderPresenting
     private var didCheckPasswords = false
 
     init(
         document: ReaderDocument,
         passwordStore: any DocumentPasswordStore = KeychainPasswordStore(),
         presenter: any ReaderPresenting = SheetPresenter(),
-        stateStore: DocumentStateStore? = AppEnvironment.stateStore
+        stateStore: DocumentStateStore? = AppEnvironment.stateStore,
+        previewPresenter: (any LinkPreviewPresenting)? = nil,
+        urlOpener: (any URLOpening)? = nil,
+        preferences: ReaderPreferences? = nil
     ) {
         readerDocument = document
         self.passwordStore = passwordStore
         self.presenter = presenter
         self.stateStore = stateStore
+        self.previewPresenter = previewPresenter ?? PopoverPreviewPresenter()
+        self.urlOpener = urlOpener ?? AppEnvironment.urlOpener
+        self.preferences = preferences ?? AppEnvironment.preferences
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 1000),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -95,46 +127,85 @@ final class ReaderWindowController: NSWindowController {
         window.setFrameAutosaveName("ReaderWindow")
         super.init(window: window)
 
+        configure(primaryPane)
         buildContent(in: window)
         window.toolbar = makeToolbar()
-        pdfView.onUserZoom = { [weak self] scale in self?.settings.zoom = .scale(scale) }
-        pdfView.onCopyBlocked = { [weak self] in self?.explainBlocked(.copy) }
-        pdfView.onOpenFiles = { urls in ReaderDocumentController.openDocuments(at: urls) }
-        pdfView.contextMenuItems = {
+        firstResponderObservation = window.observe(\.firstResponder, options: [.new]) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.firstResponderDidChange() }
+        }
+        preferencesObserver = NotificationCenter.default.addObserver(
+            forName: ReaderPreferences.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyPreferences() }
+        }
+        window.delegate = self
+        showContentIfReadable()
+    }
+
+    /// Wires a pane to the window: zoom, copy, drops, the context menu,
+    /// history storage, the reading position, Escape, links and focus.
+    func configure(_ pane: ReaderPane) {
+        let view = pane.view
+        let id = pane.id
+        view.onUserZoom = { [weak self] scale in self?.paneZoomDidChange(.scale(scale), in: id) }
+        view.onCopyBlocked = { [weak self] in self?.explainBlocked(.copy) }
+        view.onOpenFiles = { urls in ReaderDocumentController.openDocuments(at: urls) }
+        view.contextMenuItems = {
             ReaderCommands.zoomItems() + [.separator()] + ReaderCommands.readingOptionItems()
         }
         pane.onHistoryChange = { [weak self] history in
-            guard let self else { return }
-            updateStoredState { $0.history[self.pane.id] = history }
+            self?.updateStoredState { $0.history[id] = history }
         }
-        NotificationCenter.default.addObserver(self, selector: #selector(pageDidChange(_:)), name: .PDFViewPageChanged, object: pdfView)
-        pdfView.onVisibleAreaChange = { [weak self] in self?.saveAnchorSoon() }
-        pdfView.onCancel = { [weak self] in
+        NotificationCenter.default.addObserver(self, selector: #selector(pageDidChange(_:)), name: .PDFViewPageChanged, object: view)
+        view.onVisibleAreaChange = { [weak self] in self?.saveAnchorSoon() }
+        view.onCancel = { [weak self] in
             guard let self, isSearching else { return false }
             endSearch()
             return true
         }
-        window.delegate = self
-        showContentIfReadable()
+        view.previewsOnHover = preferences.previewsLinksOnHover
+        pane.onExternalLink = { [weak self] target in self?.handleExternalLink(target) }
+        view.onPreviewLink = { [weak self, weak pane] request in
+            guard let self, let pane else { return }
+            showPreview(request, from: pane)
+        }
+        view.onHighlightedLinkChange = { [weak self, weak pane] target in
+            guard let self, let pane else { return }
+            paneContainers[pane.id]?.showLinkStatus(target)
+            if target == nil { hoverLinkDidEnd(in: pane) }
+        }
+        let container = PaneContainerView(pdfView: view)
+        container.onClose = { [weak self] in self?.closePane(id) }
+        paneContainers[id] = container
+    }
+
+    private func applyPreferences() {
+        for pane in panes { pane.view.previewsOnHover = preferences.previewsLinksOnHover }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     /// Sidebar and reading area side by side, in a split view whose sidebar
-    /// collapses (spec §4.1).
+    /// collapses (spec §4.1). The reading area holds a second split view for
+    /// the panes (B3).
     private func buildContent(in window: NSWindow) {
         let reading = NSViewController()
         let container = NSView()
-        container.addSubview(pdfView)
-        pdfView.translatesAutoresizingMaskIntoConstraints = false
+        readingSplit.splitView.isVertical = true
+        readingSplit.splitView.dividerStyle = .thin
+        readingSplit.addSplitViewItem(paneItem(for: primaryPane))
+        reading.addChild(readingSplit)
+        let panesView = readingSplit.view
+        container.addSubview(panesView)
+        panesView.translatesAutoresizingMaskIntoConstraints = false
         notice.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(notice)
         NSLayoutConstraint.activate([
-            pdfView.topAnchor.constraint(equalTo: container.topAnchor),
-            pdfView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            pdfView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            pdfView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            panesView.topAnchor.constraint(equalTo: container.topAnchor),
+            panesView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            panesView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            panesView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             notice.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 12),
             notice.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             notice.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -40),
@@ -179,7 +250,7 @@ final class ReaderWindowController: NSWindowController {
     }
 
     /// True once the pages are on screen (the document is unlocked).
-    var isShowingContent: Bool { pdfView.document != nil }
+    var isShowingContent: Bool { primaryPane.view.document != nil }
 
     private func showContentIfReadable() {
         guard !isShowingContent, let readerDocument, !readerDocument.isPasswordLocked,
@@ -187,16 +258,20 @@ final class ReaderWindowController: NSWindowController {
         else { return }
         let stored = openStoredState(for: readerDocument, pdf: pdf)
         readerDocument.applyViewRotation(settings.rotation)
-        pdfView.show(pdf)
-        pdfView.apply(settings, hints: readerDocument.layoutHints)
-        configureSidebar(for: readerDocument, pdf: pdf)
-        if let anchor = stored?.anchor {
-            // Restore once the view has its real size; the anchor then holds
-            // through any later resize until the user scrolls.
-            splitViewController.view.layoutSubtreeIfNeeded()
-            pdfView.restore(anchor)
+        primaryPane.view.show(pdf)
+        primaryPane.view.apply(settings, hints: readerDocument.layoutHints)
+        // Restore once the view has its real size; the anchor then holds
+        // through any later resize until the user scrolls. A document seen
+        // for the first time starts at the top of page 1, below the toolbar.
+        splitViewController.view.layoutSubtreeIfNeeded()
+        if let anchor = stored?.anchor ?? primaryPane.view.topAnchor(forPageAt: 0) {
+            primaryPane.view.restore(anchor)
         }
-        window?.makeFirstResponder(pdfView)
+        if let split = stored?.split {
+            restoreSplit(split, history: stored?.history[.secondary])
+        }
+        configureSidebar(for: readerDocument, pdf: pdf)
+        window?.makeFirstResponder(focusedPane.view)
     }
 
     // MARK: Stored state (A2)
@@ -215,18 +290,18 @@ final class ReaderWindowController: NSWindowController {
             restored.sidebar.section = .outline
         }
         settings = restored
-        pane.setHistory(stored.state.history[pane.id] ?? HistoryStack())
+        primaryPane.setHistory(stored.state.history[.primary] ?? HistoryStack())
         return stored.state
     }
 
-    private func updateStoredState(_ change: (inout DocumentState) -> Void) {
+    func updateStoredState(_ change: (inout DocumentState) -> Void) {
         guard let stateStore, let storedDocumentID else { return }
         stateStore.update(storedDocumentID, change)
     }
 
     /// Scrolling never makes a history entry, but the reading position is
     /// remembered a moment after it settles.
-    private func saveAnchorSoon() {
+    func saveAnchorSoon() {
         guard storedDocumentID != nil else { return }
         anchorSave?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -236,11 +311,18 @@ final class ReaderWindowController: NSWindowController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
+    /// Remembers each pane's place, and the split (B3).
     func saveAnchor() {
         anchorSave?.cancel()
         anchorSave = nil
-        guard isShowingContent, let anchor = pdfView.currentAnchor else { return }
-        updateStoredState { $0.anchor = anchor }
+        guard isShowingContent, let anchor = primaryPane.view.currentAnchor else { return }
+        let split = secondaryPane.map {
+            SplitState(secondaryAnchor: $0.view.currentAnchor, focusedPane: focusedPaneID, secondaryZoom: $0.view.zoomMode)
+        }
+        updateStoredState {
+            $0.anchor = anchor
+            $0.split = split
+        }
     }
 
     /// Saves the reading position and writes everything out now: the window
@@ -253,11 +335,12 @@ final class ReaderWindowController: NSWindowController {
     func windowWillClose(_ notification: Notification) {
         saveStateNow()
         search?.cancel()
+        dismissPreview()
     }
 
     // MARK: Sidebar (spec §4.1)
 
-    private func configureSidebar(for document: ReaderDocument, pdf: PDFDocument) {
+    func configureSidebar(for document: ReaderDocument, pdf: PDFDocument) {
         // Both open their own copy of the document lazily, on their actor.
         renderer = PageRenderer(data: document.originalData, password: document.sessionPassword)
         textInventoryTask?.cancel()
@@ -273,7 +356,13 @@ final class ReaderWindowController: NSWindowController {
         )
         sidebar.show(settings.sidebar.section)
         sidebarItem.isCollapsed = !settings.sidebar.isVisible
-        if let page = pdfView.currentPage { thumbnailsSection.setCurrentPage(pdf.index(for: page)) }
+        updateThumbnailSelection()
+    }
+
+    /// The thumbnails mark the focused pane's page.
+    func updateThumbnailSelection() {
+        guard let document = pdfView.document, let page = pdfView.currentPage else { return }
+        thumbnailsSection.setCurrentPage(document.index(for: page))
     }
 
     var isSidebarVisible: Bool { !sidebarItem.isCollapsed }
@@ -307,8 +396,8 @@ final class ReaderWindowController: NSWindowController {
     }
 
     @objc private func pageDidChange(_ notification: Notification) {
-        guard let document = pdfView.document, let page = pdfView.currentPage else { return }
-        thumbnailsSection.setCurrentPage(document.index(for: page))
+        guard (notification.object as? ReaderPDFView) === pdfView else { return }
+        updateThumbnailSelection()
     }
 
     private func jump(to outline: PDFOutline) {
@@ -381,6 +470,7 @@ final class ReaderWindowController: NSWindowController {
     func startSearch(_ query: String) {
         guard let document = pdfView.document, !query.isEmpty else { return }
         if search == nil {
+            searchPane = pane
             pane.beginSearchSession()
             let search = DocumentSearch(document: document)
             search.onChange = { [weak self] in self?.searchDidChange() }
@@ -405,10 +495,12 @@ final class ReaderWindowController: NSWindowController {
         search.cancel()
         self.search = nil
         currentResultIndex = nil
-        pane.endSearchSession()
-        pdfView.highlightedSelections = nil
+        let searchPane = searchPane ?? pane
+        self.searchPane = nil
+        searchPane.endSearchSession()
+        searchPane.view.highlightedSelections = nil
         highlightedResultCount = 0
-        pdfView.clearSelection()
+        searchPane.view.clearSelection()
         searchSection.setSearch(nil, numbering: PageNumbering(pageCount: 0))
         if searchField?.stringValue.isEmpty == false { searchField?.stringValue = "" }
         sidebar.setHidden(true, for: .search)
@@ -442,7 +534,7 @@ final class ReaderWindowController: NSWindowController {
         else { return }
         lastHighlightUpdate = now
         highlightedResultCount = shown
-        pdfView.highlightedSelections = shown == 0 ? nil : search.results.prefix(shown).map(\.selection)
+        (searchPane ?? pane).view.highlightedSelections = shown == 0 ? nil : search.results.prefix(shown).map(\.selection)
     }
 
     @objc func showNextResult(_ sender: Any?) { stepResult(by: 1) }
@@ -462,7 +554,7 @@ final class ReaderWindowController: NSWindowController {
     func showResult(at index: Int) {
         guard let results = search?.results, results.indices.contains(index) else { return }
         currentResultIndex = index
-        pane.show(results[index].selection)
+        (searchPane ?? pane).show(results[index].selection)
         searchSection.selectResult(index)
     }
 
@@ -510,26 +602,34 @@ final class ReaderWindowController: NSWindowController {
     /// (clamped to the new page count) and any search, then say so briefly.
     func documentDidReload() {
         guard let readerDocument else { return }
-        let anchor = pdfView.currentAnchor
+        dismissPreview()
+        let anchors = panes.map { ($0, $0.view.currentAnchor) }
         let query = search?.query
+        let queryPane = searchPane
         if isSearching {
             search?.cancel()
             search = nil
-            pdfView.highlightedSelections = nil
+            for pane in panes { pane.view.highlightedSelections = nil }
             highlightedResultCount = 0
         }
         guard let pdf = readerDocument.pdfDocument, !readerDocument.isPasswordLocked else {
             // The new file needs a password the old one didn't.
-            pdfView.show(nil)
+            if isSplit { closePane(.secondary) }
+            primaryPane.view.show(nil)
             didCheckPasswords = false
             checkPasswordsIfNeeded()
             return
         }
-        pane.setHistory(pane.history.clamped(toPageCount: pdf.pageCount))
         readerDocument.applyViewRotation(settings.rotation)
-        pdfView.show(pdf)
-        pdfView.apply(settings, hints: readerDocument.layoutHints)
-        if let anchor { pdfView.restore(anchor.clamped(toPageCount: pdf.pageCount)) }
+        for (pane, anchor) in anchors {
+            pane.setHistory(pane.history.clamped(toPageCount: pdf.pageCount))
+            var paneSettings = settings
+            paneSettings.zoom = pane.view.zoomMode
+            pane.view.show(pdf)
+            pane.view.apply(paneSettings, hints: readerDocument.layoutHints)
+            if let anchor { pane.view.restore(anchor.clamped(toPageCount: pdf.pageCount)) }
+        }
+        searchPane = queryPane
         configureSidebar(for: readerDocument, pdf: pdf)
         refreshStoredIdentity()
         if let query, !query.isEmpty {
@@ -640,13 +740,15 @@ final class ReaderWindowController: NSWindowController {
     // MARK: Reading commands
 
     @objc func increaseZoom(_ sender: Any?) {
-        settings.zoomIn(from: pdfView.scaleFactor)
-        pdfView.setZoomMode(settings.zoom)
+        var stepped = settings
+        stepped.zoomIn(from: pdfView.scaleFactor)
+        setZoom(stepped.zoom)
     }
 
     @objc func decreaseZoom(_ sender: Any?) {
-        settings.zoomOut(from: pdfView.scaleFactor)
-        pdfView.setZoomMode(settings.zoom)
+        var stepped = settings
+        stepped.zoomOut(from: pdfView.scaleFactor)
+        setZoom(stepped.zoom)
     }
 
     @objc func zoomToActualSize(_ sender: Any?) { setZoom(.actualSize) }
@@ -671,23 +773,49 @@ final class ReaderWindowController: NSWindowController {
     @objc func rotateDocumentLeft(_ sender: Any?) { updateLayout { $0.rotateLeft() } }
     @objc func rotateDocumentRight(_ sender: Any?) { updateLayout { $0.rotateRight() } }
 
-    private var layoutHints: DocumentLayoutHints { readerDocument?.layoutHints ?? .none }
+    var layoutHints: DocumentLayoutHints { readerDocument?.layoutHints ?? .none }
 
-    private func setZoom(_ mode: ZoomMode) {
-        settings.zoom = mode
-        pdfView.setZoomMode(mode)
+    private func preservingEveryAnchor(_ panes: ArraySlice<ReaderPane>, _ body: () -> Void) {
+        guard let first = panes.first else {
+            body()
+            return
+        }
+        first.view.preservingAnchor { preservingEveryAnchor(panes.dropFirst(), body) }
     }
 
-    /// Applies a layout or rotation change, keeping the reader's place (A3).
+    /// Zoom acts on the focused pane only; each pane keeps its own.
+    private func setZoom(_ mode: ZoomMode) {
+        pdfView.setZoomMode(mode)
+        paneZoomDidChange(mode, in: focusedPaneID)
+    }
+
+    /// The first pane's zoom is the document's `ViewSettings.zoom`; the
+    /// second pane's is stored with the split.
+    func paneZoomDidChange(_ mode: ZoomMode, in id: PaneID) {
+        if id == .primary {
+            settings.zoom = mode
+        } else {
+            saveAnchorSoon()
+        }
+    }
+
+    /// Applies a layout or rotation change to every pane, keeping each
+    /// pane's place (A3). Rotation lives in the shared model, so it is
+    /// applied once, inside every pane's anchor capture. Each pane keeps
+    /// its own zoom.
     private func updateLayout(_ change: (inout ViewSettings) -> Void) {
         let rotation = settings.rotation
         change(&settings)
-        pdfView.preservingAnchor {
+        preservingEveryAnchor(panes[...]) {
             if settings.rotation != rotation {
                 readerDocument?.applyViewRotation(settings.rotation)
-                pdfView.layoutDocumentView()
             }
-            pdfView.apply(settings, hints: layoutHints)
+            for pane in panes {
+                if settings.rotation != rotation { pane.view.layoutDocumentView() }
+                var paneSettings = settings
+                paneSettings.zoom = pane.view.zoomMode
+                pane.view.apply(paneSettings, hints: layoutHints)
+            }
         }
         if settings.rotation != rotation {
             thumbnailsSection.setRotation(settings.rotation)
@@ -706,15 +834,16 @@ final class ReaderWindowController: NSWindowController {
         case #selector(navigateBack(_:)): return pane.canGoBack
         case #selector(navigateForward(_:)): return pane.canGoForward
         case #selector(showNextResult(_:)), #selector(showPreviousResult(_:)): return (search?.results.isEmpty == false)
+        case #selector(focusOtherPane(_:)), #selector(closeFocusedPane(_:)): return isSplit
         default: return true
         }
     }
 
     private func isChecked(_ action: Selector?) -> Bool {
         switch action {
-        case #selector(zoomToActualSize(_:)): settings.zoom == .actualSize
-        case #selector(zoomToFitPage(_:)): settings.zoom == .fitPage
-        case #selector(zoomToFitWidth(_:)): settings.zoom == .fitWidth
+        case #selector(zoomToActualSize(_:)): pdfView.zoomMode == .actualSize
+        case #selector(zoomToFitPage(_:)): pdfView.zoomMode == .fitPage
+        case #selector(zoomToFitWidth(_:)): pdfView.zoomMode == .fitWidth
         case #selector(showSinglePage(_:)): settings.pages == .single
         case #selector(showTwoPages(_:)): settings.pages == .twoUp
         case #selector(scrollContinuously(_:)): settings.scrolling == .continuous
@@ -725,6 +854,8 @@ final class ReaderWindowController: NSWindowController {
         case #selector(toggleWholeWord(_:)): searchOptions.wholeWord
         case #selector(showThumbnails(_:)): isSidebarVisible && sidebar.visibleSection == .thumbnails
         case #selector(showTableOfContents(_:)): isSidebarVisible && sidebar.visibleSection == .outline
+        case #selector(togglePreviewLinksOnHover(_:)): preferences.previewsLinksOnHover
+        case #selector(focusLinks(_:)): pdfView.isLinkFocusActive
         default: false
         }
     }
@@ -736,6 +867,9 @@ extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleReaderSidebar(_:)) {
             menuItem.title = isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+        }
+        if menuItem.action == #selector(toggleSplitView(_:)) {
+            menuItem.title = isSplit ? "Close Split View" : "Split View"
         }
         // The search options stay available before a search starts.
         if menuItem.action == #selector(toggleMatchCase(_:)) || menuItem.action == #selector(toggleWholeWord(_:)) {

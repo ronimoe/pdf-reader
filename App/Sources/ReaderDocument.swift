@@ -169,7 +169,10 @@ final class ReaderDocument: NSDocument {
     func scheduleReload() {
         pendingReload?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated { _ = self?.reloadFromDiskIfChanged() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task { await self.reloadFromDiskIfChanged() }
+            }
         }
         pendingReload = work
         DispatchQueue.main.asyncAfter(deadline: .now() + reloadDelay, execute: work)
@@ -178,16 +181,18 @@ final class ReaderDocument: NSDocument {
     /// Reads the file through file coordination and, if its bytes changed
     /// and they parse, reloads silently (B7, no unsaved annotations until
     /// M4). Returns whether it reloaded.
+    ///
+    /// The coordinated read runs on a background queue: it waits for any
+    /// other app writing the file, and the window must not freeze meanwhile.
+    /// The result is applied back on the main actor.
     @discardableResult
-    func reloadFromDiskIfChanged() -> Bool {
+    func reloadFromDiskIfChanged() async -> Bool {
         pendingReload?.cancel()
         pendingReload = nil
         guard let url = fileURL else { return false }
-        var data: Data?
-        var coordinationError: NSError?
-        NSFileCoordinator(filePresenter: self).coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinationError) { url in
-            data = try? Data(contentsOf: url)
-        }
+        let data = await Self.coordinatedRead(of: url, presenter: self)
+        // A move or another reload while reading: this result is stale.
+        guard fileURL == url else { return false }
         guard let data else {
             if !FileManager.default.fileExists(atPath: url.path) { fileDidGoAway() }
             return false
@@ -198,6 +203,22 @@ final class ReaderDocument: NSDocument {
         guard let pdf = PDFDocument(data: data) else { return false }
         reload(with: data, pdf: pdf)
         return true
+    }
+
+    /// Reads `url` through an `NSFileCoordinator` on a background queue.
+    /// `presenter` is the document itself, so it isn't asked to step aside
+    /// for its own read.
+    nonisolated static func coordinatedRead(of url: URL, presenter: ReaderDocument) async -> Data? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var data: Data?
+                var coordinationError: NSError?
+                NSFileCoordinator(filePresenter: presenter).coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinationError) { url in
+                    data = try? Data(contentsOf: url)
+                }
+                continuation.resume(returning: data)
+            }
+        }
     }
 
     /// Replaces the bytes and the model with the file's new contents.

@@ -3,6 +3,7 @@ import PDFKit
 import Persistence
 import ReaderCore
 import Synchronization
+import ReaderKit
 import ReaderUI
 @testable import Lectern
 
@@ -131,6 +132,19 @@ final class RecordingPresenter: ReaderPresenting {
     func explain(_ action: BlockedAction, on window: NSWindow, enterOwnerPassword: @escaping () -> Void) {
         explained.append(action)
         self.enterOwnerPassword = enterOwnerPassword
+    }
+
+    private(set) var confirmations: [URL] = []
+    private(set) var confirmOpen: (() -> Void)?
+    private(set) var blockedLinks: [BlockedLink] = []
+
+    func confirmOpening(_ url: URL, on window: NSWindow, open: @escaping () -> Void) {
+        confirmations.append(url)
+        confirmOpen = open
+    }
+
+    func explainBlockedLink(_ link: BlockedLink, on window: NSWindow) {
+        blockedLinks.append(link)
     }
 }
 

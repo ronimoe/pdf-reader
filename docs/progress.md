@@ -232,3 +232,38 @@ The automated security review flagged the same parser problems. Fixes include a 
 - **The repository is private,** so the release download URLs and the tap won't work for anyone else until it's made public.
 - Clicking Open Anyway.
 - The cask's `zap` step.
+
+## M3: Link preview and split view (branch `m3-preview-split`, PR #11)
+
+**Landed**
+- **Link interception (A4):** links are intercepted in `mouseDown` and `perform(_:)`, and classified by `action.type`.
+  - Internal links jump and add a history entry.
+  - `http` and `https` links open in the browser only when clicked.
+  - Other schemes ask first.
+  - `GoToR`, `Launch`, `SubmitForm`, `JavaScript` and `file:` links are blocked with an explanation.
+  - PDFKit's own ways of opening links are closed: Open Link, Look Up and Force Click.
+- **Link preview (A3, Journey B):**
+  - Opens on hover (0.5 s, can be turned off in the View menu), Force Click, or keyboard link focus (⌥⇥, then ⇥ and the arrows to move, Space to preview, Return to follow).
+  - Focused links are VoiceOver elements.
+  - `/Fit` destinations fit the whole page.
+  - Actions: Go, Open in Split and Dismiss.
+- **Split view (B3, ⌃⌘T):** two equal panes and a focus bar. Each pane keeps its own history and zoom, and the split is restored on reopen. `notifyAnnotationsChanged(from:)` is ready for M4.
+- Page 1 now starts below the toolbar.
+
+**Review:** the code-reviewer found no blockers and six should-fixes, all fixed:
+- zoom wasn't kept per pane,
+- a `file:` link could launch an app after a single confirmation,
+- Look Up over web links still reached PDFKit,
+- two surviving mutants,
+- a test that couldn't fail,
+- weak "preview never moves the reader" checks.
+
+It couldn't reproduce either intermittent hang. To prevent them anyway:
+- the coordinated read now runs off the main thread,
+- the test-only workaround for recent documents is removed.
+
+**Verified**
+- App tests: 237, including a real arXiv paper with 420 internal links.
+- The full suite passed three runs in a row with no hangs.
+
+**Not verified:** real cursor hover, physical Force Click, VoiceOver itself, and macOS window restoration. Only reopening a document is tested.

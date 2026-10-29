@@ -168,6 +168,20 @@ App (AppKit shell)
   - **Moved or renamed.** `NSDocument` updates `fileURL`, and the stored identity is refreshed.
 - **Not done until M4:** the unsaved-annotations question.
 
+**How M3 builds the split** *(Amended 2026-10-29, M3)*
+- **Layout.** The reading area holds a nested, vertical `NSSplitViewController` with one `PaneContainerView` per pane. A container holds the `ReaderPDFView`, a 3 pt focus bar along the top of the focused pane's safe area (shape as well as colour), a close button, and the link status line. A second pane is created at equal width.
+- **Focus.** The focused pane follows the window's first responder (KVO). Outline, thumbnails, Go to Page, search, zoom and Back/Forward act on it. A search keeps acting on the pane it started in until it ends.
+- **Layout, rotation and reload** apply to every pane inside every pane's anchor capture.
+- **Zoom is per pane.** Zoom commands act on the focused pane. Only the first pane writes `ViewSettings.zoom`; the second pane's zoom is stored in `SplitState.secondaryZoom`. The View menu's zoom checkmarks show the focused pane's zoom.
+- **Closing.** Either pane can close. Closing the first pane moves the second pane's place, zoom and history into it, so the pane that stays is always `.primary`.
+- **Open in Split** from a preview creates the split at the destination with an empty history; focus stays on the reader's pane. If the tab is already split, the other pane jumps there and records it in its own history.
+- **Stored state.** `DocumentState.split` (`SplitState`: the second pane's anchor and zoom, and the focused pane) is stored with the second pane's history under `PaneID.secondary`. `anchor` stays the first pane's place. Older state decodes with no split.
+- **Assigning a document.** Always through `ReaderPDFView.show(_:)`, never by setting `document`. This follows main's crash fix: PDFKit reads `document` from background queues.
+  - The view also re-attaches its clip-view observer on every `layout()` and `restore`, because PDFKit can replace its scroll view after a document change. Without that, a later `layoutDocumentView()` moved the reader by about 25 pt and nothing put them back (found while restoring a split).
+- **Content starts below the toolbar.** The scroll area still runs under the toolbar (full-size content view). But `ReaderPDFView` keeps its scroll view's `contentInsets` equal to its safe area, and lets its own scroll clamp reach into them.
+  - A document seen for the first time opens at the top of page 1, with the page's top edge just below the toolbar. Before this, the clamp left about 23 pt of page 1 under it.
+- **Changes on disk.** The coordinated read in `ReaderDocument.reloadFromDiskIfChanged()` (now `async`) runs on a background queue and applies its result on the main actor. The window no longer freezes while another app holds the file for writing.
+
 ### 4.3 Rule: what's on screen must never leak into a saved file
 
 PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's author all change the `PDFDocument` itself. So:
@@ -235,6 +249,33 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
 - An `NSPopover` hosts a second, view-only `ReaderPDFView` on the same `PDFDocument`.
 - It's scrolled to the destination, with a marker drawn on the target region. For `/Fit` destinations it shows the whole page.
 - It has Go, Open in Split and Dismiss actions.
+
+**How M3 builds this** *(Amended 2026-10-29, M3)*
+- **Owning links.** `ReaderPDFView` swallows a mouse-down on a link annotation and follows it on the matching mouse-up. It makes itself first responder, because skipping super skips PDFKit's own focus change. `perform(_:)` never calls super; every action goes through `LinkClassifier` (by `action.type`) to `onActivateLink`.
+  - The view's `delegate` is an internal object that routes `pdfViewWillClick(onLink:)` and the remote-GoTo callback through the same policy.
+  - `openRepresentedLink:` is replaced. `willOpenMenu` strips it unconditionally.
+  - The immediate-action recogniser is removed in `init` and on `viewDidMoveToWindow`, and `addGestureRecognizer` refuses it if PDFKit adds it again.
+- **Routing.** The pane follows internal destinations and the page-moving named actions (`NextPage`, `PrevPage`, `FirstPage`, `LastPage`, `GoBack`, `GoForward`). Other named actions only beep.
+  - Everything else goes to the window. `http` and `https` go to the `URLOpening` seam.
+  - A URL with no scheme, a `file:` URL, or a scheme that opens something on this Mac (`afp`, `smb`, `nfs`, `cifs`, `ftp`, `vnc`, `ssh`, `telnet`, `x-man-page`, `applescript`, `x-apple-systempreferences`) is a Launch in disguise. It is blocked with the Launch explanation.
+  - Other schemes get a confirmation sheet that shows the URL. `GoToR`, `Launch`, `SubmitForm`, `JavaScript` and any other type get an explanation sheet (`BlockedLink`).
+  - While hosting tests, the default opener only records.
+- **Hover.** A `Timer` in the common run-loop modes, rather than a dispatch delay. A hover preview closes 0.4 s after the pointer leaves the link, unless the pointer went into the preview.
+  - The link under the pointer, or the focused link, is shown in a status line at the bottom of the pane: the full URL for web and other-scheme links.
+  - "Preview Links on Hover" (View menu) is stored in `UserDefaults` under `PreviewLinksOnHover` and defaults to on. Tests use in-memory preferences.
+- **Force Click.** Stage 2 in `pressureChange` previews an internal link, and the release then doesn't follow it. `quickLook(with:)` never reaches PDFKit over any link: an internal link previews, and other links do nothing.
+- **Keyboard.** ⌥⇥ (View ▸ Focus Links) collects the links that intersect the area below the toolbar. They are ordered by page, then by the character index of the link's text (which follows columns), then by geometry.
+  - ⇥/⇧⇥ and the arrow keys move, wrapping at either end. Space previews, Return follows, Escape leaves, and any other key leaves and does what it normally does.
+  - The ring is an overlay view. Each collected link is an `NSAccessibilityElement` with role link, a label such as "Link to Figure 3, page 4", and a press action. They are added to PDFKit's own children.
+- **The preview.** `LinkPreviewController` shows the view through a `LinkPreviewPresenting` seam: an `NSPopover` with `.transient` behaviour in the app, an invisible window in tests.
+  - A destination with a position is shown at Fit Width, with a little context above it. An overlay band with a leading bar marks it.
+  - `/Fit`, `/FitH`, `/FitR` and unpositioned destinations are shown at Fit Page. PDFKit reports all of them as unspecified, so a `/FitH` top or a `/FitR` rectangle isn't marked.
+  - Neither the marker nor the focus ring is ever an annotation.
+  - Links inside the preview move it and push onto its own Back stack. Go is the Return key equivalent.
+- **Annotation refresh across panes.** `ReaderWindowController.notifyAnnotationsChanged(from:)` re-binds every other pane (`ReaderPDFView.rebindDocument()`: `show(nil)`, `show(document)`, restore the anchor). It then re-binds the source pane too.
+  - Re-binding moves page ownership (M0b Q7), so without that a second change made in the source would show only in the other pane. The test covers three changes alternating between the panes.
+  - Re-binding clears each pane's text selection, and the source pane's too, which M4 must allow for. The fit reference page and zoom are kept.
+  - Measured: 22–33 ms per call (both panes re-bound) on a 6-page fixture, M3 Pro, debug build. Each pane keeps its place. Flicker isn't checked: offscreen captures don't show annotations (M0b Q11).
 
 ### 4.5 Keeping your place
 

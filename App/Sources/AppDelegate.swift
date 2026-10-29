@@ -1,11 +1,20 @@
 import AppKit
 import Persistence
+import ReaderKit
 
 /// App-wide services the windows use.
 enum AppEnvironment {
     /// Per-document state (A2), in the app's container. Nil until launch
     /// finishes; tests inject their own store instead.
     static var stateStore: DocumentStateStore?
+
+    /// The one way a URL leaves the app (A4). While hosting tests it only
+    /// records, so a test that forgets to inject its own can't open anything.
+    static var urlOpener: any URLOpening = isHostingTests ? RecordingURLOpener() : WorkspaceURLOpener()
+
+    /// Reading preferences. While hosting tests they live in memory: the
+    /// test host is the app, and its standard defaults are the user's.
+    static var preferences: ReaderPreferences = isHostingTests ? .ephemeral() : ReaderPreferences(defaults: .standard)
 
     /// True when the app is hosting the unit tests.
     static var isHostingTests: Bool {

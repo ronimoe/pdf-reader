@@ -276,10 +276,10 @@ private func waitForSearch(_ harness: NavigationHarness) {
         defer { harness.close() }
         let place = harness.read(at: 4)
         let old = harness.pdfView.document
-        #expect(!harness.document.reloadFromDiskIfChanged())
+        #expect(await !harness.document.reloadFromDiskIfChanged())
 
         try FixturePDF.prose(pages: 12).write(to: file)
-        #expect(harness.document.reloadFromDiskIfChanged())
+        #expect(await harness.document.reloadFromDiskIfChanged())
         #expect(harness.pdfView.document !== old)
         #expect(harness.pdfView.document?.pageCount == 12)
         #expect(harness.document.originalData == (try Data(contentsOf: file)))
@@ -296,13 +296,22 @@ private func waitForSearch(_ harness: NavigationHarness) {
         let harness = try NavigationHarness(file: file, store: folder.store())
         defer { harness.close() }
         harness.document.reloadDelay = 0.05
-        NSFileCoordinator.addFilePresenter(harness.document)
-        defer { NSFileCoordinator.removeFilePresenter(harness.document) }
+        // As the app opens it: through the document controller, where
+        // NSDocument registers itself as the file's presenter.
+        NSDocumentController.shared.addDocument(harness.document)
 
+        // Another app's write, off the main thread as it would be: a
+        // coordinated write waits for the document to step aside, which
+        // happens on the main queue.
         let changed = FixturePDF.prose(pages: 5)
-        var error: NSError?
-        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: file, options: .forReplacing, error: &error) { url in
-            try? changed.write(to: url)
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                var error: NSError?
+                NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: file, options: .forReplacing, error: &error) { url in
+                    try? changed.write(to: url)
+                }
+                done.resume()
+            }
         }
         await eventually { harness.pdfView.document?.pageCount == 5 }
         #expect(harness.pdfView.document?.pageCount == 5)
@@ -339,7 +348,7 @@ private func waitForSearch(_ harness: NavigationHarness) {
         let harness = try NavigationHarness(file: file, store: folder.store())
         defer { harness.close() }
         try FileManager.default.removeItem(at: file)
-        #expect(!harness.document.reloadFromDiskIfChanged())
+        #expect(await !harness.document.reloadFromDiskIfChanged())
         #expect(harness.document.fileWasRemoved)
         #expect(harness.controller.isShowingContent)
         #expect(harness.controller.notice.message?.contains("was deleted or moved to the Trash") == true)
