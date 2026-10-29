@@ -118,3 +118,37 @@ A running log of the unattended v1 build. Each milestone records what landed, ho
 - VoiceOver.
 - Baseline M1 hardware: the numbers above are from an M3 Pro.
 - The click tests need a logged-in display session.
+
+## M0a: Incremental save prototype (branch `m0a-save`)
+
+**Result: GO for candidate 1.** Our own Swift incremental writer is the save path. Architecture §3.2 is amended to record this.
+
+**Landed**
+- **PDFSave writer**, about 1,600 lines. Covers the parser, cross-reference tables, streams and hybrid files, object streams, the page tree, simple appearance streams, and verification after every write.
+- **Test PDF generator** (`scripts/corpus/generate`, with qpdf, pikepdf and pyHanko) and 13 committed generated files.
+- **External-reader verifier** (`scripts/corpus/verify`): qpdf, MuPDF, Poppler, pdf.js and pyHanko.
+
+**Verified**
+- 11 writer runs, each checked against the pass criteria:
+  - the original bytes are an exact prefix of the output,
+  - `qpdf --check` passes,
+  - PDFKit shows the right annotations,
+  - form values are byte-identical,
+  - the signature is reported intact,
+  - MuPDF, Poppler, pdf.js and PDFKit all draw the highlights.
+- Encrypted files are refused with a typed error.
+- Mutation checks: deliberately corrupted outputs are caught.
+
+**Review:** the code-reviewer found four blockers, all fixed:
+- a shared `/Annots` array was edited for every page that uses it,
+- pages with duplicate keys changed when rewritten,
+- the post-save check could pass on a damaged file,
+- malformed input crashed instead of throwing an error.
+
+The automated security review flagged the same parser problems. Fixes include a malformed-input suite and a seeded 2,000-iteration fuzz test. 57 PDFSave tests pass. `scripts/test.sh` now sets `LECTERN_REQUIRE_TOOLS=1`, so a missing external tool fails the run instead of skipping.
+
+**Not verified**
+- Acrobat Reader and Preview itself (PDFKit, its engine, was checked).
+- Real-world files: linearized, certified and Reader-extended.
+- Fuzzing.
+- How each `PDFAnnotation` maps to its object in the file. This is M4 work.

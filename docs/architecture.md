@@ -65,7 +65,16 @@ PDFKit (system framework) is used for rendering, text extraction and selection, 
 - **Thread safety.** Whether thumbnails can be generated on a background thread with a second `PDFDocument` instance, and how fast that is.
 - **Search.** Whether `beginFindString` returns results progressively (B8) without blocking the main thread.
 
-### 3.2 Saving annotations: **open, decided by the A1 prototype**
+### 3.2 Saving annotations: **decided: candidate 1, our own incremental writer** *(Amended 2026-10-29)*
+
+The M0a prototype passed every applicable pass criterion on the whole generated test collection. Full results are in [spikes/m0a-save.md](spikes/m0a-save.md). Encrypted files are refused with `PDFSaveError.encrypted` and go to Save a Copy. Signed files also still go to Save a Copy (A1).
+
+**Open work for production (M4)**
+- Map each `PDFAnnotation` to its object in the file. Our own annotations are matched by `/NM`; third-party ones by page and `/Rect`.
+- Fuzz the parser.
+- Test the writer on real-world files: linearized, certified (DocMDP) and Reader-extended (`/Perms /UR3`).
+
+The candidate table and pass criteria below are kept as the record of how the decision was made.
 
 The save path must:
 - **append** changes to the original file (an incremental update), and
@@ -336,7 +345,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 **Test PDF regression suite (A6)**
 - Every file in the collection must open, render page 1, extract text where it exists, and close cleanly.
 - The writer is run on every file that can be annotated.
-- The script that generates test files lives in `Tests/Corpus/generate`.
+- The script that generates test files is `scripts/corpus/generate`, and `scripts/corpus/verify` runs the external-reader checks. Committed outputs live in `Tests/Corpus/public/`.
 - Private, non-redistributable PDFs go in `Tests/Corpus/private/` (git-ignored) and are used when present.
 
 **User-interface tests (XCUITest)**
@@ -388,7 +397,7 @@ Every decision mapped to the component that implements it and the milestone that
 
 ## 13. Open items
 
-1. **The save path (§3.2).** Decided by M0.
+1. ~~**The save path (§3.2).**~~ Decided in M0a: our own incremental writer.
 2. **Every [verify] item.** Resolved by M0.
 3. ~~**Apple Developer Program membership**~~ Decided: none for v1. Unsigned (ad-hoc) distribution with documented install steps (§8).
 4. **Product name and bundle ID.** Needed before M1 settles the storage paths. A placeholder works until then.

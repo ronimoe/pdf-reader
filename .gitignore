@@ -19,3 +19,6 @@ Tests/Corpus/private/
 
 # Python virtual environment for corpus tooling
 .venv/
+
+# Agent worktrees and local Claude state
+.claude/

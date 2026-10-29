@@ -1,0 +1,6 @@
+cryptography==50.0.2
+pikepdf==10.17.0
+pillow==13.0.0
+pyHanko==0.38.0
+pyhanko-certvalidator==0.33.0
+reportlab==5.1.0
