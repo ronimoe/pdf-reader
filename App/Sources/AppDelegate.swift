@@ -140,7 +140,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard !AppEnvironment.isHostingTests else { return }
+        // Not while hosting tests, nor in a test launch that ignores saved state (verify-dmg):
+        // the first-launch question would wait for an answer nobody gives.
+        guard !AppEnvironment.isHostingTests, !SessionRestorer.launchIgnoresPersistentState() else { return }
         // After the launch's own windows: the first-launch question (A4), or scheduled checks.
         DispatchQueue.main.async { AppEnvironment.updates.start() }
     }

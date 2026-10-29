@@ -21,6 +21,8 @@ extension M5Tests {
         private func restorer(_ folder: TemporaryFolder, policy: SessionRestorePolicy = .always, keeps: Bool = false) -> SessionRestorer {
             let restorer = SessionRestorer(fileURL: folder.url.appending(path: "Session.json"), policy: { policy }, systemKeepsWindows: { keeps })
             restorer.prepareWindow = { M5Harness.prepareInvisible($0) }
+            // The test host itself is launched with -ApplePersistenceIgnoreState YES.
+            restorer.ignoresPersistentState = { false }
             return restorer
         }
 
@@ -133,6 +135,21 @@ extension M5Tests {
             never.save(state)
             #expect(never.load() == nil, "Never keeps no list of open files")
             #expect(await never.restore().isEmpty)
+        }
+
+        @Test func aLaunchThatIgnoresSavedStateNeitherRestoresNorOverwrites() async throws {
+            let folder = try TemporaryFolder()
+            let url = try folder.write(TestPDF.make(pageCount: 2)!, to: "Kept.pdf")
+            let state = SessionState(windows: [.init(frame: "{{0, 0}, {500, 500}}", tabs: [.init(bookmark: nil, path: url.path, distractionFree: false)], selectedTab: 0)])
+            let r = restorer(folder, policy: .always)
+            r.save(state)
+            r.ignoresPersistentState = { true }
+            #expect(!r.shouldRestore)
+            #expect(await r.restore().isEmpty)
+            r.save(.init(windows: [.init(frame: "{{0, 0}, {1, 1}}", tabs: [], selectedTab: 0)]))
+            r.save(.empty)
+            r.ignoresPersistentState = { false }
+            #expect(r.load() == state, "the user's last session is untouched")
         }
 
         @Test func savingAndLoadingRoundTrips() throws {

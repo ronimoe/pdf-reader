@@ -12,8 +12,8 @@
 #     for the clean copy. Neither quarantined copy is ever opened.
 #
 # It refuses to run while any Lectern is running, so it never touches your own session.
-# The test launch passes -ApplePersistenceIgnoreState YES, so it doesn't restore the
-# user's saved windows. It still uses the real sandbox container
+# The test launch passes -ApplePersistenceIgnoreState YES, so it neither restores nor
+# overwrites the user's last session, and doesn't ask the first-launch update question. It still uses the real sandbox container
 # (~/Library/Containers/io.github.ronimoe.Lectern), so the temporary test PDF is
 # recorded there like any opened document: in File > Open Recent and in Lectern's
 # reading state. File > Open Recent > Clear Menu removes both (docs/INSTALL.md).

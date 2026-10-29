@@ -61,7 +61,17 @@ final class SessionRestorer {
         UserDefaults.standard.bool(forKey: "NSQuitAlwaysKeepsWindows")
     }
 
-    var shouldRestore: Bool { policy().shouldRestore(systemKeepsWindows: systemKeepsWindows()) }
+    /// `-ApplePersistenceIgnoreState YES` (a test launch, such as scripts/release/verify-dmg's):
+    /// last session is neither restored nor overwritten.
+    var ignoresPersistentState: () -> Bool = { SessionRestorer.launchIgnoresPersistentState() }
+
+    static func launchIgnoresPersistentState() -> Bool {
+        UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState")
+    }
+
+    var shouldRestore: Bool {
+        !ignoresPersistentState() && policy().shouldRestore(systemKeepsWindows: systemKeepsWindows())
+    }
 
     // MARK: Saving
 
@@ -101,6 +111,7 @@ final class SessionRestorer {
     /// Writes the session; with "Never", forgets it instead (a list of open files is kept only
     /// when it can be used).
     func save(_ state: SessionState) {
+        guard !ignoresPersistentState() else { return }
         if policy() == .never || state.windows.isEmpty {
             try? FileManager.default.removeItem(at: fileURL)
             return
