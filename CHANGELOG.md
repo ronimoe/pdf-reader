@@ -12,6 +12,7 @@ The first release: a calm, native PDF reader for macOS 26 on Apple Silicon. No a
 - View-only rotation that is never saved into the file.
 - Password-protected documents, with an opt-in "Remember in Keychain" and respect for the document's permissions.
 - Printing, and distraction-free mode (⇧⌘F).
+- The Lectern app icon, a folded white "L" on red, in every macOS 26 appearance (light, dark, tinted and clear).
 
 ### Navigation
 - A sidebar with thumbnails, the table of contents, reader bookmarks, annotations and search results.

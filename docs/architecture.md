@@ -720,4 +720,4 @@ Every decision mapped to the component that implements it and the milestone that
 1. ~~**The save path (§3.2).**~~ Decided in M0a: our own incremental writer.
 2. **Every [verify] item.** Resolved by M0.
 3. ~~**Apple Developer Program membership**~~ Decided: none for v1. Unsigned (ad-hoc) distribution with documented install steps (§8).
-4. **Product name and bundle ID.** Needed before M1 settles the storage paths. A placeholder works until then.
+4. ~~**Product name and bundle ID.**~~ Decided 2026-10-30: Lectern, `io.github.ronimoe.Lectern`, which is what M1 already used.
