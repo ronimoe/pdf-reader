@@ -169,6 +169,7 @@ private struct BrokenBookmarks: FileBookmarking {
         store.update(first.id) {
             $0.anchor = anchor(8)
             $0.history = [.primary: history]
+            $0.bookmarks = [ReaderBookmark(name: "Near the end", anchor: anchor(9)), ReaderBookmark(name: "Start", anchor: anchor(1))]
         }
         store.flush()
 
@@ -179,6 +180,9 @@ private struct BrokenBookmarks: FileBookmarking {
         #expect(reopened.state.anchor?.pageIndex == 4)
         #expect(reopened.state.anchor?.pointInPage == anchor(8).pointInPage)
         #expect(reopened.state.history[.primary]?.backList.map(\.pageIndex) == [4])
+        // Bookmarks are remapped by page and clamped too (A2), and keep their names.
+        #expect(reopened.state.bookmarks.map(\.anchor.pageIndex) == [4, 1])
+        #expect(reopened.state.bookmarks.map(\.name) == ["Near the end", "Start"])
         #expect(reopened.state.identity.pageCount == 5)
     }
 
@@ -348,8 +352,9 @@ private struct BrokenBookmarks: FileBookmarking {
         #expect(state.anchor?.pageIndex == 3)
         #expect(state.history.isEmpty)
         #expect(state.viewSettings == ViewSettings())
-        // State written before the split view (M3) has none.
+        // State written before the split view (M3) has none, and none before bookmarks (M5).
         #expect(state.split == nil)
+        #expect(state.bookmarks.isEmpty)
     }
 
     @Test func theSplitRoundTripsWithEachPanesHistory() throws {

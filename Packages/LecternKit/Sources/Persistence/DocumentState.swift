@@ -4,8 +4,8 @@ import ReaderCore
 /// Everything remembered about one document on this Mac (A2, spec §5.4).
 /// Never written into the PDF.
 ///
-/// Reader bookmarks (M5) are added here later. Every field decodes with a
-/// default, so state written by another version still loads.
+/// Every field decodes with a default, so state written by another version
+/// still loads.
 public struct DocumentState: Codable, Hashable, Sendable {
     public var identity: DocumentIdentity
     public var lastOpened: Date
@@ -17,6 +17,9 @@ public struct DocumentState: Codable, Hashable, Sendable {
     /// The split view (B3), or nil for a single pane. `anchor` is always the
     /// first pane's place.
     public var split: SplitState?
+    /// Reader bookmarks (A2), in reading order. Exported as JSON on request,
+    /// never written into the PDF.
+    public var bookmarks: [ReaderBookmark]
 
     public init(
         identity: DocumentIdentity,
@@ -24,7 +27,8 @@ public struct DocumentState: Codable, Hashable, Sendable {
         anchor: ReadingAnchor? = nil,
         history: [PaneID: HistoryStack] = [:],
         viewSettings: ViewSettings = ViewSettings(),
-        split: SplitState? = nil
+        split: SplitState? = nil,
+        bookmarks: [ReaderBookmark] = []
     ) {
         self.identity = identity
         self.lastOpened = lastOpened
@@ -32,6 +36,7 @@ public struct DocumentState: Codable, Hashable, Sendable {
         self.history = history
         self.viewSettings = viewSettings
         self.split = split
+        self.bookmarks = bookmarks
     }
 
     /// The positions moved onto a file that changed at the same place and
@@ -41,11 +46,12 @@ public struct DocumentState: Codable, Hashable, Sendable {
         copy.anchor = anchor?.clamped(toPageCount: pageCount)
         copy.history = history.mapValues { $0.clamped(toPageCount: pageCount) }
         copy.split?.secondaryAnchor = split?.secondaryAnchor?.clamped(toPageCount: pageCount)
+        copy.bookmarks = bookmarks.map { $0.clamped(toPageCount: pageCount) }
         return copy
     }
 
     private enum CodingKeys: String, CodingKey {
-        case identity, lastOpened, anchor, history, viewSettings, split
+        case identity, lastOpened, anchor, history, viewSettings, split, bookmarks
     }
 
     public init(from decoder: any Decoder) throws {
@@ -56,6 +62,7 @@ public struct DocumentState: Codable, Hashable, Sendable {
         history = (try? container.decodeIfPresent([PaneID: HistoryStack].self, forKey: .history)) ?? [:]
         viewSettings = (try? container.decodeIfPresent(ViewSettings.self, forKey: .viewSettings)) ?? ViewSettings()
         split = (try? container.decodeIfPresent(SplitState.self, forKey: .split)) ?? nil
+        bookmarks = (try? container.decodeIfPresent([ReaderBookmark].self, forKey: .bookmarks)) ?? []
     }
 }
 

@@ -54,8 +54,9 @@ final class ReaderWindowController: NSWindowController {
     let thumbnailsSection = ThumbnailsSectionViewController()
     let searchSection = SearchResultsSectionViewController()
     let annotationsSection = AnnotationsSectionViewController()
+    let bookmarksSection = BookmarksSectionViewController()
     private(set) lazy var sidebar = SidebarViewController(
-        sections: [thumbnailsSection, outlineSection, annotationsSection, searchSection],
+        sections: [thumbnailsSection, outlineSection, bookmarksSection, annotationsSection, searchSection],
         visible: settings.sidebar.section
     )
     private(set) var sidebarItem: NSSplitViewItem!
@@ -96,6 +97,14 @@ final class ReaderWindowController: NSWindowController {
     private(set) var pagesWithoutText: [Int]?
 
     // Stored state (A2)
+    /// The reader's bookmarks (A2), in reading order, stored with the document's state.
+    var bookmarks: [ReaderBookmark] = [] {
+        didSet {
+            guard bookmarks != oldValue else { return }
+            updateStoredState { $0.bookmarks = self.bookmarks }
+            refreshBookmarkList()
+        }
+    }
     let stateStore: DocumentStateStore?
     private(set) var storedDocumentID: UUID?
 
@@ -281,6 +290,9 @@ final class ReaderWindowController: NSWindowController {
             if section == .annotations { self?.refreshAnnotationList() }
         }
         annotationsSection.onSelect = { [weak self] item in self?.jumpToListItem(item) }
+        bookmarksSection.onSelect = { [weak self] id in self?.jumpToBookmark(id) }
+        bookmarksSection.onRename = { [weak self] id in self?.renameBookmark(id) }
+        bookmarksSection.onRemove = { [weak self] id in self?.removeBookmark(id) }
         outlineSection.onJump = { [weak self] outline in self?.jump(to: outline) }
         thumbnailsSection.onJump = { [weak self] index in self?.pane.jump(toPageAt: index) }
         searchSection.onShowResult = { [weak self] index in self?.showResult(at: index) }
@@ -345,6 +357,7 @@ final class ReaderWindowController: NSWindowController {
         }
         settings = restored
         primaryPane.setHistory(stored.state.history[.primary] ?? HistoryStack())
+        bookmarks = ReaderBookmarks.sorted(stored.state.bookmarks.map { $0.clamped(toPageCount: pdf.pageCount) })
         return stored.state
     }
 
@@ -411,6 +424,7 @@ final class ReaderWindowController: NSWindowController {
         sidebar.show(settings.sidebar.section)
         sidebarItem.isCollapsed = !settings.sidebar.isVisible
         updateThumbnailSelection()
+        refreshBookmarkList()
         if settings.sidebar.section == .annotations, settings.sidebar.isVisible { refreshAnnotationList() }
     }
 
@@ -677,6 +691,7 @@ final class ReaderWindowController: NSWindowController {
             return
         }
         readerDocument.applyViewRotation(settings.rotation)
+        bookmarks = bookmarks.map { $0.clamped(toPageCount: pdf.pageCount) }
         for (pane, anchor) in anchors {
             pane.setHistory(pane.history.clamped(toPageCount: pdf.pageCount))
             var paneSettings = settings
@@ -911,6 +926,8 @@ final class ReaderWindowController: NSWindowController {
             return selectedAnnotation != nil && window?.firstResponder === pdfView
         case #selector(editAnnotationText(_:)):
             return selectedAnnotation != nil
+        case #selector(exportBookmarks(_:)): return !bookmarks.isEmpty
+        case #selector(renameBookmarkMenu(_:)): return bookmarkToRename != nil
         default: return true
         }
     }
@@ -934,6 +951,7 @@ final class ReaderWindowController: NSWindowController {
         case #selector(focusLinks(_:)): pdfView.isLinkFocusActive
         case #selector(setAnnotationColor(_:)): false
         case #selector(showAnnotationList(_:)): isSidebarVisible && sidebar.visibleSection == .annotations
+        case #selector(showBookmarkList(_:)): isSidebarVisible && sidebar.visibleSection == .bookmarks
         default: false
         }
     }
@@ -950,6 +968,9 @@ extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleReaderSidebar(_:)) {
             menuItem.title = isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+        }
+        if menuItem.action == #selector(toggleBookmark(_:)) {
+            menuItem.title = hasBookmarkHere ? "Remove Bookmark" : "Add Bookmark"
         }
         if menuItem.action == #selector(toggleSplitView(_:)) {
             menuItem.title = isSplit ? "Close Split View" : "Split View"

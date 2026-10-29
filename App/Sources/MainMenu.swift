@@ -32,6 +32,8 @@ enum MainMenu {
         let saveAs = fileMenu.addItem(withTitle: "Save As…", action: #selector(NSDocument.saveAs(_:)), keyEquivalent: "s")
         saveAs.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(.separator())
+        fileMenu.addItem(withTitle: "Export Bookmarks…", action: #selector(ReaderWindowController.exportBookmarks(_:)), keyEquivalent: "")
+        fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Print…", action: #selector(NSDocument.printDocument(_:)), keyEquivalent: "p")
         main.addItem(submenu: fileMenu, title: "File")
 
@@ -70,6 +72,10 @@ enum MainMenu {
         let goMenu = NSMenu(title: "Go")
         ReaderCommands.goItems().forEach(goMenu.addItem)
         main.addItem(submenu: goMenu, title: "Go")
+
+        let bookmarksMenu = NSMenu(title: "Bookmarks")
+        ReaderCommands.bookmarkItems().forEach(bookmarksMenu.addItem)
+        main.addItem(submenu: bookmarksMenu, title: "Bookmarks")
 
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
