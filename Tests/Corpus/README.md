@@ -93,13 +93,14 @@ differ; the SHA-256 identifies the copy committed here (W-9 Rev. March 2024; For
 
 `swift test` in `Packages/LecternKit` runs the incremental writer (`PDFSave`) over each file
 (`Tests/PDFSaveTests/CorpusSupport.swift` lists the changes and the expected `Saveability` per
-file), writes the outputs and a `manifest.json` to `$TMPDIR/lectern-m0a-corpus/` (override with
-`LECTERN_CORPUS_OUT`), and calls `scripts/corpus/verify` for the external checks. Run it by hand
-for a readable report:
+file), and writes the outputs and a `manifest.json` to `$TMPDIR/lectern-corpus-<checkout folder>/`.
+For the main checkout that is `lectern-corpus-pdf-reader`; each git worktree gets its own, so
+parallel runs don't overwrite each other. `LECTERN_CORPUS_OUT` overrides it. It then calls
+`scripts/corpus/verify` for the external checks. Run that by hand for a readable report:
 
 ```sh
-scripts/corpus/verify --manifest "$TMPDIR/lectern-m0a-corpus/manifest.json"            # text
-scripts/corpus/verify --manifest "$TMPDIR/lectern-m0a-corpus/manifest.json" --markdown # table
+scripts/corpus/verify --manifest "$TMPDIR/lectern-corpus-pdf-reader/manifest.json"            # text
+scripts/corpus/verify --manifest "$TMPDIR/lectern-corpus-pdf-reader/manifest.json" --markdown # table
 ```
 
 The seeded fuzz tests (`RobustnessTests`) mutate every file here, including `realworld/`.

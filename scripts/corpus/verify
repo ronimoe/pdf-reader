@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Checks writer outputs against architecture §3.2. Usage:
 #   scripts/corpus/verify --manifest <dir>/manifest.json [--check qpdf ...] [--json | --markdown]
-# The manifest is written by `swift test` in Packages/LecternKit (default dir: $TMPDIR/lectern-m0a-corpus).
+# The manifest is written by `swift test` in Packages/LecternKit (default dir: $TMPDIR/lectern-corpus-<checkout folder name>).
 # Uses the repo-root .venv when present; without it, checks that need pikepdf/pyHanko report "skip".
 set -euo pipefail
 here="${0:A:h}"

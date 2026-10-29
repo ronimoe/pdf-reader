@@ -17,9 +17,11 @@ enum Repo {
     static let venvPython = root.appending(path: ".venv/bin/python")
     static let pdfjs = root.appending(path: "scripts/corpus/node_modules/pdfjs-dist")
 
+    /// `$TMPDIR/lectern-corpus-<checkout folder>`: one directory per checkout, so test runs in
+    /// several git worktrees at once don't overwrite each other's outputs and manifest.
     static let outputDirectory: URL = {
         if let custom = ProcessInfo.processInfo.environment["LECTERN_CORPUS_OUT"] { return URL(fileURLWithPath: custom) }
-        return FileManager.default.temporaryDirectory.appending(path: "lectern-m0a-corpus")
+        return FileManager.default.temporaryDirectory.appending(path: "lectern-corpus-\(root.lastPathComponent)")
     }()
 
     /// Every committed PDF: the generated files and the real-world ones.

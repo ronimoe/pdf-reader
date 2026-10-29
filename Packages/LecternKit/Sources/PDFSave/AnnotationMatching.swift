@@ -120,7 +120,7 @@ public struct AnnotationMatcher: Sendable {
     /// Maximum difference, in points, for each `/Rect` edge.
     ///
     /// PDFKit's `bounds` equal `/Rect` to within 1e-13 pt on every non-note annotation in the
-    /// corpus (about 1,500 of them), so the default only absorbs rounding. It must stay well below
+    /// corpus (about 1,700 of them), so the default only absorbs rounding. It must stay well below
     /// the 0.5 pt spacing of overlapping link rectangles seen in real papers. Match against the
     /// bounds PDFKit reported when the file was opened, not after the user moved something.
     public var tolerance: Double
