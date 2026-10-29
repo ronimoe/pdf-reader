@@ -81,7 +81,7 @@ extension NSView {
 }
 
 extension NSImage {
-    var cgImageValue: CGImage? {
+    nonisolated var cgImageValue: CGImage? {
         var rect = CGRect(origin: .zero, size: size)
         return cgImage(forProposedRect: &rect, context: nil, hints: nil)
     }
