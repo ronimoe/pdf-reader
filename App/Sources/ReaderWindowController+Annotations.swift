@@ -345,7 +345,11 @@ extension ReaderWindowController {
         // Before the check, the live journal is a crash journal not yet offered: nothing may
         // write over it or (with an empty list, as a save writes) delete it.
         guard didCheckJournal, let journal, let storedDocumentID, let editor = annotations, let hash = editor.originalSHA256 else { return }
-        journal.record(JournalEntry(originalSHA256: hash, changes: editor.pending.changes), for: storedDocumentID)
+        // An encrypted document's notes are sealed with a key derived from its own; without that
+        // key nothing is journaled, never the plain text (architecture §6).
+        if editor.info?.isEncrypted == true, editor.info?.journalKey == nil { return }
+        journal.record(JournalEntry(originalSHA256: hash, changes: editor.pending.changes), for: storedDocumentID,
+                       sealedWith: editor.info?.journalKey)
     }
 
     /// Offers back unsaved annotations from a session that ended unexpectedly.
@@ -358,9 +362,11 @@ extension ReaderWindowController {
               window != nil
         else { return }
         didCheckJournal = true
-        guard var offered = journal.find(storedDocumentID, currentSHA256: hash) else { return }
+        // Runs once the document is unlocked and inspected, so an encrypted one's key is here.
+        let key = editor.info?.journalKey
+        guard var offered = journal.find(storedDocumentID, currentSHA256: hash, key: key) else { return }
         if !offered.isKept, let kept = journal.setAside(storedDocumentID) {
-            offered = JournalFile(url: kept, lookup: journal.read(kept, currentSHA256: hash))
+            offered = JournalFile(url: kept, lookup: journal.read(kept, currentSHA256: hash, key: key))
         }
         offerJournal(offered, to: editor)
     }
@@ -399,7 +405,7 @@ extension ReaderWindowController {
     private func reofferJournal(_ file: JournalFile) {
         guard let journal, let editor = annotations else { return }
         // Before the new file's hash is known, nothing can match it.
-        let lookup = journal.read(file.url, currentSHA256: editor.originalSHA256 ?? "unknown")
+        let lookup = journal.read(file.url, currentSHA256: editor.originalSHA256 ?? "unknown", key: editor.info?.journalKey)
         offerJournal(JournalFile(url: file.url, lookup: lookup), to: editor)
     }
 

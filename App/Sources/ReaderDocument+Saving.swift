@@ -70,8 +70,11 @@ extension ReaderDocument {
         let data = originalData
         let readOnly = isReadOnlyLocation
         let delay = inspectionDelay
+        // An encrypted file is read with the password that unlocked it (or the empty one).
+        let password = sessionPassword
+        let key = documentKey
         let task = Task { [weak self, weak editor] in
-            let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly)
+            let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly, password: password, documentKey: key)
             if delay > .zero { try? await Task.sleep(for: delay) }
             guard let self, let editor, editor === self.annotations, editor.original == data else { return }
             editor.load(info)
@@ -236,9 +239,9 @@ extension ReaderDocument {
         do throws(PDFSaveError) {
             switch operation {
             case .saveOperation:
-                if !changes.isEmpty { result = try IncrementalWriter().saveInPlace(original: original, changes: changes) }
+                if !changes.isEmpty { result = try IncrementalWriter().saveInPlace(original: original, changes: changes, password: sessionPassword) }
             case .saveAsOperation, .saveToOperation:
-                if !changes.isEmpty { result = try IncrementalWriter().saveCopy(original: original, changes: changes) }
+                if !changes.isEmpty { result = try IncrementalWriter().saveCopy(original: original, changes: changes, password: sessionPassword) }
             default:
                 throw .unsupported("autosave")
             }
@@ -252,7 +255,8 @@ extension ReaderDocument {
         var descriptors: [AnnotationDescriptor]?
         if let result {
             do throws(PDFSaveError) {
-                descriptors = try SavedFileCheck.verify(written, original: original, against: result)
+                // Read back with the same password, comparing decrypted text, not just counts.
+                descriptors = try SavedFileCheck.verify(written, original: original, against: result, password: sessionPassword)
             } catch {
                 throw Self.saveError(error)
             }
@@ -291,7 +295,7 @@ extension ReaderDocument {
         resetCachedKey()
         // A Save As rescued a deleted or trashed file: the document is the new file now.
         if written.operation == .saveAsOperation { fileIsBack() }
-        let descriptors = written.descriptors ?? (try? PDFSaveDocument(data: written.data).annotations())
+        let descriptors = written.descriptors ?? (try? PDFSaveDocument(data: written.data, password: sessionPassword).annotations())
         let saveability = editor.saveability ?? .inPlace
         editor.didSave(written.data, descriptors: descriptors ?? [], saveability: saveability, descriptorsAreComplete: descriptors != nil)
         updateChangeCount(.changeCleared)
@@ -299,8 +303,10 @@ extension ReaderDocument {
         // Re-check where it now lives (a Save As can make a copy-only document writable, or not).
         let data = written.data
         let readOnly = isReadOnlyLocation
+        let password = sessionPassword
+        let key = documentKey
         Task { [weak self, weak editor] in
-            let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly)
+            let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly, password: password, documentKey: key)
             guard let self, let editor, editor === self.annotations, editor.original == data else { return }
             editor.updateSaveability(info.saveability)
         }
@@ -348,7 +354,7 @@ extension ReaderDocument {
 
     static func saveError(_ error: PDFSaveError) -> NSError {
         let reason: String = switch error {
-        case .encrypted: "Lectern can’t save annotations into encrypted documents."
+        case .encrypted(let problem): problem.explanation
         case .copyOnly: "This document can only be saved as a copy. Use Save As."
         case .verificationFailed(let why): "The saved file didn’t pass Lectern’s check (\(why))."
         case .malformed(let why), .unsupported(let why): "Lectern couldn’t add to this file safely (\(why))."

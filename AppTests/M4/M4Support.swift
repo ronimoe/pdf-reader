@@ -29,12 +29,12 @@ private final class CorpusBundleMarker {}
 nonisolated enum ExternalTool {
     static let qpdfPaths = ["/opt/homebrew/bin/qpdf", "/usr/local/bin/qpdf"]
 
-    /// `qpdf --check`: the exit status and output.
-    static func qpdfCheck(_ url: URL) throws -> (status: Int32, output: String) {
+    /// `qpdf --check`: the exit status and output. An encrypted file is opened with `password`.
+    static func qpdfCheck(_ url: URL, password: String? = nil) throws -> (status: Int32, output: String) {
         let path = try #require(qpdfPaths.first { FileManager.default.isExecutableFile(atPath: $0) }, "qpdf is required (brew install qpdf)")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = ["--check", url.path]
+        process.arguments = (password.map { ["--password=\($0)"] } ?? []) + ["--check", url.path]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -62,10 +62,10 @@ final class AnnotationHarness {
     private let blockedUIBefore = UITripwire.shared.calls.count
 
     /// Copies `name` from the corpus (or writes `data`) into a fresh folder and opens it.
-    convenience init(corpus name: String) async throws {
+    convenience init(corpus name: String, password: String? = nil) async throws {
         let folder = try TemporaryFolder()
         let url = try folder.write(try Corpus.data(name), to: "\(name).pdf")
-        try await self.init(file: url, folder: folder)
+        try await self.init(file: url, folder: folder, password: password)
     }
 
     convenience init(data: Data, name: String = "document.pdf") async throws {
@@ -184,10 +184,12 @@ struct SavedFile {
     let pdf: PDFDocument
     let descriptors: [AnnotationDescriptor]
 
-    init(_ data: Data) throws {
+    /// An encrypted file is unlocked in PDFKit and decrypted by PDFSave with `password`.
+    init(_ data: Data, password: String? = nil) throws {
         self.data = data
         pdf = try #require(PDFDocument(data: data))
-        descriptors = try PDFSaveDocument(data: data).annotations()
+        if pdf.isLocked { try #require(pdf.unlock(withPassword: password ?? ""), "PDFKit doesn't unlock the saved file") }
+        descriptors = try PDFSaveDocument(data: data, password: password).annotations()
     }
 
     /// PDFKit's annotations named `name` (our `/NM`).

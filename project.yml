@@ -106,6 +106,27 @@ targets:
         buildPhase: resources
       - path: Tests/Corpus/public/third-party-annots.pdf
         buildPhase: resources
+      # M7: saving into encrypted files.
+      - path: Tests/Corpus/public/encrypted-r2-rc4-40.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-r3-rc4-annotated.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-r4-rc4.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-r4-aes128-objstm.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-r4-cleartext-metadata.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-r4-identity-strings.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-r6-objstm-restricted.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-r6-unicode.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-signed.pdf
+        buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-r5.pdf
+        buildPhase: resources
     dependencies:
       - target: Lectern
     settings:

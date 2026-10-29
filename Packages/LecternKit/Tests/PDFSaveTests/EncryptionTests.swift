@@ -281,6 +281,118 @@ struct EncryptedFixture: Sendable, CustomTestStringConvertible {
         #expect(s.objectKey(ObjectRef(0x1234, 2), .aesV3) == s.fileKey)
     }
 
+    // MARK: Writing
+
+    static func highlight(_ f: EncryptedFixture) throws -> AnnotationChange {
+        let pk = try #require(PDFDocument(data: try f.data()))
+        if pk.isLocked { #expect(pk.unlock(withPassword: f.owner)) }
+        return .addMarkup(NewMarkup(kind: .highlight, pageIndex: 0, quads: try Corpus.quads(pk, page: 0),
+                                    contents: "Read me back", name: Corpus.name(9)))
+    }
+
+    /// A wrong key gives the right number of annotations with garbage text. The writer's own
+    /// verification and the app's read-back check must both catch it.
+    @Test(arguments: ["encrypted-r2-rc4-40", "encrypted-r4-aes128-objstm", "encrypted-aes256"])
+    func aWrongObjectKeyIsCaught(_ name: String) throws {
+        let f = try #require(EncryptedFixture.all.first { $0.name == name })
+        let data = try f.data()
+        var options = IncrementalWriter.Options(verify: false)
+        options.testHooks.encryptWithKeyOf = { ref in ObjectRef(ref.number + 1, ref.generation) }
+        let result = try IncrementalWriter(options: options).saveInPlace(original: data, changes: [try Self.highlight(f)], password: f.password)
+        if f.revision < 6 {
+            // R6 uses the file key for every object, so only R2–R4 can get an object key wrong.
+            #expect(throws: PDFSaveError.self) { try SavedFileCheck.verify(result.data, original: data, against: result, password: f.password) }
+            options.verify = true
+            #expect(throws: PDFSaveError.self) {
+                try IncrementalWriter(options: options).saveInPlace(original: data, changes: [try Self.highlight(f)], password: f.password)
+            }
+        }
+        if f.revision == 2 {
+            // RC4: the count is right and only the text is wrong, which counting alone would miss.
+            let before = try PDFSaveDocument(data: data, password: f.password).annotations()
+            let after = try PDFSaveDocument(data: result.data, password: f.password).annotations()
+            #expect(after.count == before.count + 1)
+            #expect(!after.contains { $0.contents == "Read me back" })
+        }
+    }
+
+    @Test func savedFileCheckComparesTextNotJustCounts() throws {
+        // A plain file: rewrite the added annotation's /Contents after the expected state is fixed.
+        let data = try Data(contentsOf: Repo.corpus.appending(path: "classic-xref.pdf"))
+        let pk = try #require(PDFDocument(data: data))
+        var options = IncrementalWriter.Options(verify: false)
+        options.testHooks.mutateWritten = { objects in
+            for (ref, object) in objects {
+                if var d = object.dictionaryValue, d["Subtype"] == .name("Highlight") {
+                    d["Contents"] = .text("Garbage")
+                    objects[ref] = .dictionary(d)
+                }
+            }
+        }
+        let change = AnnotationChange.addMarkup(NewMarkup(kind: .highlight, pageIndex: 0, quads: try Corpus.quads(pk, page: 0), contents: "Right"))
+        let result = try IncrementalWriter(options: options).saveInPlace(original: data, changes: [change])
+        #expect(throws: PDFSaveError.verificationFailed("annotation \(result.added[0].ref) doesn't read back as written")) {
+            try SavedFileCheck.verify(result.data, original: data, against: result)
+        }
+    }
+
+    @Test func savedFileCheckNeedsThePassword() throws {
+        let f = try #require(EncryptedFixture.all.first { $0.name == "encrypted-aes256" })
+        let data = try f.data()
+        let result = try IncrementalWriter().saveInPlace(original: data, changes: [try Self.highlight(f)], password: f.password)
+        #expect(try SavedFileCheck.verify(result.data, original: data, against: result, password: f.password).contains { $0.contents == "Read me back" })
+        #expect(throws: PDFSaveError.self) { try SavedFileCheck.verify(result.data, original: data, against: result) }
+    }
+
+    @Test func aesIVsAreRandomAndStringsAreHex() throws {
+        let f = try #require(EncryptedFixture.all.first { $0.name == "encrypted-r4-aes128-objstm" })
+        let data = try f.data()
+        let a = try IncrementalWriter().saveInPlace(original: data, changes: [try Self.highlight(f)], password: f.password)
+        let b = try IncrementalWriter().saveInPlace(original: data, changes: [try Self.highlight(f)], password: f.password)
+        #expect(a.data != b.data)
+        let update = String(decoding: a.data.suffix(from: data.count), as: UTF8.self)
+        #expect(!update.contains("(Read me back)") && !update.contains("Read me back"))
+        #expect(!update.contains(Corpus.name(9)))
+    }
+
+    @Test func theWriterNeverTouchesEncryptOrTheXRefStream() throws {
+        let s = StandardSecurity.testAES
+        let encryptObject = StandardSecurity(version: 4, revision: 4, fileKey: s.fileKey, strings: .aesV2, streams: .aesV2, filters: s.filters,
+                                             encryptMetadata: true, permissions: s.permissions, dictionaryObject: 12, authenticatedAs: .user)
+        #expect(throws: PDFSaveError.unsupported("the writer would overwrite /Encrypt")) {
+            try encryptObject.encrypt(object: .dictionary([:]), ref: ObjectRef(12))
+        }
+        let xref = PDFObject.stream(PDFStream(dictionary: ["Type": .name("XRef")], rawData: [1, 2, 3]))
+        #expect(throws: PDFSaveError.unsupported("the writer would encrypt a cross-reference stream")) {
+            try s.encrypt(object: xref, ref: ObjectRef(3))
+        }
+        // Reading leaves both alone.
+        #expect(try s.decrypt(object: xref, ref: ObjectRef(3)) == xref)
+        let raw = PDFObject.dictionary(["O": .string(PDFString(bytes: [1, 2, 3]))])
+        #expect(try encryptObject.decrypt(object: raw, ref: ObjectRef(12)) == raw)
+    }
+
+    @Test func aSignaturesContentsIsLeftAloneBothWays() throws {
+        let s = StandardSecurity.testAES
+        let sig = PDFObject.dictionary(["Type": .name("Sig"), "Contents": .string(PDFString(bytes: [0xAB, 0xCD], isHex: true)),
+                                        "Reason": .string(PDFString(bytes: Array("ok".utf8)))])
+        let encrypted = try s.encrypt(object: sig, ref: ObjectRef(4))
+        #expect(encrypted.dictionaryValue?["Contents"] == sig.dictionaryValue?["Contents"])
+        #expect(encrypted.dictionaryValue?["Reason"] != sig.dictionaryValue?["Reason"])
+        #expect(try s.decrypt(object: encrypted, ref: ObjectRef(4)) == sig)
+    }
+
+    @Test func aStreamsOwnCryptFilterIsHonoured() throws {
+        let s = StandardSecurity.testAES
+        let identity: PDFDictionary = ["Filter": .array([.name("Crypt")]), "DecodeParms": .array([.dictionary(["Name": .name("Identity")])])]
+        #expect(try s.streamMethod(identity) == .identity)
+        #expect(try s.streamMethod(["Filter": .name("Crypt")]) == .identity)
+        #expect(throws: PDFSaveError.encrypted(.cryptFilter("Custom"))) {
+            try s.streamMethod(["Filter": .name("Crypt"), "DecodeParms": .dictionary(["Name": .name("Custom")])])
+        }
+        #expect(try s.streamMethod(["Type": .name("Metadata")]) == .aesV2)
+    }
+
     @Test func rc4MatchesAKnownVector() {
         // RFC 6229 is for longer keys; this is the classic "Key"/"Plaintext" vector.
         #expect(Crypto.rc4(key: Array("Key".utf8), data: Array("Plaintext".utf8))
