@@ -6,6 +6,8 @@ Review of "Product Specification — Open-Source PDF Reader for macOS, v1.0".
 
 Decided outside the spec: **License = GPL-3.0** (see item B5 for a distribution consequence).
 
+**Status (2026-10-28):** A1–A6 and B5 are resolved, and the answers are recorded in [decisions.md](decisions.md). B1–B4, B6–B9 and the C items remain open.
+
 ---
 
 ## A. Blockers: resolve before technical design
