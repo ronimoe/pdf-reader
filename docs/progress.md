@@ -194,3 +194,20 @@ The automated security review flagged the same parser problems. Fixes include a 
 **Not verified**
 - On-screen look and VoiceOver.
 - Real mouse, trackpad and keyboard input.
+
+## Hotfix: PDFKit background-queue crash (branch `fix-pdfkit-background-calls`)
+
+**What you saw:** repeated "Lectern quit unexpectedly" dialogs, about 12 between 18:10 and 18:13.
+
+**Cause.** On macOS 26, PDFKit runs private, Vision-based page analysis on a background queue whenever pages scroll into view: form-field detection, OCR and table detection. It adds the detected fields as annotations, and in doing so reads `PDFView.document`. `ReaderPDFView` overrode `document` with a main-actor observer, so Swift 6's isolation check trapped on PDFKit's queue.
+
+**Fix**
+- `document` is no longer overridden. Callers use `ReaderPDFView.show(_:)`, which resets the view synchronously.
+- PDFKit's private `formDetectionEnabled` and `documentAnalysisEnabled` switches are turned off on every `ReaderPDFView`, only where they exist. This fits the "no AI features" principle and the rule that a document is never changed behind the reader's back.
+- A test fails if a future PDFKit renames these switches.
+
+**Verified**
+- Regression tests read `document` from a background thread and check that both switches are off.
+- The built app was opened on all 8 real-world PDFs, including the IRS forms, with no new crash reports.
+
+**Also seen in the crash reports, and expected:** 3 deliberate crash probes from the M0/M1 reviews (15:12, 15:24), and 1 test-host crash from an M0b spike (15:53).

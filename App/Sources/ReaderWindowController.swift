@@ -187,7 +187,7 @@ final class ReaderWindowController: NSWindowController {
         else { return }
         let stored = openStoredState(for: readerDocument, pdf: pdf)
         readerDocument.applyViewRotation(settings.rotation)
-        pdfView.document = pdf
+        pdfView.show(pdf)
         pdfView.apply(settings, hints: readerDocument.layoutHints)
         configureSidebar(for: readerDocument, pdf: pdf)
         if let anchor = stored?.anchor {
@@ -520,14 +520,14 @@ final class ReaderWindowController: NSWindowController {
         }
         guard let pdf = readerDocument.pdfDocument, !readerDocument.isPasswordLocked else {
             // The new file needs a password the old one didn't.
-            pdfView.document = nil
+            pdfView.show(nil)
             didCheckPasswords = false
             checkPasswordsIfNeeded()
             return
         }
         pane.setHistory(pane.history.clamped(toPageCount: pdf.pageCount))
         readerDocument.applyViewRotation(settings.rotation)
-        pdfView.document = pdf
+        pdfView.show(pdf)
         pdfView.apply(settings, hints: readerDocument.layoutHints)
         if let anchor { pdfView.restore(anchor.clamped(toPageCount: pdf.pageCount)) }
         configureSidebar(for: readerDocument, pdf: pdf)
