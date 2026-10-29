@@ -48,7 +48,7 @@ File ▸ Export Bookmarks… writes a document's reader bookmarks as JSON (decis
 | `document.pageCount` | integer | The number of pages. |
 | `bookmarks` | array | In reading order: by page, then from the top of the page down. |
 | `bookmarks[].name` | string | The bookmark's name. New bookmarks are called "Page <label>" until renamed. |
-| `bookmarks[].pageIndex` | integer | Zero-based page index. |
+| `bookmarks[].pageIndex` | integer | Zero-based page index in this version of the file. A bookmark made on a page the file no longer has is exported on its last page; Lectern keeps the original page and shows it there again if the file grows back. |
 | `bookmarks[].pageLabel` | string | The page's label from the PDF's `/PageLabels` (such as "iv" or "A-3"), or its one-based number. |
 | `bookmarks[].anchor.x`, `.y` | number | A point in the page's own coordinate space, in PDF points: origin at the bottom left of the unrotated crop box, y growing upwards. It is the point that was at the top-left corner of the reading area when the bookmark was made. |
 | `bookmarks[].created` | string | When the bookmark was made, ISO 8601 in UTC. |

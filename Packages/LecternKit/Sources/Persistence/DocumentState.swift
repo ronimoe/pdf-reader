@@ -40,13 +40,14 @@ public struct DocumentState: Codable, Hashable, Sendable {
     }
 
     /// The positions moved onto a file that changed at the same place and
-    /// now has `pageCount` pages (A2: remap by page, clamp).
+    /// now has `pageCount` pages (A2: remap by page, clamp). Bookmarks are kept as they were
+    /// made: they are clamped only where they are shown or followed, so a file that shrinks and
+    /// grows back gets them back where they were.
     public func clamped(toPageCount pageCount: Int) -> DocumentState {
         var copy = self
         copy.anchor = anchor?.clamped(toPageCount: pageCount)
         copy.history = history.mapValues { $0.clamped(toPageCount: pageCount) }
         copy.split?.secondaryAnchor = split?.secondaryAnchor?.clamped(toPageCount: pageCount)
-        copy.bookmarks = bookmarks.map { $0.clamped(toPageCount: pageCount) }
         return copy
     }
 
@@ -62,7 +63,8 @@ public struct DocumentState: Codable, Hashable, Sendable {
         history = (try? container.decodeIfPresent([PaneID: HistoryStack].self, forKey: .history)) ?? [:]
         viewSettings = (try? container.decodeIfPresent(ViewSettings.self, forKey: .viewSettings)) ?? ViewSettings()
         split = (try? container.decodeIfPresent(SplitState.self, forKey: .split)) ?? nil
-        bookmarks = (try? container.decodeIfPresent([ReaderBookmark].self, forKey: .bookmarks)) ?? []
+        // One damaged entry loses only itself.
+        bookmarks = (try? container.decodeIfPresent([Lossy<ReaderBookmark>].self, forKey: .bookmarks))?.compactMap(\.value) ?? []
     }
 }
 
@@ -91,5 +93,14 @@ public struct SplitState: Codable, Hashable, Sendable {
         secondaryAnchor = (try? container.decodeIfPresent(ReadingAnchor.self, forKey: .secondaryAnchor)) ?? nil
         focusedPane = (try? container.decodeIfPresent(PaneID.self, forKey: .focusedPane)) ?? .primary
         secondaryZoom = (try? container.decodeIfPresent(ZoomMode.self, forKey: .secondaryZoom)) ?? nil
+    }
+}
+
+/// Decodes an element, or nothing if it is damaged, so an array keeps its good elements.
+struct Lossy<Value: Decodable>: Decodable {
+    let value: Value?
+
+    init(from decoder: any Decoder) throws {
+        value = try? Value(from: decoder)
     }
 }

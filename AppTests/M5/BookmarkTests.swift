@@ -129,15 +129,48 @@ extension M5Tests {
             #expect(!h.document.isDocumentEdited)
         }
 
-        @Test func aReloadToFewerPagesClampsTheBookmarks() throws {
+        @Test func bookmarksSurviveAFileShrinkingAndGrowingBackAndOneToggleRemovesOne() throws {
+            let long = FixturePDF.make(pageTexts: (1...80).map { "Page \($0)" })
+            let folder = try TemporaryFolder()
+            let store = folder.store()
+            let h = try M5Harness(file: try folder.write(long, to: "Long.pdf"), store: store)
+            defer { h.close() }
+            for page in [30, 50, 70] {
+                h.read(at: page)
+                h.controller.toggleBookmark(nil)
+            }
+            let id = try #require(h.controller.storedDocumentID)
+
+            // The file shrinks to 10 pages: all three show on the last page...
+            let short = FixturePDF.make(pageTexts: (1...10).map { "Short \($0)" })
+            h.document.reload(with: short, pdf: try #require(PDFDocument(data: short)))
+            #expect(h.controller.bookmarksSection.items.map(\.pageLabel) == ["10", "10", "10"])
+            // ...but stay where they were made, in memory and in storage.
+            store.flush()
+            #expect(h.controller.bookmarks.map(\.anchor.pageIndex) == [30, 50, 70])
+            #expect(DocumentStateStore(directory: store.directory).state(for: id)?.bookmarks.map(\.anchor.pageIndex) == [30, 50, 70])
+
+            // ...and it grows back: they're where they were.
+            h.document.reload(with: long, pdf: try #require(PDFDocument(data: long)))
+            #expect(h.controller.bookmarks.map(\.anchor.pageIndex) == [30, 50, 70])
+            #expect(h.controller.bookmarksSection.items.map(\.pageLabel) == ["31", "51", "71"])
+
+            // While short, one toggle on the last page removes one bookmark, and says which.
+            h.document.reload(with: short, pdf: try #require(PDFDocument(data: short)))
+            h.read(at: 9)
+            h.controller.toggleBookmark(nil)
+            #expect(h.controller.bookmarks.count == 2)
+            #expect(h.controller.notice.message?.hasPrefix("Bookmark “Page ") == true && h.controller.notice.message?.hasSuffix("” removed") == true, "\(h.controller.notice.message ?? "")")
+        }
+
+        @Test func theNoticeSaysAddedOrRemoved() throws {
             let h = try harness()
             defer { h.close() }
-            h.read(at: 5)
+            h.read(at: 2)
             h.controller.toggleBookmark(nil)
-            let shorter = FixturePDF.make(pageTexts: ["One", "Two"])
-            let pdf = try #require(PDFDocument(data: shorter))
-            h.document.reload(with: shorter, pdf: pdf)
-            #expect(h.controller.bookmarks.map(\.anchor.pageIndex) == [1])
+            #expect(h.controller.notice.message == "Bookmark added")
+            h.controller.toggleBookmark(nil)
+            #expect(h.controller.notice.message == "Bookmark “Page 1” removed")
         }
 
         @Test func exportWritesTheDocumentedSchema() throws {
@@ -162,7 +195,7 @@ extension M5Tests {
             #expect(json["format"] as? String == "io.github.ronimoe.lectern.bookmarks")
             #expect(json["version"] as? Int == 1)
             let document = try #require(json["document"] as? [String: Any])
-            #expect((document["id"] as? [String])?.first?.lowercased() == "00112233445566778899aabbccddeeff")
+            #expect((document["id"] as? [String])?.first == "00112233445566778899aabbccddeeff", "lowercase hex, as documented")
             #expect(document["pageCount"] as? Int == 6)
             #expect((document["title"] as? String)?.isEmpty == false)
             let marks = try #require(json["bookmarks"] as? [[String: Any]])
@@ -175,6 +208,12 @@ extension M5Tests {
 
             let decoded = try BookmarkExport.decode(data)
             #expect(decoded.bookmarks.count == 2)
+            // Keys are written sorted (docs/bookmarks-export.md).
+            let text = try #require(String(data: data, encoding: .utf8))
+            let top = ["\"bookmarks\"", "\"document\"", "\"exported\"", "\"format\"", "\"version\""].map { text.range(of: $0)!.lowerBound }
+            #expect(top == top.sorted())
+            let inner = ["\"fileName\"", "\"id\"", "\"pageCount\"", "\"title\""].map { text.range(of: $0)!.lowerBound }
+            #expect(inner == inner.sorted())
         }
 
         @Test func exportIsUnavailableWithoutBookmarksAndCancelWritesNothing() throws {
@@ -185,9 +224,15 @@ extension M5Tests {
             h.read(at: 1)
             h.controller.toggleBookmark(nil)
             #expect(h.controller.validateMenuItem(item))
+            let folder = try TemporaryFolder()
             h.presenter.bookmarkExportDestination = nil
             h.controller.exportBookmarks(nil)
             #expect(h.presenter.exportRequests.count == 1)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: folder.url.path).isEmpty)
+            // The same export with a destination does write, so the check above can fail.
+            h.presenter.bookmarkExportDestination = folder.url.appending(path: "b.json")
+            h.controller.exportBookmarks(nil)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: folder.url.path) == ["b.json"])
         }
 
         @Test func theBookmarksMenuHasItsShortcuts() throws {

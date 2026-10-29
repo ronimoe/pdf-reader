@@ -50,19 +50,39 @@ public enum ReaderBookmarks {
         }
     }
 
-    /// "A bookmark here" means a bookmark on the page being read: ⌘D removes
-    /// it instead of adding a second one, as in Preview.
-    public static func bookmarks(onPageOf anchor: ReadingAnchor, in bookmarks: [ReaderBookmark]) -> [ReaderBookmark] {
-        bookmarks.filter { $0.anchor.pageIndex == anchor.pageIndex }
+    /// "A bookmark here" means a bookmark on the page being read (as shown in a document with
+    /// `pageCount` pages): ⌘D removes it instead of adding a second one, as in Preview.
+    public static func bookmarks(onPageOf anchor: ReadingAnchor, in bookmarks: [ReaderBookmark], pageCount: Int = .max) -> [ReaderBookmark] {
+        bookmarks.filter { $0.anchor.clamped(toPageCount: pageCount).pageIndex == anchor.pageIndex }
     }
 
-    /// Add or remove: removes every bookmark on the anchor's page if there is
-    /// one, otherwise adds one at the anchor, named `name`.
-    public static func toggled(at anchor: ReadingAnchor, name: String, in bookmarks: [ReaderBookmark], now: Date = Date()) -> [ReaderBookmark] {
-        if bookmarks.contains(where: { $0.anchor.pageIndex == anchor.pageIndex }) {
-            return bookmarks.filter { $0.anchor.pageIndex != anchor.pageIndex }
+    /// The bookmark on the anchor's page nearest the anchor: the one ⌘D removes.
+    public static func nearest(to anchor: ReadingAnchor, in bookmarks: [ReaderBookmark], pageCount: Int = .max) -> ReaderBookmark? {
+        Self.bookmarks(onPageOf: anchor, in: bookmarks, pageCount: pageCount).min { a, b in
+            distance(a.anchor, anchor) < distance(b.anchor, anchor)
         }
-        return sorted(bookmarks + [ReaderBookmark(name: name, anchor: anchor, created: now)])
+    }
+
+    private static func distance(_ a: ReadingAnchor, _ b: ReadingAnchor) -> CGFloat {
+        hypot(a.pointInPage.x - b.pointInPage.x, a.pointInPage.y - b.pointInPage.y)
+    }
+
+    /// What ⌘D did.
+    public enum Toggle: Equatable, Sendable {
+        case added(ReaderBookmark)
+        case removed(ReaderBookmark)
+    }
+
+    /// Add or remove: removes the one bookmark on the anchor's page nearest the anchor if there
+    /// is one, otherwise adds one at the anchor, named `name`. Never removes more than one.
+    public static func toggle(at anchor: ReadingAnchor, name: String, in bookmarks: inout [ReaderBookmark], pageCount: Int = .max, now: Date = Date()) -> Toggle {
+        if let nearest = nearest(to: anchor, in: bookmarks, pageCount: pageCount) {
+            bookmarks.removeAll { $0.id == nearest.id }
+            return .removed(nearest)
+        }
+        let added = ReaderBookmark(name: name, anchor: anchor, created: now)
+        bookmarks = sorted(bookmarks + [added])
+        return .added(added)
     }
 
     /// The name a new bookmark gets.

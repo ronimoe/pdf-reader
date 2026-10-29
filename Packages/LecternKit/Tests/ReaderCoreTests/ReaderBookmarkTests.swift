@@ -9,17 +9,39 @@ import Testing
     }
 
     @Test func toggleAddsThenRemovesOnTheSamePage() {
-        var marks = ReaderBookmarks.toggled(at: anchor(3), name: "Page 4", in: [])
+        var marks: [ReaderBookmark] = []
+        #expect(ReaderBookmarks.toggle(at: anchor(3), name: "Page 4", in: &marks).removedName == nil)
         #expect(marks.count == 1)
         #expect(marks.first?.anchor == anchor(3))
-        marks = ReaderBookmarks.toggled(at: anchor(3, y: 100), name: "x", in: marks)
+        #expect(ReaderBookmarks.toggle(at: anchor(3, y: 100), name: "x", in: &marks).removedName == "Page 4")
         #expect(marks.isEmpty)
     }
 
     @Test func toggleOnAnotherPageAdds() {
-        var marks = ReaderBookmarks.toggled(at: anchor(3), name: "a", in: [])
-        marks = ReaderBookmarks.toggled(at: anchor(4), name: "b", in: marks)
+        var marks: [ReaderBookmark] = []
+        _ = ReaderBookmarks.toggle(at: anchor(3), name: "a", in: &marks)
+        _ = ReaderBookmarks.toggle(at: anchor(4), name: "b", in: &marks)
         #expect(marks.map(\.name) == ["a", "b"])
+    }
+
+    @Test func toggleRemovesOnlyTheNearestOfSeveralOnAPage() {
+        var marks = [
+            ReaderBookmark(name: "top", anchor: anchor(2, y: 700)),
+            ReaderBookmark(name: "middle", anchor: anchor(2, y: 400)),
+            ReaderBookmark(name: "bottom", anchor: anchor(2, y: 100)),
+        ]
+        #expect(ReaderBookmarks.toggle(at: anchor(2, y: 380), name: "x", in: &marks).removedName == "middle")
+        #expect(marks.map(\.name) == ["top", "bottom"])
+    }
+
+    @Test func bookmarksPastTheEndCountOnTheLastPageButOnlyOneGoesAtATime() {
+        var marks = [30, 50, 70].map { ReaderBookmark(name: "p\($0)", anchor: anchor($0)) }
+        // A 10-page version: all three show on page 10 (index 9).
+        #expect(ReaderBookmarks.bookmarks(onPageOf: anchor(9), in: marks, pageCount: 10).count == 3)
+        _ = ReaderBookmarks.toggle(at: anchor(9), name: "x", in: &marks, pageCount: 10)
+        #expect(marks.count == 2, "a single toggle removes at most one")
+        // The stored pages themselves are untouched.
+        #expect(Set(marks.map(\.anchor.pageIndex)).isSubset(of: [30, 50, 70]))
     }
 
     @Test func sortedIsReadingOrder() {
@@ -89,4 +111,8 @@ import Testing
         #expect(BookmarkExport.suggestedFileName(forDocumentNamed: "Paper.pdf") == "Paper Bookmarks.json")
         #expect(BookmarkExport.suggestedFileName(forDocumentNamed: "") == "Document Bookmarks.json")
     }
+}
+
+extension ReaderBookmarks.Toggle {
+    var removedName: String? { if case .removed(let b) = self { b.name } else { nil } }
 }
