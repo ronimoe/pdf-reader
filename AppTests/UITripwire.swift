@@ -112,12 +112,25 @@ nonisolated final class UITripwire: @unchecked Sendable {
     }
 }
 
+/// No window animations while hosting tests. Ordering a window out starts an
+/// `_NSWindowTransformAnimation` on a GCD worker thread (non-blocking threaded mode); when those
+/// never finish (seen while the display slept), about 65 of them exhaust GCD's thread pool and any
+/// later background work, such as the coordinated read of a changed file or AppKit's recent
+/// documents, never runs: the intermittent 5-minute hang. Registered, not stored: the test host's
+/// defaults are the user's.
+nonisolated enum TestWindows {
+    static func turnOffAnimations() {
+        UserDefaults.standard.register(defaults: ["NSAutomaticWindowAnimationsEnabled": false])
+    }
+}
+
 /// The test bundle's principal class: XCTest creates it when the bundle loads, before any test.
 @objc(LecternTestPrincipal)
 nonisolated final class LecternTestPrincipal: NSObject {
     override init() {
         super.init()
         UITripwire.shared.install()
+        TestWindows.turnOffAnimations()
     }
 }
 

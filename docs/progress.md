@@ -309,3 +309,61 @@ It couldn't reproduce either intermittent hang. To prevent them anyway:
 - The cost of building the annotation list on the main thread.
 - Tripwire gaps: UI that appears after the last test, and attribution across suites running in parallel.
 - The intermittent M3 5-minute hang is still unexplained, with none seen since the tripwire.
+
+## M5: Completion (branch `m5-completion`, PR #13)
+
+**Landed**
+- **Reader bookmarks (A2):**
+  - ⌘D adds a bookmark at the reading anchor or removes the nearest one. ⌃⌘B shows the sidebar section.
+  - Bookmarks can be renamed, and jumping to one adds a history entry.
+  - They are stored unclamped in the per-document state, never in the PDF, and are clamped only when shown or used.
+  - Export uses the versioned JSON schema in `docs/bookmarks-export.md`.
+- **Session restore:**
+  - Lectern keeps its own `Session.json`; AppKit window restoration is off.
+  - It restores windows, tabs, frames and distraction-free mode, and each pane's position and split come from the per-document state.
+  - The policy follows macOS "Close windows when quitting" by default, or is set to Always or Never in Settings.
+  - Missing files are skipped silently. Encrypted documents ask for a password only when their window becomes key.
+- **Settings (⌘,):**
+  - General: reopen documents, hover previews, and full screen in distraction-free mode.
+  - Annotations: author name, which is empty by default, and the highlight colour.
+  - Updates: automatic checks and Check Now, plus a note that Lectern sends no telemetry.
+- **Opt-in updates (A4):**
+  - Sparkle 2.10.1 is created only after opting in or choosing Check Now, and the first-launch question defaults to "Don't Check".
+  - The EdDSA key lives outside the repository and outside the Keychain (`~/.config/lectern/sparkle_ed25519_private.key`, mode 600). `scripts/release/sign-update` signs releases and updates the appcast.
+  - **An update between two ad-hoc-signed builds works.** `scripts/release/sparkle-e2e` showed it headlessly, with the real entitlements and a localhost appcast; the output is in `spikes/platform-probe/results/m5-sparkle-e2e.txt`. An archive signed with the wrong key was refused.
+- **Accessibility:**
+  - An in-process audit fails on unnamed or keyboard-unreachable controls.
+  - Animations follow Reduce Motion.
+  - Scanned pages are described as having no readable text.
+- **Help ▸ Keyboard Shortcuts (⌘/)** is generated from the live main menu.
+- **Distraction-free mode (⇧⌘F, Esc exits)** keeps every pane's anchor.
+- **Intermittent 5-minute test hang, root cause:**
+  - Window-close animations exhausted the GCD worker pool (65 threads) while the display was off.
+  - Window animations are now off in the test host only.
+  - Four full runs in a row passed after the fix.
+
+**Snapshot review:** the coordinator checked offscreen light and dark renders in `build/snapshots/`. Light and dark are consistent. The review fixed:
+- clipped sidebar titles, which now end in "…" with a tooltip,
+- the narrow comment editor,
+- the Settings margins,
+- snapshot titles, which said "Untitled" because the harness loaded documents from memory.
+
+**Review:** one code-reviewer round found no blockers.
+- **Major (3), all fixed:**
+  - The test-launch flag was read from the global defaults domain, which could turn off session restore and update checks for real users.
+  - A cancelled quit stopped session saving.
+  - Clamping lost bookmarks for good, and one ⌘D removed every bookmark on the page.
+- **Minor (10):** all fixed, each with a test. Bookmark resolution, the cancelled quit, clamping, the restore guard and session dedupe were checked by putting the bug back and seeing the test fail.
+
+**Verified:** 233 package tests and 384 app tests. `./scripts/test.sh` passed twice in a row after the review fixes.
+
+**Not verified**
+- VoiceOver.
+- Real keyboard and drag input.
+- The live first-launch alert.
+- Sparkle's own windows.
+- HTTPS from GitHub Releases.
+- A session restore across a real relaunch with files outside the container.
+- A cancelled quit through AppKit's real prompt.
+
+**For you:** back up `~/.config/lectern/sparkle_ed25519_private.key` offline.

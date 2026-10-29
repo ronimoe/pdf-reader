@@ -42,6 +42,13 @@ protocol ReaderPresenting: AnyObject {
     /// The small popover for a note's text or a markup comment. `finished` gets the text to keep,
     /// or nil if cancelled.
     func editAnnotationText(heading: String, text: String, relativeTo rect: NSRect, of view: NSView, finished: @escaping (String?) -> Void)
+
+    // MARK: Bookmarks (M5)
+
+    /// Asks for a bookmark's new name; `finished` gets it, or nil if cancelled.
+    func renameBookmark(currentName: String, on window: NSWindow, finished: @escaping (String?) -> Void)
+    /// Where the bookmarks' JSON goes; nil if cancelled.
+    func chooseBookmarkExportDestination(suggestedName: String, on window: NSWindow, chosen: @escaping (URL?) -> Void)
 }
 
 enum ChangedFileChoice: Equatable {
@@ -215,8 +222,7 @@ final class SheetPresenter: ReaderPresenting {
 
     func editAnnotationText(heading: String, text: String, relativeTo rect: NSRect, of view: NSView, finished: @escaping (String?) -> Void) {
         let editor = AnnotationTextEditorController(heading: heading, text: text)
-        let popover = NSPopover()
-        popover.behavior = .transient
+        let popover = Self.makeEditorPopover()
         popover.contentViewController = editor
         editor.presentingPopover = popover
         editor.onFinish = finished
@@ -224,6 +230,46 @@ final class SheetPresenter: ReaderPresenting {
         popover.delegate = delegate
         objc_setAssociatedObject(popover, &PopoverCloseObserver.key, delegate, .OBJC_ASSOCIATION_RETAIN)
         popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
+    }
+}
+
+// MARK: Bookmarks
+
+extension SheetPresenter {
+    /// The annotation text popover: transient, and still while Reduce Motion is on.
+    static func makeEditorPopover() -> NSPopover {
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = !Motion.isReduced
+        return popover
+    }
+
+    func renameBookmark(currentName: String, on window: NSWindow, finished: @escaping (String?) -> Void) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Rename Bookmark"
+        let field = NSTextField(string: currentName)
+        field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        field.setAccessibilityLabel("Bookmark name")
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { response in
+            let name = response == .alertFirstButtonReturn ? field.stringValue : nil
+            DispatchQueue.main.async { finished(name) }
+        }
+    }
+
+    func chooseBookmarkExportDestination(suggestedName: String, on window: NSWindow, chosen: @escaping (URL?) -> Void) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = suggestedName
+        panel.message = "Export this document’s bookmarks as JSON."
+        panel.beginSheetModal(for: window) { response in
+            let url = response == .OK ? panel.url : nil
+            DispatchQueue.main.async { chosen(url) }
+        }
     }
 }
 

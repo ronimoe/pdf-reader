@@ -107,6 +107,9 @@ extension OutlineSectionViewController: NSOutlineViewDataSource, NSOutlineViewDe
             cell.identifier = identifier
             let label = NSTextField(labelWithString: "")
             label.lineBreakMode = .byTruncatingTail
+            label.maximumNumberOfLines = 1
+            // Long titles end in "…" at the sidebar's edge instead of widening the column.
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             label.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(label)
             cell.textField = label
@@ -120,7 +123,9 @@ extension OutlineSectionViewController: NSOutlineViewDataSource, NSOutlineViewDe
         }()
         let title = (item as? PDFOutline)?.label ?? ""
         cell.textField?.stringValue = title.isEmpty ? "Untitled" : title
-        cell.textField?.toolTip = title
+        // The full title, for when it's cut short.
+        cell.toolTip = title.isEmpty ? nil : title
+        cell.textField?.toolTip = cell.toolTip
         return cell
     }
 }

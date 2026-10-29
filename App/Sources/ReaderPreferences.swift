@@ -1,8 +1,8 @@
 import Foundation
 import ReaderCore
 
-/// App-wide reading preferences, kept in `UserDefaults`. Settings arrive in
-/// M5; until then the View menu changes them.
+/// App-wide preferences, kept in `UserDefaults`. The Settings window (⌘,) and the View menu
+/// change them.
 final class ReaderPreferences {
     static let didChange = Notification.Name("LecternReaderPreferencesDidChange")
     static let previewLinksOnHoverKey = "PreviewLinksOnHover"
@@ -43,6 +43,33 @@ final class ReaderPreferences {
         set { setValue(newValue, Self.annotationAuthorKey) }
     }
 
+    static let checksForUpdatesAutomaticallyKey = "CheckForUpdatesAutomatically"
+
+    /// The answer to the first-launch question (A4): nil until the user answers, then whether
+    /// Lectern may check for updates on its own. Never asked again once set.
+    var checksForUpdatesAutomatically: Bool? {
+        get { value(Self.checksForUpdatesAutomaticallyKey) as? Bool }
+        set {
+            if let newValue { setValue(newValue, Self.checksForUpdatesAutomaticallyKey) } else { removeValue(Self.checksForUpdatesAutomaticallyKey) }
+            NotificationCenter.default.post(name: Self.didChange, object: self)
+        }
+    }
+
+    static let sessionRestoreKey = "ReopenDocumentsOnLaunch"
+    static let distractionFreeFullScreenKey = "DistractionFreeEntersFullScreen"
+
+    /// Whether last session's documents reopen at launch (B3, spec §5.4). Follows macOS by default.
+    var sessionRestore: SessionRestorePolicy {
+        get { (value(Self.sessionRestoreKey) as? String).flatMap(SessionRestorePolicy.init(rawValue:)) ?? .default }
+        set { setValue(newValue.rawValue, Self.sessionRestoreKey) }
+    }
+
+    /// Distraction-free mode also enters full screen. Off by default.
+    var distractionFreeEntersFullScreen: Bool {
+        get { value(Self.distractionFreeFullScreenKey) as? Bool ?? false }
+        set { setValue(newValue, Self.distractionFreeFullScreenKey) }
+    }
+
     /// Preferences that live only in memory, for tests: the test host is the
     /// app, so the standard defaults are the user's own.
     static func ephemeral() -> ReaderPreferences {
@@ -55,5 +82,9 @@ final class ReaderPreferences {
 
     private func setValue(_ value: Any, _ key: String) {
         if let defaults { defaults.set(value, forKey: key) } else { memory[key] = value }
+    }
+
+    private func removeValue(_ key: String) {
+        if let defaults { defaults.removeObject(forKey: key) } else { memory[key] = nil }
     }
 }

@@ -51,7 +51,7 @@ extension ReaderWindowController {
     func updatePaneChrome() {
         for pane in panes {
             let name = pane.id == .primary ? "Left" : "Right"
-            paneContainers[pane.id]?.setSplitChrome(isSplit: isSplit, isFocused: pane.id == focusedPaneID, name: name)
+            paneContainers[pane.id]?.setSplitChrome(isSplit: isSplit, isFocused: pane.id == focusedPaneID, name: name, hidesChrome: isDistractionFree)
         }
     }
 
@@ -75,6 +75,7 @@ extension ReaderWindowController {
         let start = anchor ?? focusedPane.view.currentAnchor
         if let start { pane.view.restore(start) }
         updatePaneChrome()
+        applyTextAccessibility(to: pane)
         saveAnchor()
         return pane
     }

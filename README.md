@@ -13,7 +13,7 @@ Lectern is a PDF reader first, plus a personal space for highlights and notes. I
 - **No account,** no subscription, no ads and no paid unlocks.
 - **No telemetry.** No analytics, crash reporting or tracking of any kind.
 - **No AI features.**
-- **Works offline.** Nothing essential needs the internet. The only network use planned is an update check, which is off unless you turn it on.
+- **Works offline.** Nothing essential needs the internet. The only network use is an update check, which is off unless you turn it on.
 - **Your documents stay yours.** Reading never modifies a file, annotations are standard PDF annotations saved only when you save, and reading state stays on your Mac.
 - **Sandboxed.** The app runs in the macOS App Sandbox, so a malicious PDF has little to reach.
 

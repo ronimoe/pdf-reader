@@ -169,6 +169,7 @@ private struct BrokenBookmarks: FileBookmarking {
         store.update(first.id) {
             $0.anchor = anchor(8)
             $0.history = [.primary: history]
+            $0.bookmarks = [ReaderBookmark(name: "Near the end", anchor: anchor(9)), ReaderBookmark(name: "Start", anchor: anchor(1))]
         }
         store.flush()
 
@@ -179,6 +180,10 @@ private struct BrokenBookmarks: FileBookmarking {
         #expect(reopened.state.anchor?.pageIndex == 4)
         #expect(reopened.state.anchor?.pointInPage == anchor(8).pointInPage)
         #expect(reopened.state.history[.primary]?.backList.map(\.pageIndex) == [4])
+        // Bookmarks are stored as made; they are clamped only where shown (M5 review), so a
+        // file that grows back gets them back.
+        #expect(reopened.state.bookmarks.map(\.anchor.pageIndex) == [9, 1])
+        #expect(reopened.state.bookmarks.map(\.name) == ["Near the end", "Start"])
         #expect(reopened.state.identity.pageCount == 5)
     }
 
@@ -348,8 +353,37 @@ private struct BrokenBookmarks: FileBookmarking {
         #expect(state.anchor?.pageIndex == 3)
         #expect(state.history.isEmpty)
         #expect(state.viewSettings == ViewSettings())
-        // State written before the split view (M3) has none.
+        // State written before the split view (M3) has none, and none before bookmarks (M5).
         #expect(state.split == nil)
+        #expect(state.bookmarks.isEmpty)
+    }
+
+    @Test func bookmarksSurviveAFileShrinkingAndGrowingBack() throws {
+        let sandbox = try Sandbox()
+        let url = try sandbox.write(pdf(pages: 80), to: "b.pdf")
+        let store = sandbox.store()
+        let first = store.open(url: url, data: pdf(pages: 80), pageCount: 80)
+        store.update(first.id) { $0.bookmarks = [30, 50, 70].map { ReaderBookmark(name: "p\($0)", anchor: anchor($0)) } }
+        store.flush()
+        let shorter = pdf(pages: 10, second: "02")
+        try shorter.write(to: url)
+        let small = sandbox.store()
+        let shrunk = small.open(url: url, data: shorter, pageCount: 10)
+        small.flush()
+        #expect(shrunk.state.bookmarks.map(\.anchor.pageIndex) == [30, 50, 70])
+        let longer = pdf(pages: 80, second: "03")
+        try longer.write(to: url)
+        let regrown = sandbox.store().open(url: url, data: longer, pageCount: 80)
+        #expect(regrown.state.bookmarks.map(\.anchor.pageIndex) == [30, 50, 70])
+    }
+
+    @Test func oneDamagedBookmarkLosesOnlyItself() throws {
+        let good = "{\"name\":\"good\",\"anchor\":{\"pageIndex\":2,\"pointInPage\":[1,2],\"scale\":1}}"
+        let bad = "{\"name\":\"bad\",\"anchor\":42}"
+        let alsoGood = "{\"name\":\"also good\",\"anchor\":{\"pageIndex\":5,\"pointInPage\":[0,0],\"scale\":1}}"
+        let json = "{\"identity\":{\"lastKnownPath\":\"/a.pdf\",\"fileIdentifiers\":[\"aa\"]},\"bookmarks\":[\(good),\(bad),\(alsoGood)]}"
+        let state = try DocumentStateStore.decoder.decode(DocumentState.self, from: Data(json.utf8))
+        #expect(state.bookmarks.map(\.name) == ["good", "also good"])
     }
 
     @Test func theSplitRoundTripsWithEachPanesHistory() throws {

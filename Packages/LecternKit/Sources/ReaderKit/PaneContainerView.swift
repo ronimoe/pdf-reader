@@ -21,7 +21,7 @@ public final class PaneContainerView: NSView {
             addSubview(view)
         }
         focusBar.wantsLayer = true
-        focusBar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        focusBar.layer?.backgroundColor = resolvedCGColor(.controlAccentColor)
         focusBar.isHidden = true
         focusBar.setAccessibilityElement(false)
 
@@ -57,13 +57,32 @@ public final class PaneContainerView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    /// The focus bar's colour follows light and dark, and the accent colour.
+    public override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        focusBar.layer?.backgroundColor = resolvedCGColor(.controlAccentColor)
+    }
+
     /// Split chrome: the focus bar on the focused pane and a close button on
-    /// both. A single pane shows neither.
-    public func setSplitChrome(isSplit: Bool, isFocused: Bool, name: String) {
-        focusBar.isHidden = !(isSplit && isFocused)
-        closeButton.isHidden = !isSplit
+    /// both. A single pane shows neither, and distraction-free mode hides both.
+    public func setSplitChrome(isSplit: Bool, isFocused: Bool, name: String, hidesChrome: Bool = false) {
+        focusBar.isHidden = !(isSplit && isFocused) || hidesChrome
+        closeButton.isHidden = !isSplit || hidesChrome
         setAccessibilityLabel(isSplit ? "\(name) pane" : "Reading pane")
-        setAccessibilityValue(isSplit && isFocused ? "focused" : nil)
+        isFocusedInSplit = isSplit && isFocused
+        updateAccessibilityValue()
+    }
+
+    private var isFocusedInSplit = false
+
+    /// "No readable text" for a scanned document (spec §9.3), read after the pane's name.
+    public var readableTextNote: String? {
+        didSet { updateAccessibilityValue() }
+    }
+
+    private func updateAccessibilityValue() {
+        let parts = [isFocusedInSplit ? "focused" : nil, readableTextNote].compactMap { $0 }
+        setAccessibilityValue(parts.isEmpty ? nil : parts.joined(separator: ", "))
     }
 
     public var showsFocus: Bool { !focusBar.isHidden }

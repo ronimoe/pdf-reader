@@ -224,6 +224,25 @@ final class RecordingPresenter: ReaderPresenting {
         textEdits.append((heading, text))
         finished(annotationText)
     }
+
+    // MARK: Bookmarks
+
+    /// The name "typed" into the next rename; nil cancels it.
+    var bookmarkName: String?
+    private(set) var renamedFrom: [String] = []
+    /// Where the next export goes; nil cancels it.
+    var bookmarkExportDestination: URL?
+    private(set) var exportRequests: [String] = []
+
+    func renameBookmark(currentName: String, on window: NSWindow, finished: @escaping (String?) -> Void) {
+        renamedFrom.append(currentName)
+        finished(bookmarkName)
+    }
+
+    func chooseBookmarkExportDestination(suggestedName: String, on window: NSWindow, chosen: @escaping (URL?) -> Void) {
+        exportRequests.append(suggestedName)
+        chosen(bookmarkExportDestination)
+    }
 }
 
 extension ReaderDocument {

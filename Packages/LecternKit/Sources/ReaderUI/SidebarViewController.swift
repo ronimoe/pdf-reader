@@ -3,8 +3,7 @@ import ReaderCore
 
 /// One section of the sidebar. Subclass it, give it a `SidebarSection`
 /// case, and pass it to `SidebarViewController`; the picker and the section
-/// switching come for free. Bookmarks (M5) and annotations (M4) are added
-/// this way.
+/// switching come for free.
 open class SidebarSectionViewController: NSViewController {
     public let section: SidebarSection
 
@@ -156,10 +155,15 @@ public final class SidebarViewController: NSViewController {
 /// while the arrow keys only move the selection.
 public final class ActivatingTableView: NSTableView {
     var onActivate: ((Int) -> Void)?
+    /// ⌫ or ⌦ on the selected row, for lists whose rows can be removed.
+    var onDelete: ((Int) -> Void)?
 
     public override func keyDown(with event: NSEvent) {
         if Self.isActivationKey(event), selectedRow >= 0 {
             onActivate?(selectedRow)
+        } else if let onDelete, event.keyCode == 51 || event.keyCode == 117, selectedRow >= 0,
+                  event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            onDelete(selectedRow)
         } else {
             super.keyDown(with: event)
         }
@@ -186,6 +190,12 @@ extension NSScrollView {
     static func sidebarScrollView(for documentView: NSView) -> NSScrollView {
         let scrollView = NSScrollView()
         scrollView.documentView = documentView
+        // One column, as wide as the sidebar: rows never scroll sideways or get clipped.
+        if let table = documentView as? NSTableView {
+            table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+            table.tableColumns.forEach { $0.resizingMask = .autoresizingMask }
+        }
+        scrollView.hasHorizontalScroller = false
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false

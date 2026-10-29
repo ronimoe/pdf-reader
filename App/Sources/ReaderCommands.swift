@@ -117,6 +117,17 @@ enum ReaderCommands {
         ]
     }
 
+    /// The Bookmarks menu (A2): ⌘D adds a bookmark at the reading anchor, or removes the one on
+    /// this page.
+    static func bookmarkItems() -> [NSMenuItem] {
+        [
+            item("Add Bookmark", #selector(ReaderWindowController.toggleBookmark(_:)), "d"),
+            item("Rename Bookmark…", #selector(ReaderWindowController.renameBookmarkMenu(_:))),
+            .separator(),
+            item("Show Bookmarks", #selector(ReaderWindowController.showBookmarkList(_:)), "b", [.command, .control]),
+        ]
+    }
+
     /// Edit ▸ Find (B8).
     static func findItems() -> [NSMenuItem] {
         [

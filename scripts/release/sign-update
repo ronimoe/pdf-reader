@@ -1,0 +1,122 @@
+#!/bin/zsh
+# Signs a Sparkle update archive with Lectern's EdDSA key file and adds it to appcast.xml.
+#
+#   scripts/release/sign-update [--key-file FILE] [--appcast FILE] [--url URL] build/release/Lectern-<version>.zip
+#
+# - The key is read from a file, never the login Keychain (Sparkle's ad-hoc signed tools can't
+#   read a Keychain item without a prompt; docs/spikes/m0c-platform.md, experiment 3). Default:
+#   ~/.config/lectern/sparkle_ed25519_private.key, made by
+#   `swift scripts/release/sparkle-key.swift generate <file>`. Its public half must equal
+#   App/Info.plist's SUPublicEDKey, or installed copies would refuse the update; this is checked.
+# - The archive is a `ditto -c -k --keepParent` zip of Lectern.app (scripts/release/build-dmg
+#   writes it). Its version, build number and minimum system come from the app's own Info.plist.
+# - appcast.xml (default build/release/appcast.xml) is created, or updated in place: an item for
+#   the same build number is replaced, other items are kept, newest first.
+# - The enclosure URL defaults to the GitHub release asset:
+#   https://github.com/ronimoe/pdf-reader/releases/download/v<version>/<archive name>
+#   Publish appcast.xml as an asset of the latest release; the app's feed is
+#   https://github.com/ronimoe/pdf-reader/releases/latest/download/appcast.xml
+set -euo pipefail
+ROOT=${0:A:h:h:h}
+KEY_FILE=~/.config/lectern/sparkle_ed25519_private.key
+APPCAST=$ROOT/build/release/appcast.xml
+URL=""
+die() { print -r -- "sign-update: $*" >&2; exit 1; }
+
+while (( $# > 1 )); do
+  case $1 in
+    --key-file) KEY_FILE=$2; shift 2 ;;
+    --appcast) APPCAST=$2; shift 2 ;;
+    --url) URL=$2; shift 2 ;;
+    *) die "unknown option $1" ;;
+  esac
+done
+(( $# == 1 )) || die "usage: sign-update [--key-file FILE] [--appcast FILE] [--url URL] <archive.zip>"
+ARCHIVE=${1:A}
+[[ -f $ARCHIVE ]] || die "no archive at $ARCHIVE"
+[[ -f $KEY_FILE ]] || die "no key file at $KEY_FILE (create one with: swift scripts/release/sparkle-key.swift generate $KEY_FILE)"
+perm=$(stat -f %Lp $KEY_FILE)
+[[ $perm == 600 || $perm == 400 ]] || die "$KEY_FILE has mode $perm; it must be 600 (chmod 600 $KEY_FILE)"
+
+# Sparkle's tools come with the pinned package (project.yml), from whichever build resolved it.
+SIGN_UPDATE=""
+for dir in $ROOT/build/release/DerivedData $ROOT/build/DerivedData; do
+  candidate=$dir/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update
+  [[ -x $candidate ]] && { SIGN_UPDATE=$candidate; break; }
+done
+if [[ -z $SIGN_UPDATE ]]; then
+  (cd $ROOT && xcodegen generate --quiet)
+  xcodebuild -resolvePackageDependencies -project $ROOT/Lectern.xcodeproj -derivedDataPath $ROOT/build/DerivedData >/dev/null
+  SIGN_UPDATE=$ROOT/build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update
+fi
+[[ -x $SIGN_UPDATE ]] || die "sign_update not found"
+
+# The key must be the one installed copies trust.
+expected=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' $ROOT/App/Info.plist)
+actual=$(swift $ROOT/scripts/release/sparkle-key.swift public $KEY_FILE)
+[[ $actual == $expected ]] || die "the key file's public key ($actual) isn't App/Info.plist's SUPublicEDKey ($expected)"
+
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/sign-update.XXXXXX")
+trap 'rm -rf $WORK' EXIT
+unzip -q -o $ARCHIVE '*.app/Contents/Info.plist' -d $WORK || die "$ARCHIVE has no app bundle"
+INFO=$(print -r -- $WORK/*.app/Contents/Info.plist(N[1]))
+[[ -n $INFO ]] || die "$ARCHIVE has no app bundle at its top level"
+read_info() { /usr/libexec/PlistBuddy -c "Print :$1" $INFO; }
+VERSION=$(read_info CFBundleShortVersionString)
+BUILD=$(read_info CFBundleVersion)
+MIN_SYSTEM=$(read_info LSMinimumSystemVersion)
+[[ -n $URL ]] || URL="https://github.com/ronimoe/pdf-reader/releases/download/v$VERSION/${ARCHIVE:t}"
+
+# Sign with the key file; this prints `sparkle:edSignature="…" length="…"`.
+attributes=$($SIGN_UPDATE --ed-key-file $KEY_FILE $ARCHIVE)
+signature=$(print -r -- $attributes | sed -nE 's/.*sparkle:edSignature="([^"]+)".*/\1/p')
+length=$(print -r -- $attributes | sed -nE 's/.*length="([0-9]+)".*/\1/p')
+[[ -n $signature && $length == $(stat -f %z $ARCHIVE) ]] || die "unexpected sign_update output: $attributes"
+$SIGN_UPDATE --verify --ed-key-file $KEY_FILE $ARCHIVE $signature >/dev/null || die "the signature doesn't verify"
+
+mkdir -p ${APPCAST:h}
+python3 -I - $APPCAST "$VERSION" "$BUILD" "$MIN_SYSTEM" "$URL" "$signature" "$length" <<'PY'
+import sys, os, email.utils
+import xml.etree.ElementTree as ET
+path, version, build, min_system, url, signature, length = sys.argv[1:]
+SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+ET.register_namespace("sparkle", SPARKLE)
+S = lambda tag: "{%s}%s" % (SPARKLE, tag)
+if os.path.exists(path):
+    tree = ET.parse(path)
+    channel = tree.getroot().find("channel")
+else:
+    root = ET.Element("rss", {"version": "2.0"})
+    channel = ET.SubElement(root, "channel")
+    ET.SubElement(channel, "title").text = "Lectern"
+    ET.SubElement(channel, "link").text = "https://github.com/ronimoe/pdf-reader"
+    ET.SubElement(channel, "description").text = "Lectern updates"
+    ET.SubElement(channel, "language").text = "en"
+    tree = ET.ElementTree(root)
+for item in list(channel.findall("item")):
+    if item.findtext(S("version")) == build:
+        channel.remove(item)
+item = ET.Element("item")
+ET.SubElement(item, "title").text = "Lectern %s" % version
+ET.SubElement(item, "pubDate").text = email.utils.formatdate(usegmt=True)
+ET.SubElement(item, S("version")).text = build
+ET.SubElement(item, S("shortVersionString")).text = version
+ET.SubElement(item, S("minimumSystemVersion")).text = min_system
+ET.SubElement(item, "link").text = "https://github.com/ronimoe/pdf-reader/releases/tag/v%s" % version
+ET.SubElement(item, "enclosure", {"url": url, S("edSignature"): signature, "length": length, "type": "application/octet-stream"})
+items = channel.findall("item") + [item]
+for old in channel.findall("item"):
+    channel.remove(old)
+def build_number(i):
+    try: return tuple(int(p) for p in (i.findtext(S("version")) or "0").split("."))
+    except ValueError: return (0,)
+for i in sorted(items, key=build_number, reverse=True):
+    channel.append(i)
+ET.indent(tree, space="  ")
+tmp = path + ".partial"
+tree.write(tmp, encoding="utf-8", xml_declaration=True)
+os.replace(tmp, path)
+PY
+print -r -- "signed ${ARCHIVE:t} ($length bytes), version $VERSION ($BUILD)"
+print -r -- "appcast: $APPCAST"
+print -r -- "enclosure: $URL"

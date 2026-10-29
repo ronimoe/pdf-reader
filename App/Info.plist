@@ -28,6 +28,26 @@
 	<string>Licensed under the GNU GPL v3.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Updates (A4): Sparkle 2, opt-in. Lectern asks once and stores the answer itself
+	     (UpdateController), so Sparkle's own permission prompt is turned off here. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/ronimoe/pdf-reader/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>o+3cE84ps77y1YMGht0Bsit1vmlVAbnqDjbc4haYOeI=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<!-- Sandboxed: the installer runs as a separate launchd job (sparkle-project.org/documentation/sandboxing). -->
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<!-- Not needed: the app has com.apple.security.network.client. -->
+	<key>SUEnableDownloaderService</key>
+	<false/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

@@ -1,0 +1,143 @@
+#!/bin/zsh
+# End-to-end check that Sparkle 2 updates one ad-hoc signed, sandboxed build to another, headless.
+#
+# Ad-hoc builds have cdhash-based designated requirements, so every build has a different one and
+# Sparkle's code-signing check between old and new always fails. Sparkle's SUUpdateValidator
+# accepts an app update when EITHER the EdDSA signature verifies against the old app's
+# SUPublicEDKey OR the code signatures match, so the EdDSA signature alone has to carry it.
+# This script proves both halves on this Mac, with Lectern's real entitlements:
+#
+#   1. Builds the M0c probe (spikes/platform-probe, target PlatformProbeSparkle: headless, no
+#      windows, accessory app) twice, v1 and v2, signed ad-hoc with the hardened runtime and
+#      App/Lectern.entitlements (sandbox, print, Sparkle's mach-lookup names,
+#      disable-library-validation), without get-task-allow, as Lectern's Release build is.
+#   2. Makes two throwaway Ed25519 keys with scripts/release/sparkle-key.swift (no Keychain).
+#      v1 trusts key A.
+#   3. Negative control: v2 signed with key B is served from 127.0.0.1. v1 must refuse it.
+#   4. v2 signed with key A (sign_update --ed-key-file). v1 must install it and relaunch as v2.
+#   5. Checks the installed bundle (CFBundleVersion, CDHash, signature, no quarantine) and that
+#      no dialog window appeared.
+#
+# Everything is installed under a fresh temporary folder, never /Applications (no App Management
+# prompt). The probe writes its results into its own container. Takes a few minutes (two Release
+# builds). Usage: scripts/release/sparkle-e2e
+set -euo pipefail
+REPO=${0:A:h:h:h}
+export PROBE_FIXTURES=$(mktemp -d "${TMPDIR:-/tmp}/lectern-sparkle-e2e.XXXXXX")
+source $REPO/spikes/platform-probe/scripts/lib.sh
+SP_ID=io.github.ronimoe.PlatformProbeSparkle
+RESULTS="$HOME/Library/Containers/$SP_ID/Data/Library/Application Support/PlatformProbe/results"
+PORT=$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+SERVE=$PROBE_FIXTURES/serve
+INSTALL_DIR=$PROBE_FIXTURES/Applications
+INSTALLED=$INSTALL_DIR/PlatformProbeSparkle.app
+REPORT=$BUILD_ROOT/sparkle-e2e.txt
+failures=0
+check() { if eval "$2"; then print -r -- "PASS $1"; else print -r -- "FAIL $1"; failures=$((failures + 1)); fi; }
+
+exec > >(tee $REPORT) 2>&1
+say "Sparkle end-to-end, $(date '+%Y-%m-%d %H:%M:%S %z'), $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
+print -r -- "fixtures: $PROBE_FIXTURES"
+kill_probes
+
+say "throwaway keys (files, no Keychain)"
+swift $REPO/scripts/release/sparkle-key.swift generate $PROBE_FIXTURES/key-a >$PROBE_FIXTURES/key-a.pub
+swift $REPO/scripts/release/sparkle-key.swift generate $PROBE_FIXTURES/key-b >$PROBE_FIXTURES/key-b.pub
+PUBKEY=$(<$PROBE_FIXTURES/key-a.pub)
+print -r -- "trusted public key (v1's SUPublicEDKey): $PUBKEY"
+print -r -- "untrusted public key: $(<$PROBE_FIXTURES/key-b.pub)"
+
+say "build v1 and v2 with App/Lectern.entitlements"
+for tag in v1 v2; do
+  build_probe $tag PlatformProbeSparkle SPARKLE_PUBLIC_ED_KEY="$PUBKEY" \
+    SPARKLE_FEED_URL="http://127.0.0.1:$PORT/appcast.xml" \
+    CODE_SIGN_ENTITLEMENTS=$REPO/App/Lectern.entitlements CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO >/dev/null
+done
+V1=$BUILD_ROOT/v1/PlatformProbeSparkle.app
+V2=$BUILD_ROOT/v2/PlatformProbeSparkle.app
+sig_info $V1; sig_info $V2
+V1_CDHASH=$(codesign -dvvv $V1 2>&1 | sed -n 's/^CDHash=//p')
+V2_CDHASH=$(codesign -dvvv $V2 2>&1 | sed -n 's/^CDHash=//p')
+check "v1 and v2 have different ad-hoc designated requirements" '[[ $(codesign -d -r- $V1 2>&1 | grep designated) != $(codesign -d -r- $V2 2>&1 | grep designated) ]]'
+check "v1 has no get-task-allow" '! codesign -d --entitlements - --xml $V1 2>/dev/null | grep -q get-task-allow'
+check "v1 carries disable-library-validation" 'codesign -d --entitlements - --xml $V1 2>/dev/null | grep -q disable-library-validation'
+
+BIN=$(print -r -- $BUILD_ROOT/DerivedData-PlatformProbeSparkle-v1/SourcePackages/artifacts/sparkle/Sparkle/bin(N[1]))
+[[ -x $BIN/sign_update ]] || { print "sign_update not found under $BUILD_ROOT"; exit 1; }
+
+publish() { # publish <key file>: zip v2, sign it with the key, write the appcast
+  rm -rf $SERVE; mkdir -p $SERVE
+  ditto -c -k --keepParent $V2 $SERVE/PlatformProbeSparkle-2.zip
+  local sig; sig=$(gtimeout 30 $BIN/sign_update --ed-key-file $1 $SERVE/PlatformProbeSparkle-2.zip)
+  print -r -- "sign_update ($1:t): $sig"
+  cat >$SERVE/appcast.xml <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>PlatformProbeSparkle</title>
+    <item>
+      <title>Version 2</title>
+      <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>0.1.0 (2)</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <enclosure url="http://127.0.0.1:$PORT/PlatformProbeSparkle-2.zip" $sig type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
+XML
+}
+
+install_v1() {
+  mkdir -p $INSTALL_DIR; rm -rf $INSTALLED
+  ditto $V1 $INSTALLED
+}
+
+python3 -I -m http.server $PORT --bind 127.0.0.1 --directory $SERVE >$BUILD_ROOT/http.log 2>&1 &
+SERVER_PID=$!
+trap 'kill $SERVER_PID 2>/dev/null || true; kill_probes' EXIT
+
+say "negative control: v2 signed with the untrusted key"
+mkdir -p $SERVE; publish $PROBE_FIXTURES/key-b
+install_v1
+sleep 1
+if [[ -d $RESULTS ]]; then find $RESULTS -name "*.json" -delete; fi
+run_probe $INSTALLED e2e-1-wrong-key 90 "" --mode sparkle-update
+check "the wrongly signed update was refused (driver reported an error)" "jq -e '[.steps[].step] | index(\"driver-updaterError\") != null' '$RESULTS/e2e-1-wrong-key.json' >/dev/null"
+sleep 3
+check "v1 is still installed" '[[ $(defaults read $INSTALLED/Contents/Info CFBundleVersion) == 1 ]]'
+check "no dialog window on screen" '[[ $(dialog_windows) == "no dialog windows on screen"* ]]'
+
+say "the update: v2 signed with v1's key"
+publish $PROBE_FIXTURES/key-a
+install_v1
+if [[ -d $RESULTS ]]; then find $RESULTS -name "*.json" -delete; fi
+run_probe $INSTALLED e2e-2-update 90 "" --mode sparkle-update
+relaunch=""
+for _ in {1..120}; do
+  relaunch=$(print -r -- $RESULTS/launch-*.json(N[1]))
+  [[ -n $relaunch ]] && break
+  sleep 0.5
+done
+if [[ -n $relaunch ]]; then
+  jq '{runID, buildTag, codeVariant, bundleVersion, bundlePath, sandboxed}' $relaunch
+  check "Sparkle relaunched the app as v2, still sandboxed" "jq -e '.bundleVersion == \"2\" and .sandboxed == true' '$relaunch' >/dev/null"
+else
+  check "Sparkle relaunched the app" false
+fi
+
+say "on disk after the update"
+INSTALLED_CDHASH=$(codesign -dvvv $INSTALLED 2>&1 | sed -n 's/^CDHash=//p')
+print -r -- "installed CDHash $INSTALLED_CDHASH (v1 $V1_CDHASH, v2 $V2_CDHASH)"
+check "CFBundleVersion is 2" '[[ $(defaults read $INSTALLED/Contents/Info CFBundleVersion) == 2 ]]'
+check "the installed code is v2's (CDHash)" '[[ $INSTALLED_CDHASH == $V2_CDHASH ]]'
+check "the installed signature is valid" 'codesign --verify --strict $INSTALLED'
+check "no quarantine attribute" '! xattr $INSTALLED | grep -q com.apple.quarantine'
+check "no dialog window on screen" '[[ $(dialog_windows) == "no dialog windows on screen"* ]]'
+print -r -- "http requests served:"; grep -E 'GET' $BUILD_ROOT/http.log | sed 's/^/  /'
+
+kill_probes
+rm -rf $PROBE_FIXTURES
+if (( failures )); then say "FAILED: $failures check(s)"; exit 1; fi
+say "PASSED: Sparkle updates between ad-hoc signed builds, authenticated by EdDSA alone"
+print -r -- "report: $REPORT"

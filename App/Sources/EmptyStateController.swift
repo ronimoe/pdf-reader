@@ -22,10 +22,16 @@ final class EmptyStateController {
     var isShown: Bool { window?.isVisible ?? false }
 
     func show() {
+        prepareWindow().makeKeyAndOrderFront(nil)
+    }
+
+    /// The window with the current recents, without showing it (also for offscreen snapshots).
+    @discardableResult
+    func prepareWindow() -> NSWindow {
         model.setRecents(recentURLs())
         let window = window ?? makeWindow()
         self.window = window
-        window.makeKeyAndOrderFront(nil)
+        return window
     }
 
     func hide() {
@@ -45,6 +51,14 @@ final class EmptyStateController {
         )
         window.title = ProcessInfo.processInfo.processName
         window.isReleasedWhenClosed = false
+        // Never reopened by AppKit's window restoration (Lectern restores sessions itself).
+        window.isRestorable = false
+        if AppEnvironment.isHostingTests {
+            // Tests show and hide it as documents come and go; it must never be seen.
+            window.alphaValue = 0
+            window.ignoresMouseEvents = true
+            window.animationBehavior = .none
+        }
         // Document windows must never tab into this one.
         window.tabbingMode = .disallowed
         let content = DropTargetView(content: NSHostingView(rootView: EmptyStateView(model: model)))

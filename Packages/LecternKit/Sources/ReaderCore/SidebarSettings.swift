@@ -1,10 +1,10 @@
 /// The sidebar's sections (spec §4.1). One is shown at a time.
 ///
-/// Bookmarks (M5) and annotations (M4) are added here as further cases; the
-/// order of `allCases` is the order of the section picker.
+/// The order of `allCases` is the order of the section picker.
 public enum SidebarSection: String, Codable, Hashable, Sendable, CaseIterable {
     case thumbnails
     case outline
+    case bookmarks
     case annotations
     case search
 
@@ -12,6 +12,7 @@ public enum SidebarSection: String, Codable, Hashable, Sendable, CaseIterable {
         switch self {
         case .thumbnails: "Thumbnails"
         case .outline: "Table of Contents"
+        case .bookmarks: "Bookmarks"
         case .annotations: "Annotations"
         case .search: "Search Results"
         }
@@ -22,6 +23,7 @@ public enum SidebarSection: String, Codable, Hashable, Sendable, CaseIterable {
         switch self {
         case .thumbnails: "square.grid.2x2"
         case .outline: "list.bullet.indent"
+        case .bookmarks: "bookmark"
         case .annotations: "highlighter"
         case .search: "magnifyingglass"
         }

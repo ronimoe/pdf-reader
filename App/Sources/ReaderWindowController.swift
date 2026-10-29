@@ -54,8 +54,9 @@ final class ReaderWindowController: NSWindowController {
     let thumbnailsSection = ThumbnailsSectionViewController()
     let searchSection = SearchResultsSectionViewController()
     let annotationsSection = AnnotationsSectionViewController()
+    let bookmarksSection = BookmarksSectionViewController()
     private(set) lazy var sidebar = SidebarViewController(
-        sections: [thumbnailsSection, outlineSection, annotationsSection, searchSection],
+        sections: [thumbnailsSection, outlineSection, bookmarksSection, annotationsSection, searchSection],
         visible: settings.sidebar.section
     )
     private(set) var sidebarItem: NSSplitViewItem!
@@ -96,6 +97,14 @@ final class ReaderWindowController: NSWindowController {
     private(set) var pagesWithoutText: [Int]?
 
     // Stored state (A2)
+    /// The reader's bookmarks (A2), in reading order, stored with the document's state.
+    var bookmarks: [ReaderBookmark] = [] {
+        didSet {
+            guard bookmarks != oldValue else { return }
+            updateStoredState { $0.bookmarks = self.bookmarks }
+            refreshBookmarkList()
+        }
+    }
     let stateStore: DocumentStateStore?
     private(set) var storedDocumentID: UUID?
 
@@ -106,8 +115,17 @@ final class ReaderWindowController: NSWindowController {
     private var anchorSave: DispatchWorkItem?
     private var collapseObservation: NSKeyValueObservation?
     /// Set while the sidebar opens or closes for a reason other than the
-    /// user's choice (a search showing its results), so it isn't remembered.
-    private var isMovingSidebarForSearch = false
+    /// user's choice (a search showing its results, distraction-free mode),
+    /// so it isn't remembered.
+    var isMovingSidebarForSearch = false
+    /// What distraction-free mode hid, to put back; nil while it is off. Kept for the window's
+    /// life (and the session, through `SessionRestorer`).
+    var distractionFree: DistractionFreeChrome?
+    /// Puts the window in or out of full screen. Tests record instead of moving a window into its
+    /// own Space.
+    var setFullScreen: (NSWindow, Bool) -> Void = { window, on in
+        if window.styleMask.contains(.fullScreen) != on { window.toggleFullScreen(nil) }
+    }
 
     private(set) weak var readerDocument: ReaderDocument?
     private let passwordStore: any DocumentPasswordStore
@@ -144,6 +162,11 @@ final class ReaderWindowController: NSWindowController {
         window.titleVisibility = .visible
         window.toolbarStyle = .unifiedCompact
         window.setFrameAutosaveName("ReaderWindow")
+        // Lectern restores sessions itself (SessionRestorer); AppKit's restoration would reopen
+        // the same documents a second time.
+        window.isRestorable = false
+        // Tests order hundreds of windows in and out; see TestWindows in AppTests.
+        if AppEnvironment.isHostingTests { window.animationBehavior = .none }
         super.init(window: window)
 
         configure(primaryPane)
@@ -200,10 +223,18 @@ final class ReaderWindowController: NSWindowController {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(pageDidChange(_:)), name: .PDFViewPageChanged, object: view)
         view.onVisibleAreaChange = { [weak self] in self?.saveAnchorSoon() }
+        // Escape ends a search, then leaves distraction-free mode.
         view.onCancel = { [weak self] in
-            guard let self, isSearching else { return false }
-            endSearch()
-            return true
+            guard let self else { return false }
+            if isSearching {
+                endSearch()
+                return true
+            }
+            if isDistractionFree {
+                setDistractionFree(false)
+                return true
+            }
+            return false
         }
         view.previewsOnHover = preferences.previewsLinksOnHover
         pane.onExternalLink = { [weak self] target in self?.handleExternalLink(target) }
@@ -281,6 +312,9 @@ final class ReaderWindowController: NSWindowController {
             if section == .annotations { self?.refreshAnnotationList() }
         }
         annotationsSection.onSelect = { [weak self] item in self?.jumpToListItem(item) }
+        bookmarksSection.onSelect = { [weak self] id in self?.jumpToBookmark(id) }
+        bookmarksSection.onRename = { [weak self] id in self?.renameBookmark(id) }
+        bookmarksSection.onRemove = { [weak self] id in self?.removeBookmark(id) }
         outlineSection.onJump = { [weak self] outline in self?.jump(to: outline) }
         thumbnailsSection.onJump = { [weak self] index in self?.pane.jump(toPageAt: index) }
         searchSection.onShowResult = { [weak self] index in self?.showResult(at: index) }
@@ -290,9 +324,13 @@ final class ReaderWindowController: NSWindowController {
         }
     }
 
+    /// Set for windows a session restore reopens: they ask for a password (or read the Keychain)
+    /// only when they become key, one at a time, never all at once at launch.
+    var defersPasswordCheckUntilKey = false
+
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        checkPasswordsIfNeeded()
+        if !defersPasswordCheckUntilKey { checkPasswordsIfNeeded() }
     }
 
     // Restored windows can come back without showWindow; checking when the
@@ -326,6 +364,8 @@ final class ReaderWindowController: NSWindowController {
         window?.makeFirstResponder(focusedPane.view)
         annotationEditorDidChange()
         readerDocument.inspectForAnnotations()
+        // In the background: which pages have no text, for search (B8) and VoiceOver (spec §9.3).
+        loadTextInventoryIfNeeded()
     }
 
     // MARK: Stored state (A2)
@@ -345,6 +385,8 @@ final class ReaderWindowController: NSWindowController {
         }
         settings = restored
         primaryPane.setHistory(stored.state.history[.primary] ?? HistoryStack())
+        // As stored: clamped only where shown or followed, so nothing is lost if the file grows back.
+        bookmarks = ReaderBookmarks.sorted(stored.state.bookmarks)
         return stored.state
     }
 
@@ -411,6 +453,7 @@ final class ReaderWindowController: NSWindowController {
         sidebar.show(settings.sidebar.section)
         sidebarItem.isCollapsed = !settings.sidebar.isVisible
         updateThumbnailSelection()
+        refreshBookmarkList()
         if settings.sidebar.section == .annotations, settings.sidebar.isVisible { refreshAnnotationList() }
     }
 
@@ -492,6 +535,8 @@ final class ReaderWindowController: NSWindowController {
     /// ⌘F: puts the cursor in the search field.
     @objc func focusSearchField(_ sender: Any?) {
         guard isShowingContent, let window else { return }
+        // The search field lives in the toolbar.
+        if isDistractionFree { setDistractionFree(false) }
         if let toolbar = window.toolbar {
             if !toolbar.isVisible { toolbar.isVisible = true }
             // A customised toolbar may have lost the field; ⌘F brings it back.
@@ -567,14 +612,18 @@ final class ReaderWindowController: NSWindowController {
 
     private func setSidebarCollapsedForSearch(_ collapsed: Bool) {
         isMovingSidebarForSearch = true
-        sidebarItem.isCollapsed = collapsed
+        sidebarItem.isCollapsed = collapsed || isDistractionFree
         isMovingSidebarForSearch = false
     }
 
     var isSearching: Bool { search != nil }
 
     override func cancelOperation(_ sender: Any?) {
-        if isSearching { endSearch() }
+        if isSearching {
+            endSearch()
+        } else if isDistractionFree {
+            setDistractionFree(false)
+        }
     }
 
     private func searchDidChange() {
@@ -629,7 +678,7 @@ final class ReaderWindowController: NSWindowController {
         startSearch(query)
     }
 
-    private func loadTextInventoryIfNeeded() {
+    func loadTextInventoryIfNeeded() {
         guard pagesWithoutText == nil, textInventoryTask == nil, let textInventory else { return }
         textInventoryTask = Task { [weak self] in
             let missing = await textInventory.pagesWithoutText()
@@ -644,6 +693,29 @@ final class ReaderWindowController: NSWindowController {
         textInventoryTask = nil
         pagesWithoutText = missing
         search?.pagesWithoutText = missing.count
+        for pane in panes { applyTextAccessibility(to: pane) }
+    }
+
+    /// Scanned pages aren't presented as readable text (spec §9.3): the reading view's
+    /// accessibility help says how many pages are only images, and the pane's value says so in
+    /// short. PDFKit exposes no per-page accessibility to change, so this is per document.
+    func applyTextAccessibility(to pane: ReaderPane) {
+        let pageCount = pane.view.document?.pageCount ?? 0
+        let missing = pagesWithoutText?.count ?? 0
+        let help: String?
+        let value: String?
+        if pageCount == 0 || missing == 0 {
+            help = nil
+            value = nil
+        } else if missing >= pageCount {
+            help = "This document has no text that VoiceOver can read. Its pages are images, such as scans."
+            value = "No readable text"
+        } else {
+            help = "\(missing) of \(pageCount) pages have no text that VoiceOver can read. They are images, such as scans."
+            value = "Some pages have no readable text"
+        }
+        pane.view.setAccessibilityHelp(help)
+        paneContainers[pane.id]?.readableTextNote = value
     }
 
     /// Waits for the text check in flight, for tests.
@@ -677,6 +749,7 @@ final class ReaderWindowController: NSWindowController {
             return
         }
         readerDocument.applyViewRotation(settings.rotation)
+        refreshBookmarkList()
         for (pane, anchor) in anchors {
             pane.setHistory(pane.history.clamped(toPageCount: pdf.pageCount))
             var paneSettings = settings
@@ -844,7 +917,7 @@ final class ReaderWindowController: NSWindowController {
 
     var layoutHints: DocumentLayoutHints { readerDocument?.layoutHints ?? .none }
 
-    private func preservingEveryAnchor(_ panes: ArraySlice<ReaderPane>, _ body: () -> Void) {
+    func preservingEveryAnchor(_ panes: ArraySlice<ReaderPane>, _ body: () -> Void) {
         guard let first = panes.first else {
             body()
             return
@@ -911,6 +984,8 @@ final class ReaderWindowController: NSWindowController {
             return selectedAnnotation != nil && window?.firstResponder === pdfView
         case #selector(editAnnotationText(_:)):
             return selectedAnnotation != nil
+        case #selector(exportBookmarks(_:)): return !bookmarks.isEmpty
+        case #selector(renameBookmarkMenu(_:)): return bookmarkToRename != nil
         default: return true
         }
     }
@@ -934,6 +1009,7 @@ final class ReaderWindowController: NSWindowController {
         case #selector(focusLinks(_:)): pdfView.isLinkFocusActive
         case #selector(setAnnotationColor(_:)): false
         case #selector(showAnnotationList(_:)): isSidebarVisible && sidebar.visibleSection == .annotations
+        case #selector(showBookmarkList(_:)): isSidebarVisible && sidebar.visibleSection == .bookmarks
         default: false
         }
     }
@@ -950,6 +1026,12 @@ extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleReaderSidebar(_:)) {
             menuItem.title = isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+        }
+        if menuItem.action == #selector(toggleBookmark(_:)) {
+            menuItem.title = hasBookmarkHere ? "Remove Bookmark" : "Add Bookmark"
+        }
+        if menuItem.action == #selector(toggleDistractionFree(_:)) {
+            menuItem.title = isDistractionFree ? "Exit Distraction-Free Mode" : "Enter Distraction-Free Mode"
         }
         if menuItem.action == #selector(toggleSplitView(_:)) {
             menuItem.title = isSplit ? "Close Split View" : "Split View"
