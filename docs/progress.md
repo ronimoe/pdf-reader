@@ -43,3 +43,29 @@ A running log of the unattended v1 build. Each milestone records what landed, ho
 - The test now covers `autosavesDrafts`, which the review showed could be broken without any test failing.
 - `scripts/test.sh` runs each suite once and logs to `build/logs/`.
 - **Deferred:** the app-hosted tests run under the real bundle ID's sandbox container. Persistence tests will live in the package (M2), so they won't touch the real container.
+
+## M0a: Incremental save prototype (branch `m0a-save`)
+
+**Result: GO for candidate 1.** Our own Swift incremental writer is the save path. Architecture §3.2 is amended to record this.
+
+**Landed**
+- **PDFSave writer**, about 1,600 lines. Covers the parser, cross-reference tables, streams and hybrid files, object streams, the page tree, simple appearance streams, and verification after every write.
+- **Test PDF generator** (`scripts/corpus/generate`, with qpdf, pikepdf and pyHanko) and 13 committed generated files.
+- **External-reader verifier** (`scripts/corpus/verify`): qpdf, MuPDF, Poppler, pdf.js and pyHanko.
+
+**Verified**
+- 11 writer runs, each checked against the pass criteria:
+  - the original bytes are an exact prefix of the output,
+  - `qpdf --check` passes,
+  - PDFKit shows the right annotations,
+  - form values are byte-identical,
+  - the signature is reported intact,
+  - MuPDF, Poppler, pdf.js and PDFKit all draw the highlights.
+- Encrypted files are refused with a typed error.
+- Mutation checks: deliberately corrupted outputs are caught.
+
+**Not verified**
+- Acrobat Reader and Preview itself (PDFKit, its engine, was checked).
+- Real-world files: linearized, certified and Reader-extended.
+- Fuzzing.
+- How each `PDFAnnotation` maps to its object in the file. This is M4 work.
