@@ -10,8 +10,8 @@ public final class OutlineSectionViewController: SidebarSectionViewController {
     public var onJump: ((PDFOutline) -> Void)?
 
     public private(set) var root: PDFOutline?
-    let outlineView = ActivatingOutlineView()
-    let emptyLabel = emptyStateLabel("This document has no table of contents.")
+    public let outlineView = ActivatingOutlineView()
+    public let emptyLabel = emptyStateLabel("This document has no table of contents.")
     private var scrollView: NSScrollView?
 
     public init() {
@@ -81,7 +81,7 @@ public final class OutlineSectionViewController: SidebarSectionViewController {
         activate(row: outlineView.clickedRow)
     }
 
-    func activate(row: Int) {
+    public func activate(row: Int) {
         guard let item = outlineView.item(atRow: row) as? PDFOutline else { return }
         onJump?(item)
     }

@@ -51,7 +51,16 @@ public final class DocumentSearch {
     public private(set) var pagesSearched = 0
     /// Pages with no text layer, once the inventory has run.
     public var pagesWithoutText: Int? {
-        didSet { scheduleChange() }
+        didSet {
+            // Nothing to search: say so at once instead of searching on.
+            if summary.documentHasNoText, isSearching {
+                cancelFind()
+                pagesSearched = document.pageCount
+                scheduleChange(now: true)
+            } else {
+                scheduleChange()
+            }
+        }
     }
 
     /// Called on the main thread when results, progress or state change.

@@ -36,7 +36,7 @@ public final class SidebarViewController: NSViewController {
     /// Called when the user picks another section.
     public var onSectionChange: ((SidebarSection) -> Void)?
 
-    let picker = NSSegmentedControl()
+    public let picker = NSSegmentedControl()
     private let container = NSView()
 
     public init(sections: [SidebarSectionViewController], visible: SidebarSection) {
@@ -154,10 +154,10 @@ public final class SidebarViewController: NSViewController {
 
 /// A table that activates the selected row on Return or Enter, like a click,
 /// while the arrow keys only move the selection.
-final class ActivatingTableView: NSTableView {
+public final class ActivatingTableView: NSTableView {
     var onActivate: ((Int) -> Void)?
 
-    override func keyDown(with event: NSEvent) {
+    public override func keyDown(with event: NSEvent) {
         if Self.isActivationKey(event), selectedRow >= 0 {
             onActivate?(selectedRow)
         } else {
@@ -170,10 +170,10 @@ final class ActivatingTableView: NSTableView {
     }
 }
 
-final class ActivatingOutlineView: NSOutlineView {
+public final class ActivatingOutlineView: NSOutlineView {
     var onActivate: ((Int) -> Void)?
 
-    override func keyDown(with event: NSEvent) {
+    public override func keyDown(with event: NSEvent) {
         if ActivatingTableView.isActivationKey(event), selectedRow >= 0 {
             onActivate?(selectedRow)
         } else {

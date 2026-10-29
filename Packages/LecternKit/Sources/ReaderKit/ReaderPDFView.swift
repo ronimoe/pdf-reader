@@ -42,14 +42,20 @@ public final class ReaderPDFView: PDFView {
     /// the reading position. Never a history entry.
     public var onVisibleAreaChange: (() -> Void)?
 
-    /// The anchor last restored, kept until the user scrolls. Reusing it
-    /// across a live resize or repeated zooms stops rounding errors from
-    /// accumulating into drift.
-    private var stickyAnchor: ReadingAnchor?
+    /// The place to keep: the anchor last restored, or where the user last
+    /// scrolled to. Keeping it, rather than measuring again before every
+    /// change, stops rounding errors accumulating into drift over a live
+    /// resize, survives the moment mid-resize when the safe area reads as
+    /// zero, and lets content moved by a later layout pass be put back.
+    private var keptAnchor: ReadingAnchor?
+    private var lastSafeAreaInsets = NSEdgeInsetsZero
     /// True while the view itself is moving the content (restoring an anchor
     /// or applying geometry), so those scrolls don't count as the user's.
     private var isAdjustingGeometry = false
     private var observedClipView: NSClipView?
+    /// When the user last scrolled, clicked, typed or gestured in this view.
+    private var lastUserInput: TimeInterval = -.infinity
+    private var inputMonitor: Any?
 
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -65,14 +71,22 @@ public final class ReaderPDFView: PDFView {
             self, selector: #selector(scaleDidChange(_:)), name: .PDFViewScaleChanged, object: self
         )
         observeClipView()
+        inputMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.userInputEvents) { [weak self] event in
+            MainActor.assumeIsolated { self?.noteInputIfMine(event) }
+            return event
+        }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    isolated deinit {
+        if let inputMonitor { NSEvent.removeMonitor(inputMonitor) }
+    }
+
     public override var document: PDFDocument? {
         didSet {
-            stickyAnchor = nil
+            keptAnchor = nil
             fitReferencePageIndex = 0
             applyZoom()
             observeClipView()
@@ -172,7 +186,7 @@ public final class ReaderPDFView: PDFView {
         guard !isApplyingZoom, document != nil else { return }
         // A pinch zooms around the pointer; where it leaves the reader is
         // the new place.
-        stickyAnchor = nil
+        keptAnchor = visibleAnchor
         zoomMode = .scale(scaleFactor)
         onUserZoom?(scaleFactor)
     }
@@ -194,6 +208,11 @@ public final class ReaderPDFView: PDFView {
         // Safe-area changes (toolbar shown or hidden, full screen) arrive as
         // layout passes without a frame change.
         refit(force: false)
+        let insets = safeAreaInsets
+        if !NSEdgeInsetsEqual(insets, lastSafeAreaInsets) {
+            lastSafeAreaInsets = insets
+            if let keptAnchor { restore(keptAnchor) }
+        }
     }
 
     // MARK: Keeping your place (A3)
@@ -212,7 +231,7 @@ public final class ReaderPDFView: PDFView {
     /// Where reading is now: the page-space point at the top-left of the
     /// visible area. Nil without a document.
     public var currentAnchor: ReadingAnchor? {
-        if let stickyAnchor { return stickyAnchor }
+        if let keptAnchor { return keptAnchor }
         return visibleAnchor
     }
 
@@ -220,9 +239,16 @@ public final class ReaderPDFView: PDFView {
     /// anchor kept from the last restore.
     public var visibleAnchor: ReadingAnchor? {
         guard let document, document.pageCount > 0 else { return nil }
-        let target = anchorTarget
+        var target = anchorTarget
         guard let page = page(for: target, nearest: true) else { return nil }
         let box = page.bounds(for: displayBox)
+        // PDFKit maps points beside a page (in the gutter) inconsistently with
+        // the reverse conversion, so measure from a point on the page itself.
+        let pageRect = convert(box, from: page)
+        if pageRect.width > 2, pageRect.height > 2 {
+            target.x = min(max(target.x, pageRect.minX + 1), pageRect.maxX - 1)
+            target.y = min(max(target.y, pageRect.minY + 1), pageRect.maxY - 1)
+        }
         var point = convert(target, to: page)
         point.x = min(max(point.x, box.minX), box.maxX)
         point.y = min(max(point.y, box.minY), box.maxY)
@@ -251,12 +277,38 @@ public final class ReaderPDFView: PDFView {
         var origin = clip.bounds.origin
         origin.x += point.x - target.x
         origin.y += point.y - target.y
-        let constrained = clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin
-        clip.scroll(to: constrained)
-        scrollView.reflectScrolledClipView(clip)
+        scroll(clip, to: origin, in: scrollView)
         var kept = anchor
         kept.scale = scaleFactor
-        stickyAnchor = kept
+        keptAnchor = kept
+        // A command put the reader here; content moved after this is a
+        // layout pass, not the user, even if they scrolled a moment ago.
+        lastUserInput = -.infinity
+    }
+
+    /// Scrolls the clip view to `origin`, kept within the document.
+    ///
+    /// The bounds are clamped here rather than with `constrainBoundsRect`:
+    /// PDFKit's clip view snaps that to rows in two-up layouts, which moved
+    /// the reader by up to a line of text (measured on macOS 26).
+    private func scroll(_ clip: NSClipView, to origin: CGPoint, in scrollView: NSScrollView) {
+        var origin = origin
+        let visible = clip.bounds.size
+        if let documentFrame = clip.documentView?.frame {
+            if documentFrame.width <= visible.width {
+                // Narrower than the view: PDFKit centres it; leave x alone.
+                origin.x = clip.bounds.origin.x
+            } else {
+                origin.x = min(max(origin.x, documentFrame.minX), documentFrame.maxX - visible.width)
+            }
+            if documentFrame.height <= visible.height {
+                origin.y = clip.bounds.origin.y
+            } else {
+                origin.y = min(max(origin.y, documentFrame.minY), documentFrame.maxY - visible.height)
+            }
+        }
+        clip.scroll(to: origin)
+        scrollView.reflectScrolledClipView(clip)
     }
 
     /// Runs `body`, which changes the geometry (zoom, size, layout or
@@ -271,6 +323,11 @@ public final class ReaderPDFView: PDFView {
         isAdjustingGeometry = true
         body()
         layoutDocumentView()
+        // Settle the scrollers now. A change can briefly make the document
+        // wider than the view; the horizontal scroller that then appears
+        // would otherwise go away on the next pass and shift the content by
+        // its height, after the anchor was restored.
+        scrollView?.tile()
         isAdjustingGeometry = false
         if let anchor { restore(anchor) }
     }
@@ -311,6 +368,13 @@ public final class ReaderPDFView: PDFView {
     /// safe area.
     public func reveal(_ selection: PDFSelection) {
         guard let page = selection.pages.first, let scrollView else { return }
+        let wasAdjusting = isAdjustingGeometry
+        isAdjustingGeometry = true
+        defer {
+            isAdjustingGeometry = wasAdjusting
+            // Where the result is shown is where reading is now.
+            keptAnchor = visibleAnchor
+        }
         if !displayMode.isContinuous, !visiblePages.contains(page) { go(to: page) }
         let rect = convert(selection.bounds(for: page), from: page)
         let insets = safeAreaInsets
@@ -330,12 +394,11 @@ public final class ReaderPDFView: PDFView {
             let toX = clip.convert(CGPoint(x: bounds.minX + insets.left + visibleWidth / 2, y: 0), from: self).x
             origin.x += fromX - toX
         }
-        clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
-        scrollView.reflectScrolledClipView(clip)
+        scroll(clip, to: origin, in: scrollView)
     }
 
-    /// Any scroll the view didn't make itself is the user's; from then on
-    /// the visible position is the place to keep.
+    /// Watches the clip view: scrolls the user makes end the kept anchor;
+    /// content moved by a layout pass is put back.
     private func observeClipView() {
         guard let clip = scrollView?.contentView, clip !== observedClipView else { return }
         if let observedClipView {
@@ -351,7 +414,55 @@ public final class ReaderPDFView: PDFView {
     @objc private func clipBoundsDidChange(_ notification: Notification) {
         onVisibleAreaChange?()
         guard !isAdjustingGeometry else { return }
-        stickyAnchor = nil
+        if isUserScrolling {
+            keptAnchor = visibleAnchor
+            return
+        }
+        // Not the user: a later layout pass moved the content, typically a
+        // scroller appearing or going after a zoom or layout change (with
+        // "Show scroll bars: Always", measured on macOS 26). Put the place
+        // back; sub-point pixel snapping is left alone.
+        if let keptAnchor, let visible = visibleAnchor, !visible.isSamePlace(as: keptAnchor, tolerance: 1) {
+            restore(keptAnchor)
+        }
+    }
+
+    // MARK: User input
+
+    private static let userInputEvents: NSEvent.EventTypeMask = [
+        .scrollWheel, .keyDown, .leftMouseDown, .leftMouseDragged, .leftMouseUp,
+        .magnify, .smartMagnify, .swipe, .beginGesture, .endGesture,
+    ]
+
+    /// Keys that scroll or page even with ⌘ held (⌘↑ and ⌘↓ go to the
+    /// start and end). Other ⌘ shortcuts are commands, which keep the place
+    /// themselves.
+    private static let navigationKeyCodes: Set<UInt16> = [115, 116, 119, 121, 123, 124, 125, 126]
+
+    /// True for a short while after the user acted on this view, so the
+    /// scrolls that follow are taken as theirs.
+    private var isUserScrolling: Bool {
+        ProcessInfo.processInfo.systemUptime - lastUserInput < 0.5
+    }
+
+    /// Records that the user scrolled, clicked or typed in the view. The event
+    /// monitor calls this; tests call it to stand in for an event.
+    public func noteUserInput() {
+        lastUserInput = ProcessInfo.processInfo.systemUptime
+    }
+
+    private func noteInputIfMine(_ event: NSEvent) {
+        guard let window, event.window === window, !window.inLiveResize else { return }
+        switch event.type {
+        case .keyDown:
+            // Only keys typed into the reading area (not the search field).
+            guard let responder = window.firstResponder as? NSView, responder === self || responder.isDescendant(of: self) else { return }
+            if event.modifierFlags.contains(.command), !Self.navigationKeyCodes.contains(event.keyCode) { return }
+        default:
+            let location = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(location) else { return }
+        }
+        noteUserInput()
     }
 
     // MARK: Links PDFKit follows itself
@@ -373,7 +484,12 @@ public final class ReaderPDFView: PDFView {
             }
         }
         let departure = currentAnchor
+        let wasAdjusting = isAdjustingGeometry
+        isAdjustingGeometry = true
         super.perform(action)
+        isAdjustingGeometry = wasAdjusting
+        // Wherever the action leads is the new place.
+        keptAnchor = visibleAnchor
         guard action is PDFActionGoTo, let departure, let arrival = visibleAnchor,
               !arrival.isSamePlace(as: departure)
         else { return }

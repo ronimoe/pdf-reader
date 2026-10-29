@@ -141,7 +141,11 @@ final class ReaderWindowController: NSWindowController {
         window.setContentSize(splitViewController.view.frame.size)
 
         sidebar.setHidden(true, for: .search)
-        sidebar.onSectionChange = { [weak self] section in self?.settings.sidebar.section = section }
+        sidebar.onSectionChange = { [weak self] section in
+            // Search results come and go with the search; they are never the
+            // section to reopen on.
+            if section != .search { self?.settings.sidebar.section = section }
+        }
         outlineSection.onJump = { [weak self] outline in self?.jump(to: outline) }
         thumbnailsSection.onJump = { [weak self] index in self?.pane.jump(toPageAt: index) }
         searchSection.onShowResult = { [weak self] index in self?.showResult(at: index) }

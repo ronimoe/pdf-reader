@@ -10,7 +10,7 @@ public final class ThumbnailsSectionViewController: SidebarSectionViewController
     /// Called when a thumbnail is clicked or activated with Return.
     public var onJump: ((Int) -> Void)?
 
-    let tableView = ActivatingTableView()
+    public let tableView = ActivatingTableView()
     public private(set) var document: PDFDocument?
     public private(set) var renderer: PageRenderer?
     private var numbering = PageNumbering(pageCount: 0)

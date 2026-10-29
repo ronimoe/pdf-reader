@@ -12,10 +12,10 @@ public final class SearchResultsSectionViewController: SidebarSectionViewControl
     public private(set) var search: DocumentSearch?
     private var numbering = PageNumbering(pageCount: 0)
 
-    let statusLabel = NSTextField(labelWithString: "")
-    let noteLabel = NSTextField(wrappingLabelWithString: "")
-    let progress = NSProgressIndicator()
-    let tableView = ActivatingTableView()
+    public let statusLabel = NSTextField(labelWithString: "")
+    public let noteLabel = NSTextField(wrappingLabelWithString: "")
+    public let progress = NSProgressIndicator()
+    public let tableView = ActivatingTableView()
     /// Rows shown; the table never grows past this many, so a search for a
     /// common word stays responsive. The count still says how many there are.
     public static let rowLimit = 5000
