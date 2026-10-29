@@ -1,0 +1,14 @@
+#!/bin/zsh
+# One-time setup for corpus tooling: Python .venv at the repo root and pdfjs-dist under scripts/corpus.
+# Homebrew tools (qpdf, mupdf-tools, poppler) are expected to be installed already.
+set -euo pipefail
+here="${0:A:h}"
+root="${here:h:h}"
+[[ -x "$root/.venv/bin/python" ]] || python3 -m venv "$root/.venv"
+"$root/.venv/bin/pip" install -q --upgrade pip
+"$root/.venv/bin/pip" install -q -r "$here/requirements.txt"
+(cd "$here" && npm ci --silent)
+for t in qpdf mutool pdftoppm node; do
+  command -v $t >/dev/null || echo "bootstrap: warning: $t not on PATH" >&2
+done
+echo "bootstrap: done"

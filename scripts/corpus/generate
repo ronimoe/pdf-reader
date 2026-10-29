@@ -1,0 +1,8 @@
+#!/bin/zsh
+# Regenerates Tests/Corpus/public/ with the repo-root .venv (see scripts/corpus/bootstrap).
+set -euo pipefail
+here="${0:A:h}"
+root="${here:h:h}"
+py="$root/.venv/bin/python"
+[[ -x "$py" ]] || { echo "generate: $py missing; run scripts/corpus/bootstrap first" >&2; exit 1; }
+exec "$py" "$here/generate.py" "$@"
