@@ -87,9 +87,9 @@ enum ReaderCommands {
             .separator(),
             item("Edit Note or Comment…", #selector(ReaderWindowController.editAnnotationText(_:)), "e", [.command, .control]),
             colorItem,
-            // A bare ⌫, enabled only while the page has focus and an annotation is selected,
-            // so it never takes Backspace from a text field.
-            item("Delete Annotation", #selector(ReaderWindowController.deleteAnnotation(_:)), String(UnicodeScalar(UInt8(NSBackspaceCharacter))), []),
+            // A bare ⌫ (the Delete key sends NSDeleteCharacter), enabled only while the page has
+            // focus and an annotation is selected, so it never takes Backspace from a text field.
+            item("Delete Annotation", #selector(ReaderWindowController.deleteAnnotation(_:)), String(UnicodeScalar(UInt8(NSDeleteCharacter))), []),
         ]
     }
 

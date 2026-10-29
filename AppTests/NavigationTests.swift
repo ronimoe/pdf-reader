@@ -443,8 +443,8 @@ func expectKeptPlace(_ before: ReadingAnchor, in view: ReaderPDFView, tolerance:
         let sidebar = harness.controller.sidebar
         _ = sidebar.view
         // Search results appear only while a search runs.
-        #expect(sidebar.availableSections == [.thumbnails, .outline])
-        #expect(sidebar.picker.segmentCount == 2)
+        #expect(sidebar.availableSections == [.thumbnails, .outline, .annotations])
+        #expect(sidebar.picker.segmentCount == 3)
         for segment in 0..<sidebar.picker.segmentCount {
             #expect(sidebar.picker.image(forSegment: segment)?.accessibilityDescription?.isEmpty == false)
         }

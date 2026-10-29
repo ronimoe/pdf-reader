@@ -22,6 +22,8 @@ extension M4Tests {
             let underline = try harness.highlight("lazy dog", kind: .underline)
             try harness.editor.setContents("A comment on the underline", of: underline)
             #expect(harness.document.isDocumentEdited)
+            // The window shows the unsaved state, and closing would ask Save / Don't Save / Cancel.
+            #expect(harness.window.isDocumentEdited)
             #expect(harness.document.saveRoute == .inPlace)
             #expect(harness.editor.pending.count == 3)
 
@@ -53,6 +55,7 @@ extension M4Tests {
 
             // After the save: clean, the bytes are the new original, and the place is kept.
             #expect(!harness.document.isDocumentEdited)
+            #expect(!harness.window.isDocumentEdited)
             #expect(harness.document.originalData == saved)
             #expect(harness.editor.pending.isEmpty)
             #expect(harness.view.document === harness.pdf)

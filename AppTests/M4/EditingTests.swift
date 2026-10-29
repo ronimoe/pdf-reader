@@ -256,6 +256,27 @@ extension M4Tests {
             #expect(annotationLayerCount(secondary.view) == before.1 + 1)
         }
 
+        /// ⌫ is a bare key equivalent: it must match the Delete key's character (0x7F, not
+        /// NSBackspaceCharacter), and fire only while enabled, so a text field keeps Backspace
+        /// whenever no annotation is selected on the page.
+        @Test func aDisabledDeleteItemLetsBackspaceThrough() throws {
+            let menu = MainMenu.make()
+            let annotate = try #require(menu.items.first { $0.title == "Annotate" }?.submenu)
+            let delete = try #require(annotate.items.first { $0.action == #selector(ReaderWindowController.deleteAnnotation(_:)) })
+            let target = DeleteTarget()
+            delete.target = target
+            let backspace = try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", isARepeat: false, keyCode: 51
+            ))
+            target.enabled = false
+            #expect(!menu.performKeyEquivalent(with: backspace))
+            #expect(target.deletes == 0)
+            target.enabled = true
+            #expect(menu.performKeyEquivalent(with: backspace))
+            #expect(target.deletes == 1)
+        }
+
         @Test func annotateMenuHasAShortcutForEveryAction() throws {
             let menu = MainMenu.make()
             let annotate = try #require(menu.items.first { $0.title == "Annotate" }?.submenu)
@@ -306,4 +327,12 @@ extension M4Tests {
             reopened.close()
         }
     }
+}
+
+@MainActor
+private final class DeleteTarget: NSObject, NSMenuItemValidation {
+    var enabled = false
+    var deletes = 0
+    @objc func deleteAnnotation(_ sender: Any?) { deletes += 1 }
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool { enabled }
 }

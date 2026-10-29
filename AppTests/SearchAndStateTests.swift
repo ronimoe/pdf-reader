@@ -401,6 +401,8 @@ private func waitForSearch(_ harness: NavigationHarness) {
             #selector(ReaderWindowController.navigateBack(_:)),
             #selector(ReaderWindowController.navigateForward(_:)),
             #selector(ReaderWindowController.showGoToPage(_:)),
+            #selector(ReaderWindowController.showNextAnnotation(_:)),
+            #selector(ReaderWindowController.showPreviousAnnotation(_:)),
         ])
     }
 
