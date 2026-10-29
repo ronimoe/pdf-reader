@@ -2,7 +2,7 @@
 
 Lectern needs **macOS 26 (Tahoe) or later on an Apple Silicon Mac**.
 
-> **Not published yet.** There is no public release, GitHub Release download or Homebrew tap yet, so only [building from source](#build-from-source) works today. The other two sections describe how installing will work once a release is published.
+> **Not published yet.** There is no public release, GitHub Release download or Homebrew tap yet, so only [building from source](#build-from-source) works today. The other two sections describe how installing will work once a release is published. The download links, including the one the Homebrew cask uses, work only once the repository is public.
 
 Lectern isn't signed with an Apple Developer ID ([why](#why-isnt-it-signed)). macOS therefore blocks a downloaded copy the first time you open it, and you have to allow it once. Each route below says how.
 
@@ -15,16 +15,14 @@ brew install --cask ronimoe/lectern/lectern
 
 - **If Homebrew refuses the tap as untrusted,** run `brew trust --cask ronimoe/lectern/lectern` and install again. Homebrew requires this for taps outside its own.
 - **No Gatekeeper step.** Homebrew marks what it installs as downloaded (quarantined). The cask removes that mark from `Lectern.app` right after installing, so you don't need the steps in the DMG section. This is why Lectern lives in its own tap: Homebrew's main cask repository doesn't accept apps that need it.
-- **Updating.** The cask is marked `auto_updates`, so a plain `brew upgrade` skips Lectern. Lectern doesn't update itself yet, so to update run:
-
-  ```sh
-  brew upgrade --cask --greedy ronimoe/lectern/lectern
-  ```
+- **Updating.** `brew upgrade` updates Lectern along with your other casks.
 
 ## Download (DMG) (not yet published)
 
 1. Download `Lectern-<version>.dmg` from the project's GitHub Releases page. Next to it is `Lectern-<version>.dmg.sha256`. To check the download, run `shasum -a 256 -c Lectern-<version>.dmg.sha256` in the folder that holds both files.
 2. Open the DMG and drag **Lectern** onto **Applications**.
+Steps 3 and 4 are based on Apple's documented flow for macOS 15 and later; they haven't been walked through with Lectern on macOS 26.
+
 3. Open Lectern from Applications. macOS shows a "Not Opened" alert saying Apple could not verify that Lectern is free of malware. There is no Open button. Click **Done**, not Move to Trash.
 4. Open **System Settings → Privacy & Security** and scroll to **Security**. Next to the message about Lectern, click **Open Anyway**. The button appears for about an hour after step 3. Enter your login password, then click **Open**.
 
@@ -50,11 +48,18 @@ cd pdf-reader
 brew install xcodegen
 xcodegen generate
 xcodebuild -project Lectern.xcodeproj -scheme Lectern -configuration Release -derivedDataPath build/DerivedData build
+rm -rf /Applications/Lectern.app
 ditto build/DerivedData/Build/Products/Release/Lectern.app /Applications/Lectern.app
 ```
 
+- **Quit Lectern before the last two lines.** They replace any copy already in Applications.
 - **No Gatekeeper step.** An app you build yourself isn't marked as downloaded, so it opens normally.
-- **A DMG instead.** `scripts/release/build-dmg` builds the same Release app, checks its signature and entitlements, and writes `build/release/Lectern-<version>.dmg` with its `.sha256`. `scripts/release/verify-dmg` then checks that DMG.
+
+### Developer notes: release scripts
+
+- **`scripts/release/build-dmg`** makes a clean Release build, checks its ad-hoc signature and entitlements, and writes `build/release/Lectern-<version>.dmg` with its `.sha256`. The DMG appears only after `hdiutil verify` passes.
+- **`scripts/release/verify-dmg`** checks that DMG and test-launches a copy of the app. It refuses to run while Lectern is running. The test launch doesn't restore your saved windows, but it uses your real Lectern data: the temporary test PDF appears in **File ▸ Open Recent** and in Lectern's stored reading state. **File ▸ Open Recent ▸ Clear Menu** removes both.
+- **`scripts/release/update-cask`** writes the version and checksum of a DMG into the cask. It refuses a DMG without a matching `.sha256`. **`scripts/release/check-cask`** runs `brew style` and `brew audit` on the cask in a throwaway local tap.
 
 ## Uninstall
 

@@ -8,7 +8,7 @@ cask "lectern" do
   desc "Sandboxed, offline PDF reader"
   homepage "https://github.com/ronimoe/pdf-reader"
 
-  auto_updates true
+  # No auto_updates: the in-app updater is opt-in and off by default, so Homebrew upgrades Lectern.
   depends_on arch: :arm64
   # brew 7 reads a bare symbol as a minimum (">= :tahoe" is rejected by brew style).
   depends_on macos: :tahoe

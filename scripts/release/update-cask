@@ -1,35 +1,43 @@
 #!/bin/zsh
 # Fills the version and sha256 of packaging/homebrew/Casks/lectern.rb from a DMG
-# made by build-dmg. The version comes from the file name (Lectern-<version>.dmg),
-# the checksum from the DMG itself, which must match its .sha256 file when one exists.
-# Re-running with the same DMG changes nothing.
+# made by build-dmg. The version comes from the file name (Lectern-<version>.dmg).
+# The DMG must have its .sha256 file next to it, and the file must verify: build-dmg
+# writes it only after the image passed `hdiutil verify`, so a DMG from a failed or
+# interrupted build is refused. Re-running with the same DMG changes nothing.
 #
 # Usage: scripts/release/update-cask [path/to/Lectern-<version>.dmg] [path/to/lectern.rb]
-#        (defaults: the newest build/release/Lectern-*.dmg, and the cask in packaging/)
+#   Without a DMG path, uses the newest build/release/Lectern-*.dmg whose .sha256
+#   exists and verifies. The cask defaults to packaging/homebrew/Casks/lectern.rb.
 set -euo pipefail
+# Resolve arguments against the caller's directory before changing it.
+DMG_ARG=${1:+${1:A}}
+CASK_ARG=${2:+${2:A}}
 cd "${0:A:h:h:h}"
 
 die() { print -r -- "update-cask: $*" >&2; exit 1; }
+verified() { [[ -f $1.sha256 ]] && (cd ${1:h} && shasum -a 256 -c -s ${1:t}.sha256); }
 
-if (( $# >= 1 )); then
-  DMG=${1:A}
+if [[ -n $DMG_ARG ]]; then
+  DMG=$DMG_ARG
+  [[ -f $DMG ]] || die "$DMG not found"
+  [[ -f $DMG.sha256 ]] || die "$DMG.sha256 not found; refusing a DMG that build-dmg didn't finish"
+  verified $DMG || die "$DMG doesn't match $DMG.sha256"
 else
-  dmgs=(build/release/Lectern-*.dmg(N.om))
-  (( ${#dmgs} )) || die "no build/release/Lectern-*.dmg; run scripts/release/build-dmg first"
-  DMG=${dmgs[1]:A}
+  DMG=
+  for candidate in build/release/Lectern-*.dmg(N.om); do
+    if verified ${candidate:A}; then DMG=${candidate:A}; break; fi
+    print -r -- "update-cask: skipping ${candidate:t}: no .sha256, or it doesn't verify" >&2
+  done
+  [[ -n $DMG ]] || die "no build/release/Lectern-*.dmg with a verifying .sha256; run scripts/release/build-dmg"
 fi
-CASK=${2:-packaging/homebrew/Casks/lectern.rb}
-[[ -f $DMG ]] || die "$DMG not found"
+CASK=${CASK_ARG:-${PWD}/packaging/homebrew/Casks/lectern.rb}
 [[ -f $CASK ]] || die "$CASK not found"
 
 VERSION=${${DMG:t:r}#Lectern-}
 [[ ${DMG:t} == Lectern-$VERSION.dmg && $VERSION =~ '^[0-9]+(\.[0-9]+)*$' ]] \
   || die "expected a file named Lectern-<version>.dmg, got ${DMG:t}"
-SHA=$(shasum -a 256 $DMG | cut -d' ' -f1)
-if [[ -f $DMG.sha256 ]]; then
-  recorded=$(cut -d' ' -f1 $DMG.sha256)
-  [[ $recorded == $SHA ]] || die "$DMG doesn't match $DMG.sha256"
-fi
+SHA=$(cut -d' ' -f1 $DMG.sha256)
+[[ $SHA =~ '^[0-9a-f]{64}$' ]] || die "unexpected checksum in $DMG.sha256"
 
 grep -qE '^  version "[^"]*"$' $CASK || die "no version line in $CASK"
 grep -qE '^  sha256 "[0-9a-f]{64}"$' $CASK || die "no sha256 line in $CASK"

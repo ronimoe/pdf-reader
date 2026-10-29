@@ -16,9 +16,22 @@ unset HOMEBREW_NO_INSTALL_FROM_API
 
 die() { print -r -- "check-cask: $*" >&2; exit 1; }
 [[ -f $CASK ]] || die "$CASK not found"
-if brew tap | grep -qx $TAP; then
+taps=$(brew tap)
+if [[ $'\n'$taps$'\n' == *$'\n'$TAP$'\n'* ]]; then
   die "$TAP is already tapped; this script only uses a throwaway local tap and won't touch an existing one"
 fi
+
+created=0
+CONFIG=
+cleanup() {
+  # Untap only the tap this run created.
+  if (( created )); then brew untap --force $TAP >/dev/null 2>&1 || true; fi
+  [[ -n $CONFIG ]] && rm -rf $CONFIG
+  return 0
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # brew audit refuses casks from untrusted taps. Record the trust in a throwaway
 # config folder so the user's own trust list (~/.homebrew/trust.json) is untouched.
@@ -26,8 +39,8 @@ CONFIG=$(mktemp -d "${TMPDIR:-/tmp}/lectern-check-cask.XXXXXX")
 export XDG_CONFIG_HOME=$CONFIG
 
 brew tap-new --no-git $TAP >/dev/null
+created=1
 TAPDIR="$(brew --repository $TAP)"
-trap 'brew untap --force $TAP >/dev/null 2>&1 || true; rm -rf $CONFIG' EXIT INT TERM
 mkdir -p $TAPDIR/Casks
 cp $CASK $TAPDIR/Casks/lectern.rb
 brew trust --cask $TAP/lectern >/dev/null

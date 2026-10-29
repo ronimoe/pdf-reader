@@ -11,20 +11,30 @@
 #     DMG and on a second copy of the app. `spctl --assess -vv` output is recorded for both, and
 #     for the clean copy. Neither quarantined copy is ever opened.
 #
-# The launch in step 3 uses the real sandbox container (~/Library/Containers/io.github.ronimoe.Lectern),
-# so the test PDF is recorded there like any opened document.
+# It refuses to run while any Lectern is running, so it never touches your own session.
+# The test launch passes -ApplePersistenceIgnoreState YES, so it doesn't restore the
+# user's saved windows. It still uses the real sandbox container
+# (~/Library/Containers/io.github.ronimoe.Lectern), so the temporary test PDF is
+# recorded there like any opened document: in File > Open Recent and in Lectern's
+# reading state. File > Open Recent > Clear Menu removes both (docs/INSTALL.md).
 # A report is written to build/release/verify-<version>.txt.
 #
 # Usage: scripts/release/verify-dmg [path/to/Lectern-<version>.dmg]
 #        (default: the newest build/release/Lectern-*.dmg)
 set -euo pipefail
+# Resolve the argument against the caller's directory before changing it.
+DMG_ARG=${1:+${1:A}}
 cd "${0:A:h:h:h}"
 
 die() { print -r -- "verify-dmg: FAIL: $*" >&2; exit 1; }
 say() { print -r -- "== $*"; }
 
-if (( $# )); then
-  DMG=${1:A}
+if pgrep -x Lectern >/dev/null; then
+  die "Lectern is running (pid $(pgrep -x Lectern | tr '\n' ' ')); quit it first"
+fi
+
+if [[ -n $DMG_ARG ]]; then
+  DMG=$DMG_ARG
 else
   dmgs=(build/release/Lectern-*.dmg(N.om))
   (( ${#dmgs} )) || die "no build/release/Lectern-*.dmg; run scripts/release/build-dmg first"
@@ -48,15 +58,26 @@ MNT=$TMP/mnt
 APP=$TMP/run/Lectern.app
 QAPP=$TMP/quarantined/Lectern.app
 APP_PID=
-MOUNTED=0
 
+is_mounted() { [[ $(/sbin/mount) == *" on $MNT ("* ]]; }
+unmount() { # detach, forcing it if a plain detach fails; true only when nothing is left mounted
+  is_mounted || return 0
+  hdiutil detach -quiet $MNT 2>/dev/null || hdiutil detach -force -quiet $MNT 2>/dev/null || true
+  ! is_mounted
+}
 cleanup() {
   if [[ -n $APP_PID ]] && kill -0 $APP_PID 2>/dev/null; then kill -KILL $APP_PID 2>/dev/null || true; fi
-  (( MOUNTED )) && hdiutil detach -quiet $MNT 2>/dev/null || true
   for app in $APP $QAPP; do [[ -d $app ]] && $LSREGISTER -u $app 2>/dev/null || true; done
-  rm -rf $TMP
+  if unmount; then
+    rm -rf $TMP
+  else
+    print -r -- "verify-dmg: $MNT is still mounted; left $TMP in place (hdiutil detach -force $MNT, then remove it)" >&2
+  fi
+  return 0
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 say "1. checksum"
 [[ -f $DMG.sha256 ]] || die "$DMG.sha256 not found"
@@ -66,7 +87,6 @@ print -r -- "size: $(stat -f %z $DMG) bytes"
 say "2. mount read-only and check the contents"
 mkdir -p $MNT
 hdiutil attach -quiet -readonly -nobrowse -noautoopen -mountpoint $MNT $DMG
-MOUNTED=1
 ls -l $MNT | sed 's/^/  /'
 [[ -d $MNT/Lectern.app ]] || die "no Lectern.app in the image"
 [[ -L $MNT/Applications && $(readlink $MNT/Applications) == /Applications ]] || die "no Applications link"
@@ -74,8 +94,7 @@ ls -l $MNT | sed 's/^/  /'
 mkdir -p ${APP:h} ${QAPP:h}
 ditto $MNT/Lectern.app $APP
 ditto $MNT/Lectern.app $QAPP
-hdiutil detach -quiet $MNT
-MOUNTED=0
+unmount || die "could not detach $MNT"
 
 say "3. signature of the copied app"
 codesign --verify --deep --strict $APP || die "codesign --verify --deep --strict failed"
@@ -106,9 +125,10 @@ EOF
 swiftc -O -o $TMP/windows $TMP/windows.swift 2>/dev/null || die "could not compile the window counter"
 
 pattern="${TMP:t}/run/Lectern.app/Contents/MacOS/Lectern"
-pgrep -f -- $pattern >/dev/null && die "a Lectern from this folder is already running"
+pgrep -x Lectern >/dev/null && die "a Lectern started while this script was running; quit it first"
 touch $TMP/launch-marker
-open -g -n -a $APP $TMP/test.pdf
+# Don't restore the windows of the user's own Lectern session.
+open -g -n -a $APP $TMP/test.pdf --args -ApplePersistenceIgnoreState YES
 for _ in {1..30}; do
   APP_PID=$(pgrep -f -- $pattern | head -1) || true
   [[ -n $APP_PID ]] && break
