@@ -1,0 +1,28 @@
+# containermanagerd (lines naming the probe, writes, errors)
+2026-10-29 15:25:09.586 Df containermanagerd[647:336b9e] [com.apple.containermanager:fs] Wrote [/Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbe/.com.apple.containermanagerd.metadata.plist], length = 30838, options = 0x10000001, mode = 0666
+2026-10-29 15:25:09.587 Df containermanagerd[647:336b9e] [com.apple.containermanager:fs] Wrote [/Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbe/.com.apple.containermanagerd.metadata.plist], length = 30838, options = 0x10000001, mode = 0666
+# TCC services requested (all processes)
+   2 service=kTCCServiceAppleEvents
+   2 service=kTCCServiceDeveloperTool
+  16 service=kTCCServiceListenEvent
+   4 service=kTCCServiceScreenCapture
+  18 service=kTCCServiceSystemPolicyAllFiles
+# TCC lines naming the probe
+2026-10-29 15:25:09.598 I  tccd[428:336949] [com.apple.TCC:access] Handling access request to kTCCServiceListenEvent, from Sub:{io.github.ronimoe.PlatformProbe}Resp:{TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68743, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-rea
+2026-10-29 15:25:09.639 I  tccd[428:337188] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68743, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/bu
+2026-10-29 15:25:09.640 I  tccd[428:337188] [com.apple.TCC:access] AttributionChain: accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68743, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/bu
+2026-10-29 15:25:09.643 I  tccd[428:337188] [com.apple.TCC:access] IDENTITY_ATTRIBUTION: /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe[583]: from cache: = io.github.ronimoe.PlatformPr
+2026-10-29 15:25:09.644 Df tccd[428:337188] [com.apple.TCC:access] -[TCCDAccessIdentity staticCode]: static code for: identifier io.github.ronimoe.PlatformProbe, type: 0: 0x740f9c900 at /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-idd
+2026-10-29 15:25:09.645 I  tccd[428:337188] [com.apple.TCC:access] /Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/build/v2-iddr/PlatformProbe.app/Contents/MacOS/PlatformProbe (offset 0) linked against SDK version 0x1b0000, platform: 1
+2026-10-29 15:25:09.645 I  tccd[428:337188] [com.apple.TCC:access] -[TCCDAccessIdentity matchesCodeRequirement:]: SecStaticCodeCheckValidity() static code (0x740f9c900) from io.github.ronimoe.PlatformProbe : anchor apple; status: -67050
+2026-10-29 15:25:09.645 I  tccd[428:337188] [com.apple.TCC:access] For io.github.ronimoe.PlatformProbe: matches platform requirements: No
+2026-10-29 15:25:09.645 E  tccd[428:337188] [com.apple.TCC:access] Prompting policy for hardened runtime; service: kTCCServiceAppleEvents requires entitlement com.apple.security.automation.apple-events but it is missing for accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=6874
+2026-10-29 15:25:09.645 I  tccd[428:337188] [com.apple.TCC:access] Derived team id of (null) for TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=68743, auid=501, euid=501, binary_path=/Users/ronimoe/Development/pdf-reader/.claude/worktrees/agent-a704bdc9baeacde38/spikes/platform-probe/b
+# SecurityAgent / securityd / secd / syspolicyd lines naming the probe, and SecurityAgent activity
+2026-10-29 15:25:09.462 I  syspolicyd[498:336979] [com.apple.syspolicy.exec:default] GK Xprotect results: PST: (path: 386222ff7455f267), (team: (null)), (id: (null)), (bundle_id: (null)), XPScan: 0,4700360306302799431,2026-10-29 08:25:09 +0000,(null),(null),file:///Users/ronimoe/Development/pdf-read
+2026-10-29 15:25:09.463 I  syspolicyd[498:337054] [com.apple.syspolicy.exec:default] scan finished, waking up any waiters: PST: (path: 386222ff7455f267), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+2026-10-29 15:25:09.463 Df syspolicyd[498:336979] [com.apple.syspolicy.exec:default] GK evaluateScanResult: 2, PST: (path: 386222ff7455f267), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe), 0, 0, 1, 0, 0, 0, 0
+2026-10-29 15:25:09.463 I  syspolicyd[498:336979] [com.apple.syspolicy.exec:default] Unregistering bundle for protection after scan: PST: (path: 386222ff7455f267), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+2026-10-29 15:25:09.467 Df syspolicyd[498:336979] [com.apple.syspolicy.exec:default] Found provenance data on target: TA(b716ec21f79b0e68, 2), PST: (path: 386222ff7455f267), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+2026-10-29 15:25:09.467 Df syspolicyd[498:336979] [com.apple.syspolicy.exec:default] Created provenance data for target: TA(b716ec21f79b0e68, 2), PST: (path: 386222ff7455f267), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+# sandbox denials for the probe

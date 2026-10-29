@@ -1,0 +1,16 @@
+== kill probe processes and the appcast server
+== Keychain test items
+no io.github.ronimoe.PlatformProbe.m0c-test items left
+== Sparkle throwaway EdDSA key (account lectern-m0c-probe)
+still present: generic password, account lectern-m0c-probe (service https://sparkle-project.org).
+Delete it in Keychain Access (search 'lectern-m0c-probe') if you want it gone.
+== unmount DMGs
+== Homebrew test tap
+tap removed
+== installed test apps and fixtures
+removed /Applications/PlatformProbeSparkle.app and /Users/ronimoe/PlatformProbeFixtures
+== unregister probe copies from LaunchServices
+== probe containers
+/Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbe: Data/ removed; the protected root stays (remove it in Finder if wanted)
+/Users/ronimoe/Library/Containers/io.github.ronimoe.PlatformProbeSparkle: Data/ removed; the protected root stays (remove it in Finder if wanted)
+done

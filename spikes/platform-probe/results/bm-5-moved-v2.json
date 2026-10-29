@@ -1,0 +1,69 @@
+{
+  "buildTag" : "v2",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2\/PlatformProbe.app",
+  "bundleVersion" : "2",
+  "codeVariant" : "v2: rebuilt with a code change",
+  "complete" : true,
+  "finished" : "2026-10-29T08:55:00Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "bookmark-resolve",
+  "pid" : 89422,
+  "runID" : "bm-5-moved-v2",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:55:00Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "bm-5-moved-v2",
+        "--mode",
+        "bookmark-resolve",
+        "--direct-path",
+        "\/Users\/ronimoe\/PlatformProbeFixtures\/moved\/deeper\/moved.pdf"
+      ],
+      "at" : "2026-10-29T08:55:00Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:55:00Z",
+      "errno" : 1,
+      "ok" : false,
+      "path" : "\/Users\/ronimoe\/PlatformProbeFixtures\/moved\/deeper\/moved.pdf",
+      "step" : "control-direct-read",
+      "strerror" : "Operation not permitted"
+    },
+    {
+      "at" : "2026-10-29T08:55:00Z",
+      "bytes" : 796,
+      "ok" : true,
+      "step" : "load-bookmark"
+    },
+    {
+      "at" : "2026-10-29T08:55:00Z",
+      "isStale" : true,
+      "ok" : true,
+      "path" : "\/Users\/ronimoe\/PlatformProbeFixtures\/moved\/deeper\/moved.pdf",
+      "step" : "resolve-bookmark"
+    },
+    {
+      "at" : "2026-10-29T08:55:00Z",
+      "ok" : true,
+      "step" : "start-accessing"
+    },
+    {
+      "at" : "2026-10-29T08:55:00Z",
+      "bytes" : 346,
+      "checksum" : -7199013733768746793,
+      "ok" : true,
+      "startsWithPDF" : true,
+      "step" : "read-via-bookmark"
+    },
+    {
+      "at" : "2026-10-29T08:55:00Z",
+      "bytes" : 876,
+      "ok" : true,
+      "step" : "refresh-stale-bookmark"
+    }
+  ]
+}

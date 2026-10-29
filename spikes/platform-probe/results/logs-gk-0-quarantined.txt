@@ -1,0 +1,24 @@
+# containermanagerd (lines naming the probe, writes, errors)
+# TCC services requested (all processes)
+   2 service=kTCCServiceDeveloperTool
+   8 service=kTCCServiceListenEvent
+   4 service=kTCCServiceScreenCapture
+  24 service=kTCCServiceSystemPolicyAllFiles
+# TCC lines naming the probe
+2026-10-29 15:51:42.560 Df tccd[428:35777e] [com.apple.TCC:access] AUTHREQ_ATTRIBUTION: msgID=498.169, attribution={accessing={TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=85547, auid=501, euid=501, binary_path=/private/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/AppTranslocation
+2026-10-29 15:51:42.631 I  tccd[428:35777e] [com.apple.TCC:access] BUNDLE_ATTRIBUTION: /private/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/AppTranslocation/820483A7-6604-486E-B998-6C465F4902BA/d/PlatformProbe.app/Contents/MacOS/PlatformProbe is main executable for candidateBundle(/private/var/f
+2026-10-29 15:51:42.631 I  tccd[428:35777e] [com.apple.TCC:access] BUNDLE_ATTRIBUTION: executable path file:///private/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/AppTranslocation/820483A7-6604-486E-B998-6C465F4902BA/d/PlatformProbe.app/Contents/MacOS/PlatformProbe resolves to attributed bundle:
+2026-10-29 15:51:42.631 Df tccd[428:35777e] [com.apple.TCC:access] AUTHREQ_SUBJECT: msgID=498.169, subject=io.github.ronimoe.PlatformProbe,
+2026-10-29 15:51:42.632 Df tccd[428:35777e] [com.apple.TCC:access] -[TCCDAccessIdentity staticCode]: static code for: identifier io.github.ronimoe.PlatformProbe, type: 0: 0x740f9c300 at /private/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/AppTranslocation/820483A7-6604-486E-B998-6C465F4902BA/d/P
+2026-10-29 15:51:42.632 I  tccd[428:35777e] [com.apple.TCC:access] -[TCCDAccessIdentity matchesCodeRequirement:]: SecStaticCodeCheckValidity() static code (0x740f9c300) from io.github.ronimoe.PlatformProbe : anchor apple; status: -67050
+2026-10-29 15:51:42.632 I  tccd[428:35777e] [com.apple.TCC:access] For io.github.ronimoe.PlatformProbe: matches platform requirements: No
+2026-10-29 15:51:42.632 I  tccd[428:35777e] [com.apple.TCC:access] Handling access request to kTCCServiceDeveloperTool, from Sub:{io.github.ronimoe.PlatformProbe}Resp:{TCCDProcess: identifier=io.github.ronimoe.PlatformProbe, pid=85547, auid=501, euid=501, binary_path=/private/var/folders/d7/_nfbcf6d
+2026-10-29 15:51:42.635 E  tccd[428:357964] [com.apple.TCC:access] Failed to create LSApplicationRecord for file:///private/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/AppTranslocation/820483A7-6604-486E-B998-6C465F4902BA/d/PlatformProbe.app/ from file:///private/var/folders/d7/_nfbcf6d5ng09r5ws
+2026-10-29 15:51:42.637 E  tccd[428:357964] [com.apple.TCC:access] Failed to create LSApplicationRecord for file:///private/var/folders/d7/_nfbcf6d5ng09r5ws2ztwbbh0000gn/T/AppTranslocation/820483A7-6604-486E-B998-6C465F4902BA/d/PlatformProbe.app/: 'The operation couldn’t be completed. (OSStatus er
+# SecurityAgent / securityd / secd / syspolicyd lines naming the probe, and SecurityAgent activity
+2026-10-29 15:51:33.211 I  syspolicyd[498:356731] [com.apple.syspolicy.exec:default] GK Xprotect results: PST: (path: cefd923d5bf2f6c5), (team: (null)), (id: (null)), (bundle_id: (null)), XPScan: 0,4700360306302799431,2026-10-29 08:51:33 +0000,(null),(null),file:///Users/ronimoe/PlatformProbeFixture
+2026-10-29 15:51:33.212 I  syspolicyd[498:357088] [com.apple.syspolicy.exec:default] scan finished, waking up any waiters: PST: (path: cefd923d5bf2f6c5), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+2026-10-29 15:51:33.212 Df syspolicyd[498:356731] [com.apple.syspolicy.exec:default] GK evaluateScanResult: 0, PST: (path: cefd923d5bf2f6c5), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe), 1, 0, 1, 0, 0, 0, 0
+2026-10-29 15:51:33.213 Df syspolicyd[498:356731] [com.apple.syspolicy.exec:default] Prompt shown (6, 0), waiting for response: PST: (path: cefd923d5bf2f6c5), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+2026-10-29 15:51:42.559 I  syspolicyd[498:356731] [com.apple.syspolicy.exec:default] Skipping adding or removing protection because app was moved to trash: PST: (path: cefd923d5bf2f6c5), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+# sandbox denials for the probe

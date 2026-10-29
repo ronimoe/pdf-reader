@@ -1,0 +1,41 @@
+{
+  "buildTag" : "v1",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1-iddr\/PlatformProbe.app",
+  "bundleVersion" : "1",
+  "codeVariant" : "v1",
+  "complete" : true,
+  "finished" : "2026-10-29T08:25:07Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "keychain-write",
+  "pid" : 68707,
+  "runID" : "kci-1-write-v1",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:25:07Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v1-iddr\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "kci-1-write-v1",
+        "--mode",
+        "keychain-write"
+      ],
+      "at" : "2026-10-29T08:25:07Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:25:07Z",
+      "message" : "No error.",
+      "priorDeleteStatus" : -25300,
+      "status" : 0,
+      "step" : "add-legacy"
+    },
+    {
+      "at" : "2026-10-29T08:25:07Z",
+      "message" : "A required entitlement isn't present.",
+      "priorDeleteStatus" : -34018,
+      "status" : -34018,
+      "step" : "add-dataProtection"
+    }
+  ]
+}

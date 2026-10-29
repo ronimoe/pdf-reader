@@ -230,6 +230,13 @@ The same type is stored as the reading position (A2) and used for history entrie
 | Read-write access to files the user chooses | Opening and saving documents |
 | Security-scoped file bookmarks | `DocumentIdentity`, so state survives restarts (A2) |
 | Outgoing network connections | Only so the opt-in update checks can work (A4) |
+| Sparkle's `mach-lookup` temporary exception | Sparkle's installer service runs outside the sandbox (A4) |
+| `com.apple.security.cs.disable-library-validation` | Needed for as long as the app is signed ad-hoc. Without it the hardened runtime refuses to load the embedded Sparkle framework |
+
+*(Amended 2026-10-29, from the M0c prototype, [spikes/m0c-platform.md](spikes/m0c-platform.md).)*
+- **The sandbox stays on.** Bookmarks and the container both survived ad-hoc rebuilds in both directions.
+- **Library validation is turned off.** That is a known weakening of the hardened runtime, accepted so that Sparkle updates arrive without the download quarantine; users then bypass Gatekeeper once instead of on every release.
+- **No other dynamic frameworks.** Everything else, including all LecternKit products, stays statically linked.
 
 Opening links in the browser goes through `NSWorkspace` and needs no network entitlement.
 
@@ -253,18 +260,24 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 - `scripts/test.sh` regenerates the project and runs `swift test` and `xcodebuild test` headlessly.
 - Builds are signed ad-hoc (`CODE_SIGN_IDENTITY=-`) with the hardened runtime on, because there's no Developer ID yet.
 
-**Continuous integration**
-- GitHub Actions on macOS runners, running `xcodebuild test` and the test-PDF regression suite.
-- **[verify]** whether hosted runners have macOS 26 and Xcode 27 images. If not, use a self-hosted runner.
+**Continuous integration** *(Amended 2026-10-29)*
+- **Local is the gate.** `scripts/test.sh` is the merge gate, run on a developer Mac.
+- **No hosted runner fits.** No GitHub-hosted runner has macOS 26 with Xcode 27. The `xcode-27` preview image runs macOS 27, and `macos-26` has Xcode 26.6 at most.
+- **If CI is added later,** it targets `xcode-27` and runs only on manual trigger (`workflow_dispatch`): the repo is private and macOS runner minutes are expensive.
 
-**Release (B5)**
-1. `xcodebuild archive`.
-2. Sign with a Developer ID certificate, with the hardened runtime on.
-3. Notarise with `notarytool`, then staple the ticket to the app.
-4. Package as a DMG and publish it on GitHub Releases.
-5. Publish a Homebrew cask, first in our own tap and later in `homebrew/cask` once the app qualifies.
+**Release (B5)** *(Amended 2026-10-29: no Developer ID)*
+1. Archive a Release build: `xcodebuild archive`, signed ad-hoc with the hardened runtime on and no `get-task-allow`.
+2. Package the DMG and publish it on GitHub Releases.
+3. Sign the update archive with Sparkle's EdDSA key. The private key is kept off the repo and backed up offline.
+4. Publish a Homebrew cask in our own tap, `ronimoe/lectern`.
+   - The cask removes the download quarantine after installing, through `postflight`. The official `homebrew/cask` rejects apps that fail Gatekeeper, so it can't host this app.
+   - It sets `auto_updates true`, so `brew upgrade` and Sparkle don't fight.
+5. **User install instructions** are in `docs/INSTALL.md`, written in M6:
+   - Homebrew from the tap,
+   - the DMG with System Settings → Privacy & Security → **Open Anyway**,
+   - building from source.
 
-**Open item for you:** signing and notarisation need a paid **Apple Developer Program membership**. Without it, users have to bypass Gatekeeper by hand, which goes against "no friction" in Journey A. Who holds the membership, and in whose name, is your decision.
+   The Control-click → Open bypass no longer exists on macOS 15 and later.
 
 ## 9. Testing
 
@@ -329,5 +342,5 @@ Every decision mapped to the component that implements it and the milestone that
 
 1. **The save path (§3.2).** Decided by M0.
 2. **Every [verify] item.** Resolved by M0.
-3. **Apple Developer Program membership** (§8). Your decision.
+3. ~~**Apple Developer Program membership**~~ Decided: none for v1. Unsigned (ad-hoc) distribution with documented install steps (§8).
 4. **Product name and bundle ID.** Needed before M1 settles the storage paths. A placeholder works until then.

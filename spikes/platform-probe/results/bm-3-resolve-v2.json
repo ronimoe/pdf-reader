@@ -1,0 +1,63 @@
+{
+  "buildTag" : "v2",
+  "bundlePath" : "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2\/PlatformProbe.app",
+  "bundleVersion" : "2",
+  "codeVariant" : "v2: rebuilt with a code change",
+  "complete" : true,
+  "finished" : "2026-10-29T08:54:55Z",
+  "home" : "\/Users\/ronimoe\/Library\/Containers\/io.github.ronimoe.PlatformProbe\/Data",
+  "mode" : "bookmark-resolve",
+  "pid" : 89299,
+  "runID" : "bm-3-resolve-v2",
+  "sandboxed" : true,
+  "started" : "2026-10-29T08:54:55Z",
+  "steps" : [
+    {
+      "arguments" : [
+        "\/Users\/ronimoe\/Development\/pdf-reader\/.claude\/worktrees\/agent-a704bdc9baeacde38\/spikes\/platform-probe\/build\/v2\/PlatformProbe.app\/Contents\/MacOS\/PlatformProbe",
+        "--run-id",
+        "bm-3-resolve-v2",
+        "--mode",
+        "bookmark-resolve",
+        "--direct-path",
+        "\/Users\/ronimoe\/PlatformProbeFixtures\/bookmark-test.pdf"
+      ],
+      "at" : "2026-10-29T08:54:55Z",
+      "step" : "launched"
+    },
+    {
+      "at" : "2026-10-29T08:54:55Z",
+      "errno" : 1,
+      "ok" : false,
+      "path" : "\/Users\/ronimoe\/PlatformProbeFixtures\/bookmark-test.pdf",
+      "step" : "control-direct-read",
+      "strerror" : "Operation not permitted"
+    },
+    {
+      "at" : "2026-10-29T08:54:55Z",
+      "bytes" : 804,
+      "ok" : true,
+      "step" : "load-bookmark"
+    },
+    {
+      "at" : "2026-10-29T08:54:55Z",
+      "isStale" : false,
+      "ok" : true,
+      "path" : "\/Users\/ronimoe\/PlatformProbeFixtures\/bookmark-test.pdf",
+      "step" : "resolve-bookmark"
+    },
+    {
+      "at" : "2026-10-29T08:54:55Z",
+      "ok" : true,
+      "step" : "start-accessing"
+    },
+    {
+      "at" : "2026-10-29T08:54:55Z",
+      "bytes" : 346,
+      "checksum" : -7199013733768746793,
+      "ok" : true,
+      "startsWithPDF" : true,
+      "step" : "read-via-bookmark"
+    }
+  ]
+}

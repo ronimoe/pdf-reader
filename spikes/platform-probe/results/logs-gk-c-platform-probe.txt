@@ -1,0 +1,19 @@
+# containermanagerd (lines naming the probe, writes, errors)
+# TCC services requested (all processes)
+   6 service=kTCCServiceAddressBook
+   1 service=kTCCServiceAppleEvents
+   6 service=kTCCServiceCalendar
+   6 service=kTCCServiceDeveloperTool
+   2 service=kTCCServiceFileProviderDomain
+  23 service=kTCCServiceListenEvent
+   2 service=kTCCServiceMicrophone
+   6 service=kTCCServiceReminders
+   8 service=kTCCServiceScreenCapture
+  14 service=kTCCServiceSystemPolicyAllFiles
+# TCC lines naming the probe
+# SecurityAgent / securityd / secd / syspolicyd lines naming the probe, and SecurityAgent activity
+2026-10-29 15:52:23.680 I  syspolicyd[498:35805e] [com.apple.syspolicy.exec:default] GK Xprotect results: PST: (path: cad2e50277c9c10a), (team: (null)), (id: (null)), (bundle_id: (null)), XPScan: 0,4700360306302799431,2026-10-29 08:52:23 +0000,(null),(null),file:///Users/ronimoe/PlatformProbeFixture
+2026-10-29 15:52:23.681 I  syspolicyd[498:3586a6] [com.apple.syspolicy.exec:default] scan finished, waking up any waiters: PST: (path: cad2e50277c9c10a), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+2026-10-29 15:52:23.681 Df syspolicyd[498:35805e] [com.apple.syspolicy.exec:default] GK evaluateScanResult: 0, PST: (path: cad2e50277c9c10a), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe), 1, 0, 1, 0, 0, 0, 0
+2026-10-29 15:52:23.681 Df syspolicyd[498:35805e] [com.apple.syspolicy.exec:default] Prompt shown (6, 0), waiting for response: PST: (path: cad2e50277c9c10a), (team: (null)), (id: io.github.ronimoe.PlatformProbe), (bundle_id: io.github.ronimoe.PlatformProbe)
+# sandbox denials for the probe

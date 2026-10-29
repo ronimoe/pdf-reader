@@ -164,7 +164,8 @@ Together they give all four combinations.
 
 ## B5. Distribution channels
 
-- **Channels:** a notarised DMG published on GitHub Releases, and a Homebrew cask.
+- **Channels:** a DMG published on GitHub Releases, and a Homebrew cask in our own tap.
+- **Signing** *(Amended 2026-10-29: no Developer ID for v1)*: the app is signed ad-hoc and isn't notarised. A downloaded DMG must be allowed once in System Settings → Privacy & Security → Open Anyway. The tap's cask removes the quarantine itself. Sparkle updates arrive without quarantine, so the step isn't repeated on each release.
 - **Not distributed through the Mac App Store.** Because of that, GPL-3.0 needs no App Store exception and no contributor agreement.
 - **If the App Store is reconsidered later,** an exception requires agreement from every copyright holder at that time.
 
@@ -178,6 +179,7 @@ Together they give all four combinations.
 **Passwords**
 - **Never stored by default.** The password prompt has a "Remember in Keychain" checkbox, unchecked by default.
 - **Session restore** asks for the password again unless it was saved in the Keychain.
+- **Known limitation** *(Amended 2026-10-29)*: because the app is signed ad-hoc, every update changes its signature, and macOS then asks before the new build can read a password remembered by the old one. A read that fails or is declined counts as "not saved", and the user enters the password again.
 
 ## B7. Files that change on disk
 
