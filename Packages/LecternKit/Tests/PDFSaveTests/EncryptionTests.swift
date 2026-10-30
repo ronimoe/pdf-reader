@@ -22,6 +22,8 @@ struct EncryptedFixture: Sendable, CustomTestStringConvertible {
     static let all: [EncryptedFixture] = [
         EncryptedFixture(name: "encrypted-r2-rc4-40", user: "user-pass", version: 1, revision: 2),
         EncryptedFixture(name: "encrypted-r3-rc4-annotated", user: "", version: 2, revision: 3),
+        // 56-bit: the owner key's rounds over the first 7 bytes, not all 16 (pdf.js's way).
+        EncryptedFixture(name: "encrypted-r3-rc4-56", user: "user-pass", version: 2, revision: 3),
         EncryptedFixture(name: "encrypted-r4-rc4", user: "pässwörd", version: 4, revision: 4),
         EncryptedFixture(name: "encrypted-r4-aes128-objstm", user: "user-pass", version: 4, revision: 4),
         EncryptedFixture(name: "encrypted-r4-cleartext-metadata", user: "", version: 4, revision: 4),
@@ -252,14 +254,67 @@ struct EncryptedFixture: Sendable, CustomTestStringConvertible {
         }
     }
 
+    @Test func anUpdatePointingAtAnotherEncryptDictionaryIsRefused() throws {
+        // The original's trailer has /Encrypt N 0 R; an update names another object. Which one
+        // counts is a guess, so neither is used.
+        let f = try #require(EncryptedFixture.all.first { $0.name == "encrypted-r2-rc4-40" })
+        var data = try f.data()
+        let doc = try PDFSaveDocument(data: data, password: f.user)
+        let original = try #require(doc.trailer["Encrypt"]?.referenceValue)
+        let ids = PDFSerializer.bytes(try #require(doc.trailer["ID"]))
+        let update = "\nxref\n0 0\ntrailer\n<< /Size \(doc.size) /Root \(doc.trailer["Root"]!.referenceValue!) /Encrypt 99 0 R /ID \(String(decoding: ids, as: UTF8.self)) /Prev \(doc.startXRef) >>\nstartxref\n\(data.count + 1)\n%%EOF\n"
+        #expect(original.number != 99)
+        data += Data(update.utf8)
+        #expect(throws: PDFSaveError.encrypted(.malformed("revisions disagree on /Encrypt"))) {
+            try PDFSaveDocument(data: data, password: f.user)
+        }
+    }
+
+    @Test func anEncryptionDictionaryWithARepeatedKeyIsRefused() throws {
+        var dict = PDFDictionary()
+        dict["Filter"] = .name("Standard")
+        dict["V"] = .integer(4)
+        dict.hasDuplicateKeys = true
+        #expect(throws: PDFSaveError.encrypted(.malformed("the encryption dictionary repeats a key"))) {
+            try StandardSecurity.authenticate(dict, dictionaryObject: nil, firstID: [], password: nil)
+        }
+    }
+
+    /// R6's /Perms repeats /P and /EncryptMetadata under the file key; a dictionary that says
+    /// otherwise than /Perms is refused, even with the right password.
+    @Test func r6PermsMustAgreeWithTheDictionary() throws {
+        let f = try #require(EncryptedFixture.all.first { $0.name == "encrypted-aes256" })
+        let doc = try PDFSaveDocument(data: try f.data(), password: f.user)
+        let ref = try #require(doc.trailer["Encrypt"]?.referenceValue)
+        let dict = try #require(try doc.dictionary(ref))  // never decrypted
+        let firstID = try #require(doc.trailer["ID"]?.arrayValue?.first?.stringValue?.bytes)
+        // As written: /Perms says "T" and /EncryptMetadata is absent (true).
+        #expect(try StandardSecurity.authenticate(dict, dictionaryObject: ref.number, firstID: firstID, password: f.user).revision == 6)
+        var metadataInTheClear = dict
+        metadataInTheClear["EncryptMetadata"] = .bool(false)
+        #expect(throws: PDFSaveError.encrypted(.malformed("/Perms doesn't match /P and /EncryptMetadata"))) {
+            try StandardSecurity.authenticate(metadataInTheClear, dictionaryObject: ref.number, firstID: firstID, password: f.user)
+        }
+        var otherPermissions = dict
+        otherPermissions["P"] = .integer(-3904)
+        #expect(throws: PDFSaveError.encrypted(.malformed("/Perms doesn't match /P and /EncryptMetadata"))) {
+            try StandardSecurity.authenticate(otherPermissions, dictionaryObject: ref.number, firstID: firstID, password: f.user)
+        }
+    }
+
     @Test func aesDataThatDoesntDecryptIsRefused() throws {
         let security = StandardSecurity.testAES
         // Not a multiple of 16, and bad padding.
         #expect(throws: PDFSaveError.self) { try security.decrypt([UInt8](repeating: 1, count: 33), ref: ObjectRef(5), method: .aesV2) }
         #expect(throws: PDFSaveError.self) { try security.decrypt([UInt8](repeating: 1, count: 32), ref: ObjectRef(5), method: .aesV2) }
-        // An empty string and an IV alone are empty.
+        // An empty string and an IV alone are empty; 1 to 15 bytes can't be AES output.
         #expect(try security.decrypt([], ref: ObjectRef(5), method: .aesV2) == [])
         #expect(try security.decrypt([UInt8](repeating: 1, count: 16), ref: ObjectRef(5), method: .aesV2) == [])
+        for count in 1...15 {
+            #expect(throws: PDFSaveError.malformed("AES data of \(count) bytes in 5 0 R")) {
+                try security.decrypt([UInt8](repeating: 1, count: count), ref: ObjectRef(5), method: .aesV2)
+            }
+        }
         // Round trip, with padding of a whole block.
         for count in [0, 1, 15, 16, 17, 100] {
             let plain = (0..<count).map { UInt8($0 & 0xFF) }
@@ -332,6 +387,26 @@ struct EncryptedFixture: Sendable, CustomTestStringConvertible {
         let change = AnnotationChange.addMarkup(NewMarkup(kind: .highlight, pageIndex: 0, quads: try Corpus.quads(pk, page: 0), contents: "Right"))
         let result = try IncrementalWriter(options: options).saveInPlace(original: data, changes: [change])
         #expect(throws: PDFSaveError.verificationFailed("annotation \(result.added[0].ref) doesn't read back as written")) {
+            try SavedFileCheck.verify(result.data, original: data, against: result)
+        }
+    }
+
+    /// An existing annotation the update rewrites without saying so (not added, not edited): the
+    /// read-back must compare it with the original, not just count it.
+    @Test func savedFileCheckCatchesAnUndeclaredChangeToAnExistingAnnotation() throws {
+        let data = try Data(contentsOf: Repo.corpus.appending(path: "third-party-annots.pdf"))
+        let doc = try PDFSaveDocument(data: data)
+        let square = try Corpus.find(doc, page: 0, subtype: "Square")
+        var changed = try #require(try doc.dictionary(square))
+        changed["Contents"] = .text("Rewritten behind the check's back")
+        let rewritten = PDFObject.dictionary(changed)
+        var options = IncrementalWriter.Options(verify: false)
+        options.testHooks.mutateWritten = { objects in objects[square] = rewritten }
+        let pk = try #require(PDFDocument(data: data))
+        let change = AnnotationChange.addMarkup(NewMarkup(kind: .highlight, pageIndex: 0, quads: try Corpus.quads(pk, page: 0), contents: "Added"))
+        let result = try IncrementalWriter(options: options).saveInPlace(original: data, changes: [change])
+        #expect(result.writtenAnnotations[square] == nil)
+        #expect(throws: PDFSaveError.verificationFailed("annotation \(square) reads back differently from the original")) {
             try SavedFileCheck.verify(result.data, original: data, against: result)
         }
     }

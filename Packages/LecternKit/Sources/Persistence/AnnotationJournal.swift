@@ -53,15 +53,18 @@ public struct JournalEntry: Codable, Equatable, Sendable {
 }
 
 /// The key an encrypted document's journal is sealed with (architecture §6): HKDF-SHA256 of the
-/// PDF's file encryption key, salted with the document's `DocumentKey`, under a fixed Lectern
-/// info string. It exists only in memory, and only once the document is unlocked; the file key is
-/// the same whichever password opened it, so the user and the owner password give the same key.
+/// PDF's file encryption key, salted with the SHA-256 of its encryption dictionary's `/O` and `/U`
+/// (`PDFSaveDocument.encryptionDigest`), under a fixed Lectern info string. The salt lives exactly
+/// as long as the file key: a save keeps both, with or without an `/ID` (M7 review; an earlier
+/// `DocumentKey` salt changed on every save of a file without `/ID`). It exists only in memory, and
+/// only once the document is unlocked; the file key is the same whichever password opened it, so
+/// the user and the owner password give the same key.
 public struct JournalKey: Sendable {
     static let info = Data("io.github.ronimoe.Lectern annotation journal v1".utf8)
     let key: SymmetricKey
 
-    public init(fileKey: Data, documentKey: DocumentKey) {
-        key = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: fileKey), salt: Data(documentKey.rawValue.utf8),
+    public init(fileKey: Data, encryptionDigest: Data) {
+        key = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: fileKey), salt: encryptionDigest,
                                      info: Self.info, outputByteCount: 32)
     }
 }

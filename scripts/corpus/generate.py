@@ -582,6 +582,72 @@ def r4_identity_strings_pdf(path: Path) -> None:
     run("qpdf", "--check", path.as_posix())
 
 
+def r3_rc4_56_pdf(path: Path) -> None:
+    """R3, RC4 with a 56-bit key (/Length 56), user `user-pass`, owner `owner-pass`.
+
+    A key shorter than 16 bytes tells the owner-key derivations apart: the 50 MD5 rounds of
+    algorithm 3 hash the first n bytes in qpdf, PDFKit, Acrobat and PDFBox, all 16 in pdf.js. This
+    file follows the first (and qpdf accepts the owner password). Page 1 also holds strings of its
+    own (a /PieceInfo date) and a direct annotation dictionary inside /Annots, so a rewrite of the
+    page must re-encrypt them with the page's key."""
+    import hashlib
+
+    n = 7
+    file_id = bytes.fromhex("4c6563746572e6e5636f72707573aa03")
+    p_value = -4
+    user, owner = b"user-pass", ENCRYPTED_OWNER.encode()
+    md5 = lambda b: hashlib.md5(b).digest()
+    # Algorithm 3: /O, with 50 rounds over the first n bytes.
+    k = md5((owner + PAD)[:32])
+    for _ in range(50):
+        k = md5(k[:n])
+    o_value = (user + PAD)[:32]
+    for i in range(20):
+        o_value = rc4(bytes(b ^ i for b in k[:n]), o_value)
+    # Algorithm 2: the file key.
+    h = md5((user + PAD)[:32] + o_value + (p_value & 0xFFFFFFFF).to_bytes(4, "little") + file_id)
+    for _ in range(50):
+        h = md5(h[:n])
+    key = h[:n]
+    # Algorithm 5: /U.
+    u_value = md5(PAD + file_id)
+    for i in range(20):
+        u_value = rc4(bytes(b ^ i for b in key), u_value)
+    u_value += bytes(16)
+
+    def object_key(num: int) -> bytes:
+        return md5(key + num.to_bytes(3, "little") + (0).to_bytes(2, "little"))[: min(n + 5, 16)]
+
+    def string(num: int, text: str) -> str:
+        return "<" + rc4(object_key(num), text.encode("latin-1")).hex() + ">"
+
+    def stream(num: int, data: bytes) -> bytes:
+        body = rc4(object_key(num), zlib.compress(data))
+        return f"<< /Filter /FlateDecode /Length {len(body)} >>\nstream\n".encode() + body + b"\nendstream"
+
+    m = MiniPDF()
+    m.add(1, "<< /Type /Catalog /Pages 2 0 R >>")
+    m.add(2, "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>")
+    m.add(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R "
+             "/Resources << /Font << /F1 7 0 R >> >> "
+             f"/PieceInfo << /Lectern << /LastModified {string(3, 'D:20261030120000Z')} /Private {string(3, 'page-private-data')} >> >> "
+             "/Annots [<< /Type /Annot /Subtype /Text /Rect [520 720 540 740] "
+             f"/Contents {string(3, 'An inline note from another app')} /NM {string(3, 'inline-note-1')} /C [1 0.8 0] >>] >>")
+    m.add(4, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>")
+    m.add(5, stream(5, text_content(["RC4 with a 56-bit key, page 1."] + PARAGRAPHS, 700)))
+    m.add(6, stream(6, text_content(["RC4 with a 56-bit key, page 2."] + PARAGRAPHS, 700)))
+    m.add(7, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    m.add(8, f"<< /Title {string(8, 'Lectern corpus: R3 RC4 56-bit')} /Producer {string(8, 'Lectern MiniPDF')} >>")
+    m.add(9, f"<< /Filter /Standard /V 2 /R 3 /Length 56 /P {p_value} /O <{o_value.hex()}> /U <{u_value.hex()}> >>")
+    m.write(path, "table", root=1, info=8, encrypt=9, file_id=file_id)
+    for password in ("user-pass", ENCRYPTED_OWNER):
+        run("qpdf", f"--password={password}", "--check", path.as_posix())
+
+
+def encrypted_r3_rc4_56(tmp: Path) -> None:
+    r3_rc4_56_pdf(OUT / "encrypted-r3-rc4-56.pdf")
+
+
 def encrypted_r4_identity_strings(tmp: Path) -> None:
     r4_identity_strings_pdf(OUT / "encrypted-r4-identity-strings.pdf")
 
@@ -609,6 +675,7 @@ def main() -> None:
             "encrypted": lambda: encrypted_pdfs(tmp),
             "encrypted-r2-rc4-40": lambda: encrypted_r2(tmp),
             "encrypted-r3-rc4-annotated": lambda: encrypted_r3_annotated(tmp),
+            "encrypted-r3-rc4-56": lambda: encrypted_r3_rc4_56(tmp),
             "encrypted-r4-rc4": lambda: encrypted_r4_rc4(tmp),
             "encrypted-r4-aes128-objstm": lambda: encrypted_r4_aes_objstm(tmp),
             "encrypted-r4-cleartext-metadata": lambda: encrypted_r4_cleartext_metadata(tmp),

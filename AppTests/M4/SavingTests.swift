@@ -304,6 +304,7 @@ extension M4Tests {
         @Test func everyUnsupportedReasonIsExplainedByName() {
             let cases: [(EncryptionProblem, String)] = [
                 (.securityHandler("Adobe.PubSec"), "certificates"),
+                (.securityHandler("FOO.Custom"), "security handler Lectern doesn’t support"),
                 (.revision(version: 5, revision: 5), "revision 5"),
                 (.revision(version: 3, revision: 3), "version 3, revision 3"),
                 (.cryptFilter("Custom"), "Custom"),

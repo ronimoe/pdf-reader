@@ -38,8 +38,10 @@ for entry in $fetched; do
     continue
   fi
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/lectern-fetch.XXXXXX")
-  echo "bootstrap: fetching $name"
-  if ! curl -fsSL --retry 2 --max-time 900 -o "$tmp/$name" "$url"; then
+  # On stderr, so it reaches the console even when scripts/test.sh logs stdout. A stalled
+  # connection gives up after 20 s, and a 40 MB download after 5 minutes.
+  echo "bootstrap: fetching $name…" >&2
+  if ! curl -fsSL --retry 2 --connect-timeout 20 --max-time 300 -o "$tmp/$name" "$url"; then
     rm -rf "$tmp"; echo "bootstrap: download of $name failed ($url)" >&2; exit 1
   fi
   got=$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1)

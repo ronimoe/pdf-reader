@@ -131,6 +131,8 @@ targets:
         buildPhase: resources
       - path: Tests/Corpus/public/encrypted-r5.pdf
         buildPhase: resources
+      - path: Tests/Corpus/public/encrypted-pubkey.pdf
+        buildPhase: resources
     dependencies:
       - target: Lectern
     settings:

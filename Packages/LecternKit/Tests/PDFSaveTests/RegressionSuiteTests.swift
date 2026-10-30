@@ -38,6 +38,7 @@ import Testing
         Entry(path: "encrypted-aes256-owner-only.pdf"),
         Entry(path: "encrypted-r2-rc4-40.pdf", password: "user-pass"),
         Entry(path: "encrypted-r3-rc4-annotated.pdf"),
+        Entry(path: "encrypted-r3-rc4-56.pdf", password: "user-pass"),
         // PDFKit can't unlock a non-ASCII password (EncryptionTests), so these open with the owner's.
         Entry(path: "encrypted-r4-rc4.pdf", password: "owner-pass"),
         Entry(path: "encrypted-r4-aes128-objstm.pdf", password: "user-pass"),

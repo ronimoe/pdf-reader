@@ -23,8 +23,12 @@ import Testing
 
     func journalKey(_ name: String, password: String?) throws -> (JournalKey, Data) {
         let data = try Data(contentsOf: Self.corpus.appending(path: "\(name).pdf"))
-        let fileKey = try #require(try PDFSaveDocument(data: data, password: password).fileEncryptionKey)
-        return (JournalKey(fileKey: fileKey, documentKey: DocumentKey(pdfData: data)), data)
+        return (try Self.journalKey(data, password: password), data)
+    }
+
+    static func journalKey(_ data: Data, password: String?) throws -> JournalKey {
+        let document = try PDFSaveDocument(data: data, password: password)
+        return JournalKey(fileKey: try #require(document.fileEncryptionKey), encryptionDigest: try #require(document.encryptionDigest))
     }
 
     @Test func aSealedJournalHoldsNoPlainText() throws {
@@ -127,9 +131,40 @@ import Testing
         #expect(DocumentKey(pdfData: once) == key)
         #expect(DocumentKey(pdfData: again) == key)
         // And the journal key with it.
-        let fileKey = try #require(try PDFSaveDocument(data: again, password: password).fileEncryptionKey)
-        let sealed = try JournalEntry(originalSHA256: "x", changes: [note]).sealed(with: JournalKey(fileKey: fileKey, documentKey: DocumentKey(pdfData: once)))
-        let originalKey = try #require(try PDFSaveDocument(data: original, password: password).fileEncryptionKey)
-        #expect(try sealed.opened(with: JournalKey(fileKey: originalKey, documentKey: key)).changes == [note])
+        let sealed = try JournalEntry(originalSHA256: "x", changes: [note]).sealed(with: try Self.journalKey(again, password: password))
+        #expect(try sealed.opened(with: try Self.journalKey(original, password: password)).changes == [note])
+    }
+
+    /// An encrypted file without `/ID` (R6 doesn't need one): its `DocumentKey` and journal key
+    /// must still survive a save. Both used to change with the bytes (M7 review).
+    @Test func anEncryptedFileWithoutAnIDKeepsItsKeysAcrossASave() throws {
+        let data = try Self.withoutID(Data(contentsOf: Self.corpus.appending(path: "encrypted-aes256.pdf")))
+        #expect(try PDFSaveDocument(data: data, password: "user-pass").trailer["ID"] == nil)
+        let note = AnnotationChange.addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 40, y: 40), contents: "Sealed before the save"))
+        let saved = try IncrementalWriter().saveInPlace(original: data, changes: [note], password: "user-pass").data
+        #expect(try PDFSaveDocument(data: saved, password: "user-pass").trailer["ID"] == nil)
+        let key = DocumentKey(pdfData: data)
+        #expect(key.rawValue.hasPrefix("enc:"), "\(key)")
+        #expect(DocumentKey(pdfData: saved) == key)
+        // Sealed against the bytes before the save, opened after reopening the saved file.
+        let sealed = try JournalEntry(originalSHA256: JournalEntry.hash(of: data), changes: [note]).sealed(with: try Self.journalKey(data, password: "user-pass"))
+        #expect(try sealed.opened(with: try Self.journalKey(saved, password: "user-pass")).changes == [note])
+    }
+
+    /// The file with every `/ID [...]` blanked out by spaces, so no offset moves.
+    static func withoutID(_ data: Data) throws -> Data {
+        var bytes = [UInt8](data)
+        let needle = Array("/ID".utf8)
+        var i = 0
+        while i + 3 < bytes.count {
+            if Array(bytes[i..<i + 3]) == needle, bytes[i + 3] == 0x20 || bytes[i + 3] == 0x5B {
+                var j = i
+                while bytes[j] != 0x5D { bytes[j] = 0x20; j += 1 }
+                bytes[j] = 0x20
+                i = j
+            }
+            i += 1
+        }
+        return Data(bytes)
     }
 }

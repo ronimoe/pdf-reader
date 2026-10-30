@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum XRefKind: String, Sendable {
@@ -86,6 +87,11 @@ public final class PDFSaveDocument {
     /// crash journal's key from it (architecture §6).
     public var fileEncryptionKey: Data? { security.map { Data($0.fileKey) } }
 
+    /// SHA-256 of the encryption dictionary's `/O` and `/U` strings: what identifies this
+    /// encryption, for as long as the file key lives (a save keeps both; a new password changes
+    /// both). Unlike `DocumentKey`, it never depends on `/ID` or on the bytes. Nil when unencrypted.
+    public private(set) var encryptionDigest: Data?
+
     /// Reads the newest trailer's `/Encrypt` and authenticates. Every revision must agree on it: a
     /// file whose revisions differ in encryption is refused rather than guessed at.
     private func readSecurityHandler(password: String?) throws(PDFSaveError) -> StandardSecurity? {
@@ -118,7 +124,10 @@ public final class PDFSaveDocument {
             guard let first = ids.arrayValue?.first?.stringValue else { throw .encrypted(.malformed("/ID is not an array of strings")) }
             firstID = first.bytes
         }
-        return try StandardSecurity.authenticate(dict, dictionaryObject: number, firstID: firstID, password: password)
+        let handler = try StandardSecurity.authenticate(dict, dictionaryObject: number, firstID: firstID, password: password)
+        let o = dict["O"]?.stringValue?.bytes ?? [], u = dict["U"]?.stringValue?.bytes ?? []
+        encryptionDigest = Data(SHA256.hash(data: o + u))
+        return handler
     }
 
     // MARK: Cross-reference chain

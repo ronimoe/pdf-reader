@@ -484,7 +484,9 @@ private struct Session {
             throw .verificationFailed("original bytes are not a prefix of the output")
         }
         let reread = try PDFSaveDocument(bytes: output, password: doc.password)
-        guard reread.security?.fileKey == doc.security?.fileKey else {
+        // The encryption must be the original's: the new section repeats /Encrypt and /ID exactly
+        // (and a file that encrypted before must still read as encrypted).
+        guard reread.isEncrypted == doc.isEncrypted else {
             throw .verificationFailed("the output's encryption differs from the original's")
         }
         if doc.security != nil {

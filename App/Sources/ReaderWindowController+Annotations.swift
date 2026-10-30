@@ -303,8 +303,12 @@ extension ReaderWindowController {
 
     static let formFieldsMessage = "This document has form fields. Filling in forms isn’t supported yet."
 
+    /// The info line: an encryption Lectern can't decrypt (the pages may be blank) comes first,
+    /// then form fields (A5). Both are quiet, non-modal and dismissible.
     func updateFormInfoLine() {
-        if isShowingContent, primaryPane.view.documentHasFormFields {
+        if isShowingContent, case .unsupported(.encrypted(let problem))? = annotations?.saveability, let notice = problem.openingNotice {
+            formInfoLine.show(notice)
+        } else if isShowingContent, primaryPane.view.documentHasFormFields {
             formInfoLine.show(Self.formFieldsMessage)
         } else {
             formInfoLine.isHidden = true

@@ -79,8 +79,10 @@ extension EncryptionProblem {
     /// unsupported (architecture §4.3): Standard password encryption (RC4, AES-128, AES-256) is.
     nonisolated var explanation: String {
         switch self {
-        case .securityHandler:
+        case .securityHandler("Adobe.PubSec"):
             "This document is encrypted for particular recipients’ certificates rather than with a password, and Lectern can save annotations only into password-protected documents."
+        case .securityHandler:
+            "This document is protected by a security handler Lectern doesn’t support, so Lectern can’t save annotations into it."
         case .revision(5, 5):
             "This document uses Acrobat 9’s AES-256 encryption (revision 5), which was withdrawn from the PDF standard, and Lectern can’t save annotations into it."
         case .revision(let v, let r):
@@ -91,6 +93,21 @@ extension EncryptionProblem {
             "Lectern couldn’t confirm this document’s password itself, so it can’t encrypt annotations with the document’s own key."
         case .malformed:
             "This document’s encryption settings can’t be read reliably, so Lectern won’t add to it."
+        }
+    }
+}
+
+extension EncryptionProblem {
+    /// A quiet line shown when such a document opens (M7 review, D2): PDFKit may show it with
+    /// blank pages and no explanation. Nil for everything Lectern can at least read.
+    nonisolated var openingNotice: String? {
+        switch self {
+        case .securityHandler("Adobe.PubSec"):
+            "This document is encrypted for particular recipients’ certificates. Lectern can’t decrypt it, so its pages may appear blank."
+        case .securityHandler:
+            "This document uses a security handler Lectern doesn’t support. Lectern can’t decrypt it, so its pages may appear blank."
+        default:
+            nil
         }
     }
 }
@@ -115,8 +132,7 @@ struct AnnotationFileInfo: Sendable {
     /// Parses the file off the main thread: Saveability, every annotation's descriptor, and the
     /// SHA-256 the crash journal is keyed to. An encrypted file is read with `password` (the
     /// session password, or the empty one when nil), and its journal key is derived.
-    nonisolated static func inspect(_ data: Data, readOnlyLocation: Bool, password: String? = nil,
-                                    documentKey: DocumentKey? = nil) async -> AnnotationFileInfo {
+    nonisolated static func inspect(_ data: Data, readOnlyLocation: Bool, password: String? = nil) async -> AnnotationFileInfo {
         await Task.detached(priority: .userInitiated) {
             let saveability = Saveability.evaluate(data, readOnlyLocation: readOnlyLocation, password: password)
             var descriptors: [AnnotationDescriptor]?
@@ -128,8 +144,8 @@ struct AnnotationFileInfo: Sendable {
                 descriptors = try? document.annotations()
                 pageCount = document.pageCount
                 isEncrypted = document.isEncrypted
-                if let fileKey = document.fileEncryptionKey {
-                    journalKey = JournalKey(fileKey: fileKey, documentKey: documentKey ?? DocumentKey(pdfData: data))
+                if let fileKey = document.fileEncryptionKey, let digest = document.encryptionDigest {
+                    journalKey = JournalKey(fileKey: fileKey, encryptionDigest: digest)
                 }
             }
             return AnnotationFileInfo(saveability: saveability, descriptors: descriptors ?? [], sha256: JournalHash.of(data),

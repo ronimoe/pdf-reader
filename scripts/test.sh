@@ -11,7 +11,8 @@ xcodegen generate --quiet || exit 1
 # checked against their SHA-256, missing ones are downloaded and checked. Without them the corpus
 # tests fail, so stop here with one clear message instead.
 echo "== corpus: fetched files"
-if ! scripts/corpus/bootstrap --fetch > build/logs/bootstrap-fetch.log 2>&1; then
+# Progress ("fetching <name>…") and errors go to the console; the rest to the log.
+if ! scripts/corpus/bootstrap --fetch > build/logs/bootstrap-fetch.log; then
   echo "✘ The fetched test PDFs are missing and couldn't be downloaded (build/logs/bootstrap-fetch.log)."
   echo "  Run scripts/corpus/bootstrap --fetch, then run this script again."
   exit 1

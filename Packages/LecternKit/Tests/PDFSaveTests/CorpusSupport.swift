@@ -342,6 +342,9 @@ enum Corpus {
              .editColor(try find(doc, page: 0, subtype: "Highlight", lectern: false), green),
              .delete(try find(doc, page: 0, subtype: "Text"))]
         }
+        // Page 1's /Annots is direct, holding an inline note, and the page has strings of its own
+        // (/PieceInfo): the highlight rewrites the page, which must be encrypted again.
+        + encrypted("encrypted-r3-rc4-56", password: "user-pass", standardEdits("R3 RC4-56"))
         + encrypted("encrypted-r4-rc4", password: "pässwörd", pdfKitPassword: "owner-pass", standardEdits("R4 RC4"))
         + encrypted("encrypted-r4-aes128-objstm", password: "user-pass", standardEdits("R4 AES-128"))
         + encrypted("encrypted-r4-cleartext-metadata", standardEdits("R4 cleartext metadata"))

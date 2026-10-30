@@ -57,6 +57,8 @@ struct StandardSecurity: Sendable {
                              password: String?) throws(PDFSaveError) -> StandardSecurity {
         let filter = dict["Filter"]?.nameValue?.string ?? ""
         guard filter == "Standard" else { throw .encrypted(.securityHandler(filter.isEmpty ? "none" : filter)) }
+        // Readers disagree on which of two equal keys counts; the writer won't pick one.
+        guard !dict.hasDuplicateKeys else { throw .encrypted(.malformed("the encryption dictionary repeats a key")) }
         var v = 0
         if let value = dict["V"] {
             guard let i = value.intValue else { throw .encrypted(.malformed("/V is not an integer")) }
@@ -170,8 +172,9 @@ struct StandardSecurity: Sendable {
                 case .owner:
                     // Algorithm 7: the owner password's key decrypts /O to the padded user password.
                     var k = Crypto.md5(Password.padded(pw))
-                    // 50 rounds over the first n bytes (algorithm 3, step c), as qpdf and pdf.js
-                    // do; the same as the whole digest for 16-byte keys.
+                    // 50 rounds over the first n bytes (algorithm 3, step c), as qpdf, PDFKit,
+                    // Acrobat and PDFBox do; pdf.js hashes all 16 bytes. The two agree for 16-byte
+                    // keys and differ below that (the R3 56-bit fixture tells them apart).
                     if r >= 3 { for _ in 0..<50 { k = Crypto.md5(Array(k.prefix(n))) } }
                     let rc4Key = Array(k.prefix(n))
                     if r == 2 {
@@ -254,9 +257,10 @@ struct StandardSecurity: Sendable {
         case .identity: return data
         case .rc4: return Crypto.rc4(key: objectKey(ref, method), data: data)
         case .aesV2, .aesV3:
-            // An empty string, or one holding only its IV, is empty.
-            if data.count <= 16 { return [] }
-            guard data.count % 16 == 0 else { throw .malformed("AES data of \(data.count) bytes in \(ref)") }
+            // An empty string, or one holding only its IV, is empty; anything else must be the IV
+            // plus whole blocks.
+            if data.isEmpty || data.count == 16 { return [] }
+            guard data.count > 16, data.count % 16 == 0 else { throw .malformed("AES data of \(data.count) bytes in \(ref)") }
             guard let plain = Crypto.aes(.decrypt, mode: .cbc, key: objectKey(ref, method), iv: Array(data[0..<16]),
                                          data: Array(data[16...]), padding: false),
                   let last = plain.last, last >= 1, last <= 16, Int(last) <= plain.count,

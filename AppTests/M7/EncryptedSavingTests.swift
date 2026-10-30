@@ -167,4 +167,70 @@ struct EncryptedSavingTests {
         #expect(harness.controller.submitPassword("owner-pass", remember: false, purpose: .open))
         #expect(!harness.pdf.isLocked)
     }
+    // MARK: Review fixes
+
+    /// D3: comment on a saved highlight, save, undo the comment, undo the highlight, ⌘S. The
+    /// pending list then holds an edit and a delete of the same object; the save writes their net
+    /// effect (the delete) and the undo stack stays whole.
+    @Test(arguments: [("classic-xref", nil), ("encrypted-aes256", "user-pass")] as [(String, String?)])
+    func undoingACommentAndThenItsSavedHighlightSaves(_ fixture: String, _ password: String?) async throws {
+        let harness = try await AnnotationHarness(corpus: fixture, password: password)
+        defer { harness.close() }
+        let highlight = try harness.highlight("quick brown fox")
+        try harness.editor.setContents("A comment", of: highlight)
+        try await harness.save()
+        #expect(try SavedFile(harness.fileBytes, password: password).lecternDescriptors.map(\.contents) == ["A comment"])
+        harness.undo.undo()
+        harness.undo.undo()
+        #expect(harness.editor.pending.changes.count == 2)
+        try await harness.save()
+        #expect(try SavedFile(harness.fileBytes, password: password).lecternDescriptors.isEmpty)
+        #expect(!harness.document.isDocumentEdited)
+        // Undo history is untouched: both steps redo, and that saves too.
+        harness.undo.redo()
+        harness.undo.redo()
+        try await harness.save()
+        #expect(try SavedFile(harness.fileBytes, password: password).lecternDescriptors.map(\.contents) == ["A comment"])
+    }
+
+    /// D2: a document encrypted with a handler Lectern can't decrypt opens with a quiet notice in
+    /// the info line, never an alert (the harness's tripwire fails the test on any UI).
+    @Test func aPublicKeyDocumentShowsAQuietNotice() async throws {
+        let harness = try await AnnotationHarness(corpus: "encrypted-pubkey")
+        defer { harness.close() }
+        #expect(harness.editor.saveability == .unsupported(.encrypted(.securityHandler("Adobe.PubSec"))))
+        #expect(harness.controller.formInfoLine.message == EncryptionProblem.securityHandler("Adobe.PubSec").openingNotice)
+        #expect(harness.controller.formInfoLine.message?.contains("certificates") == true)
+        #expect(harness.presenter.refusals.isEmpty)
+        #expect(EncryptionProblem.securityHandler("FOO.Custom").openingNotice?.contains("security handler Lectern doesn’t support") == true)
+        #expect(EncryptionProblem.revision(version: 5, revision: 5).openingNotice == nil)
+    }
+
+    @Test func aReadableEncryptedDocumentHasNoNotice() async throws {
+        let harness = try await AnnotationHarness(corpus: "encrypted-r5", password: "user-pass")
+        defer { harness.close() }
+        #expect(harness.controller.formInfoLine.message == nil)
+    }
+
+    /// Item 5: the PDFKit read-back fails on bytes that don't hold what the writer says it wrote,
+    /// and on a password that doesn't open them.
+    @Test func thePDFKitReadBackCanFail() async throws {
+        let data = try Corpus.data("encrypted-aes256")
+        let pdf = try #require(PDFDocument(data: data))
+        #expect(pdf.unlock(withPassword: "user-pass"))
+        let selection = try #require(pdf.findString("quick brown fox", withOptions: []).first)
+        let page = try #require(selection.pages.first)
+        let b = selection.bounds(for: page)
+        let change = AnnotationChange.addMarkup(NewMarkup(kind: .highlight, pageIndex: 0, quads: [Quad(rect: PDFRect(x: b.minX, y: b.minY, width: b.width, height: b.height))],
+                                                          contents: "Checked by PDFKit"))
+        let result = try IncrementalWriter().saveInPlace(original: data, changes: [change], password: "user-pass")
+        let descriptors = try SavedFileCheck.verify(result.data, original: data, against: result, password: "user-pass")
+        try ReaderDocument.checkWithPDFKit(result.data, against: result, descriptors: descriptors, password: "user-pass")
+        #expect(throws: PDFSaveError.verificationFailed("PDFKit can't unlock the saved file")) {
+            try ReaderDocument.checkWithPDFKit(result.data, against: result, descriptors: descriptors, password: "wrong")
+        }
+        #expect(throws: PDFSaveError.verificationFailed("PDFKit doesn’t show the added highlight as written")) {
+            try ReaderDocument.checkWithPDFKit(data, against: result, descriptors: descriptors, password: "user-pass")
+        }
+    }
 }
