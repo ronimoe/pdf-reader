@@ -119,6 +119,7 @@ extension ReaderWindowController {
         }
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: secondary.view)
         secondary.view.show(nil)
+        secondary.view.outliveQueuedPDFKitWork()
         secondaryPane = nil
         paneContainers[.secondary] = nil
         focusedPaneID = .primary
@@ -216,6 +217,7 @@ extension ReaderWindowController {
         preview.onExternalLink = { [weak self] target in self?.handleExternalLink(target) }
         preview.onDismissRequest = { [weak self, weak preview] in
             guard let self, let preview else { return }
+            preview.previewView.outliveQueuedPDFKitWork()
             previewPresenter.dismiss(preview)
         }
         preview.onClose = { [weak self, weak preview] in
@@ -233,6 +235,7 @@ extension ReaderWindowController {
         hoverDismissTimer?.invalidate()
         hoverDismissTimer = nil
         guard let preview = linkPreview else { return }
+        preview.previewView.outliveQueuedPDFKitWork()
         previewPresenter.dismiss(preview)
         linkPreview = nil
         linkPreviewSource = nil

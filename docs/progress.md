@@ -481,3 +481,38 @@ PDFSave's file key matched qpdf's for the user and owner passwords of every fixt
 - A sealed journal restored after a real crash and relaunch.
 - Key lengths other than 40, 56 and 128 bits.
 - The unsupported-handler notice on screen.
+
+## After M7: logo licence and a rotation crash (PRs #19, #20)
+
+**PR #19, logo licence:** the logo and app icon are kept out of the GPL (`design/logo/LICENSE.md`), and the app's Acknowledgements say so. The DMG and cask were rebuilt.
+
+**PR #20, a crash closing a window right after rotating:**
+- **What happened:** while PR #19 was being checked, two full test runs crashed the test host inside PDFKit, in `SplitView.layoutRotationAndZoomKeepBothPanesPlaces`. The faulting frame was `-[PDFDocumentView layoutDocumentView]`, a null dereference, from the block `-[PDFDocumentView didRotatePageNotification:]` queues on the main queue.
+- **Established by experiment:**
+  - A page rotation queues one relayout per view per page, and they all run on the main queue's next pass. That was about 3 ms in a standalone probe with a 23-page document.
+  - The crash needs the reader's views to be freed before that pass. In the test, closing the document while keeping the views alive never crashed.
+  - A rotation on another `PDFDocument`, such as the thumbnail renderer's copy, doesn't reach the view.
+- **How the app could hit it (not observed):** AppKit hands out events that are already waiting before it drains the main queue. So a ⌘W typed during a slow rotation could probably free the window's views first.
+- **Fix:** `ReaderPDFView.outliveQueuedPDFKitWork()` queues one block that keeps the view alive until the relayouts already on the main queue have run.
+  - It is called for every pane in `windowWillClose`, which closing the document also reaches.
+  - Closing a split pane or a link preview also calls it, as a precaution. In the tests AppKit kept those views alive past the main queue's next pass, so the crash couldn't be reproduced there.
+- **Test:** `SplitView.closingTheWindowInTheSameTurnAsARotationIsSafe` runs the original test's layout and rotation steps, then closes the window inside an autorelease pool. Without the call in `windowWillClose` it crashed with the same stack. A regression shows up as a test-host crash rather than a failed expectation.
+- **Review:** one round, by the code-reviewer.
+  - **Fixed:**
+    - the link preview's view was missing from the fix;
+    - the separate call in `documentWillClose` duplicated the window close, so it was removed;
+    - a second queue hop had no evidence, so it was dropped;
+    - an unneeded `nonisolated(unsafe)` was removed;
+    - the comment now matches what was shown.
+  - **Checked against mutants:** removing the window-close call crashed the test, so the test catches it. Removing the split-pane or preview call didn't, which is why those two are labelled as precautions.
+
+**Verified:**
+- **Before the fix:** the original test crashed within 5 repeats.
+- **With the final fix:**
+  - the original and the new test together passed 25 repeats in a row;
+  - on `8565c76`, `./scripts/test.sh` passed twice in a row with 93 + 43 + 149 package tests and 415 app tests;
+  - `scripts/perf.sh` passed 37 of 37;
+  - the DMG was rebuilt and `verify-dmg` passed (self-check 13 of 13), then `check-cask` and `sign-update`. The cask sha256 is `915a9555…afdb0d3`.
+- **Earlier version of the fix (d49b14a):** the full gate passed twice and performance passed 37 of 37.
+
+**Not verified:** the crash in a running copy of the app, from a real ⌘R then ⌘W on a long document. That needs a hand check.
