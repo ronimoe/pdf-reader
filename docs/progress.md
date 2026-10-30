@@ -488,19 +488,27 @@ PDFSave's file key matched qpdf's for the user and owner passwords of every fixt
 
 **PR #20, a crash closing a window right after rotating:**
 - **What happened:** while PR #19 was being checked, two full test runs crashed the test host inside PDFKit, in `SplitView.layoutRotationAndZoomKeepBothPanesPlaces`. The faulting frame was `-[PDFDocumentView layoutDocumentView]`, a null dereference, from the block `-[PDFDocumentView didRotatePageNotification:]` queues on the main queue.
-- **Cause, established by experiment:**
-  - A page rotation queues one relayout block per view per page. Each block retains PDFKit's inner document view but not the `PDFView`, so if the `PDFView` is freed first, the relayout crashes.
-  - Closing the document is harmless while the views stay alive.
+- **Established by experiment:**
+  - A page rotation queues one relayout per view per page, and they all run on the main queue's next pass. That was about 3 ms in a standalone probe with a 23-page document.
+  - The crash needs the reader's views to be freed before that pass. In the test, closing the document while keeping the views alive never crashed.
   - A rotation on another `PDFDocument`, such as the thumbnail renderer's copy, doesn't reach the view.
-- **How the app could hit it:** the queued relayouts normally run within about 3 ms. But AppKit takes events that are already waiting before it drains the main queue, so a ⌘W typed during a slow rotation can free the views first.
-- **Fix:** `ReaderPDFView.outliveQueuedPDFKitWork()` keeps a view alive until the main queue has run what is already on it (two hops). It is called when a pane closes, when the document closes and when the window closes.
-- **Test:** `SplitView.closingInTheSameTurnAsARotationIsSafe` replays the original test's sequence and frees the window inside an autorelease pool. It crashed with the same stack without the fix.
+- **How the app could hit it (not observed):** AppKit hands out events that are already waiting before it drains the main queue. So a ⌘W typed during a slow rotation could probably free the window's views first.
+- **Fix:** `ReaderPDFView.outliveQueuedPDFKitWork()` queues one block that keeps the view alive until the relayouts already on the main queue have run.
+  - It is called for every pane in `windowWillClose`, which closing the document also reaches.
+  - Closing a split pane or a link preview also calls it, as a precaution. In the tests AppKit kept those views alive past the main queue's next pass, so the crash couldn't be reproduced there.
+- **Test:** `SplitView.closingTheWindowInTheSameTurnAsARotationIsSafe` runs the original test's layout and rotation steps, then closes the window inside an autorelease pool. Without the call in `windowWillClose` it crashed with the same stack. A regression shows up as a test-host crash rather than a failed expectation.
+- **Review:** one round, by the code-reviewer.
+  - **Fixed:**
+    - the link preview's view was missing from the fix;
+    - the separate call in `documentWillClose` duplicated the window close, so it was removed;
+    - a second queue hop had no evidence, so it was dropped;
+    - an unneeded `nonisolated(unsafe)` was removed;
+    - the comment now matches what was shown.
+  - **Checked against mutants:** removing the window-close call crashed the test, so the test catches it. Removing the split-pane or preview call didn't, which is why those two are labelled as precautions.
 
 **Verified:**
 - **Before the fix:** the original test crashed within 5 repeats.
-- **With the fix:**
-  - the original test alone passed 50 repeats in a row;
-  - the original and the new test together passed 20 repeats;
-  - the full gate results are in PR #20.
+- **With the final fix:** the original and the new test together passed 25 repeats in a row. The full gate results are in PR #20.
+- **Earlier version of the fix (d49b14a):** the full gate passed twice and performance passed 37 of 37.
 
-**Not verified:** the crash itself in a running copy of the app, from a real ⌘R then ⌘W. That needs a hand check.
+**Not verified:** the crash in a running copy of the app, from a real ⌘R then ⌘W on a long document. That needs a hand check.

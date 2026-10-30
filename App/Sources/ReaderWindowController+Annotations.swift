@@ -339,7 +339,6 @@ extension ReaderWindowController {
     func documentDidSaveCopy(to url: URL) {}
 
     func documentWillClose(discardingAnnotations: Bool) {
-        for pane in panes { pane.view.outliveQueuedPDFKitWork() }
         // Closing with unsaved annotations only happens after Don't Save. A kept journal stays.
         if discardingAnnotations, let storedDocumentID { journal?.remove(storedDocumentID) }
     }
