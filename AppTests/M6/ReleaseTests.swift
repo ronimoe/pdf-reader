@@ -163,7 +163,8 @@ struct ReleaseTests {
         let notices = try #require(AppResources.text("Acknowledgements.txt"))
         // Sparkle's MIT licence and copyright notice, and those of the code it bundles.
         for needle in ["Sparkle 2.10.1", "Copyright (c) 2006-2013 Andy Matuschak.", "Permission is hereby granted, free of charge",
-                       "bsdiff", "sais-lite", "orlp/ed25519", "SUSignatureVerifier"] {
+                       "bsdiff", "sais-lite", "orlp/ed25519", "SUSignatureVerifier",
+                       "logo and app icon are not covered by the GPL"] {
             #expect(notices.contains(needle), "missing: \(needle)")
         }
         let limitations = try #require(AppResources.text("known-limitations.md"))

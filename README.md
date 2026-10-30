@@ -116,4 +116,4 @@ Contributions are welcome under the project's licence.
 
 ## License
 
-[GPL-3.0](LICENSE). Lectern includes [Sparkle](https://sparkle-project.org) (MIT) for its opt-in update checks; the app shows both licences under **Help ▸ Licence** and **Help ▸ Acknowledgements**.
+[GPL-3.0](LICENSE), except the Lectern logo and app icon, which forks must replace with their own ([`design/logo/LICENSE.md`](design/logo/LICENSE.md)). Lectern includes [Sparkle](https://sparkle-project.org) (MIT) for its opt-in update checks; the app shows both licences under **Help ▸ Licence** and **Help ▸ Acknowledgements**.

@@ -21,6 +21,7 @@ Answers to the open items in [spec-review.md](spec-review.md). Each one amends o
 | B9 | Rotation | 2026-10-29 |
 | — | License: GPL-3.0 | 2026-10-28 |
 | — | Product name: Lectern | 2026-10-30 |
+| — | Logo licence: kept out of the GPL | 2026-10-30 |
 
 ---
 
@@ -227,6 +228,7 @@ The app watches each open file and reacts to changes:
 
 - The product is called **Lectern**, with bundle ID `io.github.ronimoe.Lectern`. This was the working name since M1, so storage paths, the Keychain service, the Sparkle feed and the cask already use it.
 - The app icon is the maintainer's folded-"L" logo (`design/logo/`).
+- **Logo licence (2026-10-30):** the logo and app icon are kept out of the GPL. They may be redistributed unchanged with Lectern and used to refer to it, but forks must use their own. The terms are in `design/logo/LICENSE.md`, and the app's Acknowledgements say so.
 
 ---
 
