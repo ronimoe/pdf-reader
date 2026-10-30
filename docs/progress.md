@@ -508,7 +508,11 @@ PDFSave's file key matched qpdf's for the user and owner passwords of every fixt
 
 **Verified:**
 - **Before the fix:** the original test crashed within 5 repeats.
-- **With the final fix:** the original and the new test together passed 25 repeats in a row. The full gate results are in PR #20.
+- **With the final fix:**
+  - the original and the new test together passed 25 repeats in a row;
+  - on `8565c76`, `./scripts/test.sh` passed twice in a row with 93 + 43 + 149 package tests and 415 app tests;
+  - `scripts/perf.sh` passed 37 of 37;
+  - the DMG was rebuilt and `verify-dmg` passed (self-check 13 of 13), then `check-cask` and `sign-update`. The cask sha256 is `915a9555…afdb0d3`.
 - **Earlier version of the fix (d49b14a):** the full gate passed twice and performance passed 37 of 37.
 
 **Not verified:** the crash in a running copy of the app, from a real ⌘R then ⌘W on a long document. That needs a hand check.
