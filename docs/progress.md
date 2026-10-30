@@ -413,3 +413,71 @@ It couldn't reproduce either intermittent hang. To prevent them anyway:
 - The 0.73 s main-thread save on the 3,270-page manual. It is documented and wasn't moved off the main thread.
 - The sandbox read probe. It was dropped from the self-check and is now a manual check.
 - Every manual check in `docs/release-checklist.md` §5.
+
+## After M6: small changes (PRs #15, #16, #17)
+
+- **#15:** `known-limitations.md` now says Check for Updates goes online even when automatic checks are off.
+- **#16:** the app icon, made from your logo.
+  - `App/AppIcon.icon` is an Icon Composer document whose one full-bleed layer has Liquid Glass off. macOS derives the dark, tinted and clear appearances.
+  - `design/logo/` holds the source file and a script that rebuilds the artwork byte for byte.
+  - `AppIconTests` checks that the icon is in the bundle.
+  - The logo's licence is still open.
+- **#17:** the product name Lectern is decided (2026-10-30). The placeholder notes are removed.
+
+## M7: Annotations in encrypted PDFs (branch `m7-encrypted-save`, PR #18)
+
+You chose on 2026-10-30 to support this before 1.0. It amends B6: the owner password now also allows annotating and saving.
+
+**Landed**
+- **Supported encryption:** the Standard security handler.
+  - R2 and R3 use RC4.
+  - R4 uses `/V2`, `/AESV2` or `/Identity` crypt filters, with `StmF` and `StrF` allowed to differ, and supports `EncryptMetadata false`.
+  - R6 uses AES-256.
+  - The file keeps its own encryption. `/Encrypt` and `/ID` are unchanged, and the original bytes remain a prefix of the saved file.
+- **Passwords:** PDFSave authenticates the password itself: the session password as the user password, then as the owner password, then the empty password. It never writes with a key it hasn't authenticated.
+- **Reading:** the parser decrypts strings, streams and object streams, so the matcher and the M6 page filter see real annotations in encrypted files.
+- **Writing:** each new or rewritten object is encrypted with its own key. Data from an existing object is decrypted and then re-encrypted, never copied across as ciphertext.
+- **Two read-back checks after every save:**
+  - `SavedFileCheck`, through PDFSave's own decryption.
+  - An independent check in PDFKit, unlocked with the session password, that compares each added or edited annotation's subtype and `/Contents`.
+- **Crash journal:** for encrypted documents it is sealed with AES-GCM, under an HKDF key derived from the file key and salted with a digest of `/O` and `/U`. It restores only after the document is unlocked, and a journal that can't be opened is kept.
+- **`DocumentKey`:** an encrypted file without `/ID` is now keyed by its `/O` and `/U` digest, so its Keychain entry and journal survive a save.
+- **Still refused, with a message:** R5, the public-key handler, custom crypt filters, and any password that can't be authenticated.
+- **Unsupported-handler notice:** a file using a handler Lectern can't decrypt now shows a quiet notice when it opens, because PDFKit would show blank pages.
+- **Undo after a save:** the writer gets each annotation's net change. Before this, commenting on a saved highlight, saving, undoing both steps and saving again failed. That bug predates M7.
+- **Test gate:** `scripts/test.sh` fetches the checksum-pinned downloaded PDFs first. A missing fetched file now fails only its own test cases.
+
+**Oracle:** for every supported variant, the same edits were made on a decrypted twin (`qpdf --decrypt`) and on the encrypted file. Once qpdf decrypted the output, the annotation objects were identical. The output also passed:
+- `qpdf --check`;
+- MuPDF, pdf.js and PDFKit, each opening it with the password. Poppler was also checked except on the hand-built identity-strings file, which it can't read even unmodified.
+
+PDFSave's file key matched qpdf's for the user and owner passwords of every fixture. Files encrypted by macOS itself (CoreGraphics and PDFKit) are read and saved into.
+
+**Verified (coordinator's run on `a96b6f4`):** `./scripts/test.sh` passed with 93 + 43 + 149 package tests and 414 app tests. `scripts/perf.sh` passed 37 of 37; saving one highlight into the 3,270-page manual took 0.81 s. The agent also passed `./scripts/test.sh` twice in a row, and `verify-dmg` (self-check 13 of 13) and `check-cask` passed on the rebuilt DMG.
+
+**Review:** one round by the code-reviewer, with mutation testing.
+- **No blockers or majors.**
+- **Minor (6), all fixed:**
+  - the owner-key comment wrongly cited pdf.js; a 56-bit fixture now covers owner-key derivation;
+  - the journal key wasn't stable for encrypted files without `/ID`;
+  - three safety checks had no test that could fail;
+  - re-encrypting page dictionaries and `/Annots` was untested;
+  - the app's read-back used the same crypto code as the writer;
+  - the corpus download could hang for a long time.
+- **Nits (3), all fixed:**
+  - short AES strings decrypted to empty instead of being refused;
+  - the unsupported-handler message used certificate wording for every handler;
+  - a writer check couldn't fail.
+- **Mutants:** every surviving mutant (M1, M2, M4, M7, M19b) is now killed, and M5 is also caught in an app test.
+
+**Your decisions:**
+- **Non-ASCII passwords** stay a known limitation: PDFKit on macOS 26 rejects them.
+- **macOS's own 40-bit encrypted files** open only with the user password. That's an Apple defect affecting every reader, so there's nothing to do.
+
+**Not verified**
+- An encrypted saved file opening in Preview and Acrobat Reader with its password. This is a hand check in the release checklist §5.
+- Encrypted files made by Preview itself. Only CoreGraphics and PDFKit output generated in the tests was checked.
+- An encrypted save under the sandbox, on a file from your own folders.
+- A sealed journal restored after a real crash and relaunch.
+- Key lengths other than 40, 56 and 128 bits.
+- The unsupported-handler notice on screen.
