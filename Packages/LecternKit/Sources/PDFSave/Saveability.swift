@@ -22,8 +22,9 @@ public enum CopyOnlyReason: String, Sendable, Equatable, Hashable, Codable, Case
 
 /// Why a document can't be saved with annotations at all, not even as a copy.
 public enum UnsupportedReason: Sendable, Equatable, Hashable {
-    /// Encrypted files can't be saved with annotations in v1 (architecture §4.3).
-    case encrypted
+    /// Encrypted in a way the writer doesn't handle (R5, a public-key or custom handler, an
+    /// unknown crypt filter), or no password Lectern holds authenticates (architecture §4.3).
+    case encrypted(EncryptionProblem)
     /// The structure can't be trusted; the writer never repairs.
     case malformed(String)
     /// Valid, but uses structure the writer deliberately doesn't handle (data before `%PDF-`,
@@ -40,10 +41,11 @@ public enum Saveability: Sendable, Equatable, Hashable {
 
     /// Checks `data`: parses the cross-reference chain and page tree, reads every page's
     /// annotations, and looks for signatures, `/Perms` and encryption. `readOnlyLocation` comes
-    /// from the app (sandbox access, locked file, read-only volume).
-    public static func evaluate(_ data: Data, readOnlyLocation: Bool = false) -> Saveability {
+    /// from the app (sandbox access, locked file, read-only volume). An encrypted file is read with
+    /// `password`, or the empty password (`PDFSaveDocument.init(data:password:)`).
+    public static func evaluate(_ data: Data, readOnlyLocation: Bool = false, password: String? = nil) -> Saveability {
         do throws(PDFSaveError) {
-            let doc = try PDFSaveDocument(data: data)
+            let doc = try PDFSaveDocument(data: data, password: password)
             return try doc.saveability(readOnlyLocation: readOnlyLocation)
         } catch {
             return .unsupported(UnsupportedReason(error))
@@ -54,7 +56,7 @@ public enum Saveability: Sendable, Equatable, Hashable {
 extension UnsupportedReason {
     init(_ error: PDFSaveError) {
         switch error {
-        case .encrypted: self = .encrypted
+        case .encrypted(let problem): self = .encrypted(problem)
         case .unsupported(let why): self = .unsupportedStructure(why)
         case .malformed(let why): self = .malformed(why)
         default: self = .malformed("\(error)")

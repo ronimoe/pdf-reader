@@ -55,16 +55,25 @@ enum Tools {
 /// One corpus scenario: an input file and the changes the writer applies to it.
 struct CorpusCase: Sendable, CustomTestStringConvertible {
     let name: String
-    /// A path under Tests/Corpus/public, or "@<case>" to start from another case's output (a second save).
+    /// A path under Tests/Corpus/public, "@<case>" to start from another case's output (a second
+    /// save), or "~<case>" for the plaintext twin of an encrypted case's input (`qpdf --decrypt`).
     let input: String
     /// What `Saveability.evaluate` must say about the input. `copyOnly` cases are saved with
     /// `saveCopy`, and `saveInPlace` must refuse them; `unsupported` ones must fail to save at all.
     var saveability: Saveability = .inPlace
     var appearanceStreams = true
+    /// The password PDFSave and the external tools open an encrypted input with (nil: none).
+    var password: String?
+    /// The password PDFKit unlocks it with, when that differs: PDFKit can't unlock a non-ASCII
+    /// password (EncryptionTests), so those files use the owner password there.
+    var pdfKitPassword: String?
     let changes: @Sendable (PDFSaveDocument, PDFDocument) throws -> [AnnotationChange]
 
     var testDescription: String { name }
     var isRefused: Bool { if case .unsupported = saveability { true } else { false } }
+    /// The encrypted case this one is the plaintext twin of (the strong oracle, CorpusTests).
+    var twinOf: String? { name.hasSuffix(".twin") ? String(name.dropLast(".twin".count)) : nil }
+    var isTwin: Bool { twinOf != nil }
 }
 
 /// What a render probe looks for inside `rect`.
@@ -90,6 +99,9 @@ struct CorpusOutcome: Sendable {
     var pdfKitRemoved: [(page: Int, key: String)] = []
     var pdfKitAdded: [(page: Int, key: String)] = []
     var probes: [(page: Int, rect: PDFRect, kind: ProbeKind)] = []
+    /// Why the case couldn't run at all (its input file is missing). Only this case fails then;
+    /// the others still run.
+    var problem: String?
 }
 
 enum Corpus {
@@ -169,9 +181,58 @@ enum Corpus {
 
     /// Every case. Files under `fetched/` exist only after `scripts/corpus/bootstrap`; without them
     /// their cases are left out, unless tools are required (`scripts/test.sh`), where a missing
-    /// file fails the run.
+    /// file fails the run. The plaintext twins need qpdf, and are left out without it unless tools
+    /// are required.
     static let cases: [CorpusCase] = allCases.filter { c in
-        !c.input.hasPrefix("fetched/") || Tools.required || FileManager.default.fileExists(atPath: Repo.corpus.appending(path: c.input).path)
+        if c.isTwin || c.input.hasPrefix("@") && allCases.first(where: { "@" + $0.name == c.input })?.isTwin == true {
+            return Tools.gate(Tools.has("qpdf"))
+        }
+        return !c.input.hasPrefix("fetched/") || Tools.required || FileManager.default.fileExists(atPath: Repo.corpus.appending(path: c.input).path)
+    }
+
+    /// Opens a case's input or output in PDFKit, unlocked.
+    static func pdfKit(_ c: CorpusCase, data: Data) throws -> PDFDocument {
+        guard let pk = PDFDocument(data: data) else { throw CorpusFailure("\(c.name): PDFKit can't open it") }
+        if pk.isLocked, !pk.unlock(withPassword: c.pdfKitPassword ?? c.password ?? "") {
+            throw CorpusFailure("\(c.name): PDFKit can't unlock it")
+        }
+        return pk
+    }
+
+    /// A fixed /NM, so an encrypted case and its plaintext twin add identical annotations.
+    static func name(_ n: Int) -> String { String(format: "lectern-00000000-0000-4000-8000-%012d", n) }
+
+    /// An encrypted file (EncryptedFixture), with the same edits on its plaintext twin.
+    static func encrypted(_ fixture: String, password: String? = nil, pdfKitPassword: String? = nil,
+                          saveability: Saveability = .inPlace,
+                          _ changes: @escaping @Sendable (PDFSaveDocument, PDFDocument) throws -> [AnnotationChange]) -> [CorpusCase] {
+        [CorpusCase(name: fixture, input: "\(fixture).pdf", saveability: saveability, password: password,
+                    pdfKitPassword: pdfKitPassword, changes: changes),
+         CorpusCase(name: "\(fixture).twin", input: "~\(fixture)", saveability: saveability, changes: changes)]
+    }
+
+    /// The usual encrypted-file edits: a highlight, a note on the last page, and an underline.
+    static func standardEdits(_ label: String) -> @Sendable (PDFSaveDocument, PDFDocument) throws -> [AnnotationChange] {
+        { _, pk in
+            let last = pk.pageCount - 1
+            let highlighted = try quads(pk, page: 0)
+            // The hand-assembled file's text runs together into fewer lines than reportlab's.
+            let underlined = try (try? lineQuad(pk, page: 0, line: 3, avoiding: highlighted)) ?? lineQuad(pk, page: 0, line: 0, avoiding: highlighted)
+            return [.addMarkup(NewMarkup(kind: .highlight, pageIndex: 0, quads: highlighted, contents: "Highlight on \(label) ✓ ünïcode",
+                                         author: author, name: name(1))),
+                    .addNote(NewNote(pageIndex: last, origin: PDFPoint(x: 500, y: 700), contents: "Note on \(label)", author: author, name: name(2))),
+                    .addMarkup(NewMarkup(kind: .underline, pageIndex: 0, quads: underlined,
+                                         color: red, contents: nil, name: name(3)))]
+        }
+    }
+
+    /// A second save on an encrypted output: edit, recolour and delete what the first one added.
+    static let secondEdits: @Sendable (PDFSaveDocument, PDFDocument) throws -> [AnnotationChange] = { doc, pk in
+        [.editContents(try find(doc, page: 0, subtype: "Highlight", lectern: true), "Edited on the second save"),
+         .editColor(try find(doc, page: 0, subtype: "Underline", lectern: true), green),
+         .delete(try find(doc, page: pk.pageCount - 1, subtype: "Text", lectern: true)),
+         .addMarkup(NewMarkup(kind: .strikeOut, pageIndex: 0, quads: try quads(pk, page: 0, phrase: "lazy dog"), color: red,
+                              contents: "Added on the second save", name: name(4)))]
     }
 
     static let allCases: [CorpusCase] = [
@@ -268,10 +329,48 @@ enum Corpus {
              try markup(.underline, pk, page: 2, line: 3, "Underline on the second save")]
         },
 
-        CorpusCase(name: "encrypted-aes256", input: "encrypted-aes256.pdf", saveability: .unsupported(.encrypted)) { _, _ in [] },
-        CorpusCase(name: "encrypted-aes256-owner-only", input: "encrypted-aes256-owner-only.pdf",
-                   saveability: .unsupported(.encrypted)) { _, _ in [] },
-    ]
+    ] + encryptedCases
+
+    /// Encrypted files (M7). Each supported variant has a plaintext twin with the same edits.
+    static let encryptedCases: [CorpusCase] =
+        encrypted("encrypted-r2-rc4-40", password: "user-pass", standardEdits("R2 RC4-40"))
+        + encrypted("encrypted-r3-rc4-annotated") { doc, pk in
+            // Annotations from another app (MuPDF), edited through their decrypted descriptors.
+            [.addMarkup(NewMarkup(kind: .highlight, pageIndex: 0, quads: try quads(pk, page: 0), contents: "Highlight among MuPDF annotations",
+                                  author: author, name: name(1))),
+             .editContents(try find(doc, page: 0, subtype: "Square"), "Square edited by Lectern"),
+             .editColor(try find(doc, page: 0, subtype: "Highlight", lectern: false), green),
+             .delete(try find(doc, page: 0, subtype: "Text"))]
+        }
+        // Page 1's /Annots is direct, holding an inline note, and the page has strings of its own
+        // (/PieceInfo): the highlight rewrites the page, which must be encrypted again.
+        + encrypted("encrypted-r3-rc4-56", password: "user-pass", standardEdits("R3 RC4-56"))
+        + encrypted("encrypted-r4-rc4", password: "pässwörd", pdfKitPassword: "owner-pass", standardEdits("R4 RC4"))
+        + encrypted("encrypted-r4-aes128-objstm", password: "user-pass", standardEdits("R4 AES-128"))
+        + encrypted("encrypted-r4-cleartext-metadata", standardEdits("R4 cleartext metadata"))
+        + encrypted("encrypted-r4-identity-strings") { doc, pk in
+            try standardEdits("R4 identity strings")(doc, pk) + [.editContents(try find(doc, page: 0, subtype: "Text", lectern: false), "Edited in the clear")]
+        }
+        + encrypted("encrypted-aes256", password: "user-pass", standardEdits("R6"))
+        // Its /P forbids annotating, so the app only saves it after the owner password (B6).
+        + encrypted("encrypted-aes256-owner-only", password: "owner-pass", standardEdits("R6 with the owner password"))
+        + encrypted("encrypted-r6-objstm-restricted", standardEdits("R6 restricted"))
+        + encrypted("encrypted-r6-unicode", password: "Grüße-ключ", pdfKitPassword: "owner-pass", standardEdits("R6 unicode password"))
+        + encrypted("encrypted-signed", saveability: .copyOnly([.signed]), standardEdits("an encrypted signed file"))
+        + [
+            CorpusCase(name: "encrypted-r4-aes128-objstm-second-save", input: "@encrypted-r4-aes128-objstm", password: "user-pass",
+                       changes: secondEdits),
+            CorpusCase(name: "encrypted-r4-aes128-objstm-second-save.twin", input: "@encrypted-r4-aes128-objstm.twin", changes: secondEdits),
+            CorpusCase(name: "encrypted-aes256-second-save", input: "@encrypted-aes256", password: "user-pass", changes: secondEdits),
+            CorpusCase(name: "encrypted-aes256-second-save.twin", input: "@encrypted-aes256.twin", changes: secondEdits),
+            CorpusCase(name: "encrypted-r2-rc4-40-second-save", input: "@encrypted-r2-rc4-40", password: "user-pass", changes: secondEdits),
+            CorpusCase(name: "encrypted-r2-rc4-40-second-save.twin", input: "@encrypted-r2-rc4-40.twin", changes: secondEdits),
+            // Still refused.
+            CorpusCase(name: "encrypted-r5", input: "encrypted-r5.pdf", saveability: .unsupported(.encrypted(.revision(version: 5, revision: 5))),
+                       password: "user-pass") { _, _ in [] },
+            CorpusCase(name: "encrypted-pubkey", input: "encrypted-pubkey.pdf",
+                       saveability: .unsupported(.encrypted(.securityHandler("Adobe.PubSec")))) { _, _ in [] },
+        ]
 
     /// Runs every case once, in order, and writes the outputs plus a manifest for scripts/corpus/verify.
     static let run: Result<[CorpusOutcome], CorpusFailure> = {
@@ -288,85 +387,108 @@ enum Corpus {
         try fm.createDirectory(at: Repo.outputDirectory, withIntermediateDirectories: true)
         var outcomes: [CorpusOutcome] = []
         var outputs: [String: URL] = [:]
-        for c in cases {
-            let inputURL: URL
-            if c.input.hasPrefix("@") {
-                guard let previous = outputs[String(c.input.dropFirst())] else { throw CorpusFailure("\(c.name): base output missing") }
-                inputURL = previous
-            } else {
-                inputURL = Repo.corpus.appending(path: c.input)
-            }
-            let original = try Data(contentsOf: inputURL)
-            var changes: [AnnotationChange] = []
-            var outcome = CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: nil, result: nil, error: nil,
-                                        changes: [], removedInfo: [], editedInfo: [])
-            var removedInfo: [AnnotationDescriptor] = []
-            var editedInfo: [AnnotationDescriptor] = []
-            if !c.isRefused {
-                let doc = try PDFSaveDocument(data: original)
-                guard let pk = PDFDocument(data: original) else { throw CorpusFailure("\(c.name): PDFKit can't open input") }
-                changes = try c.changes(doc, pk)
-                let all = try doc.annotations()
-                // PDFKit reports a /Popup with its parent's Contents, so key popups that way.
-                func shown(_ info: AnnotationDescriptor) -> String {
-                    let parent = all.first { $0.popup != nil && $0.popup == info.ref }
-                    return Corpus.key(info.subtype, info.subtype == "Popup" ? parent?.contents : info.contents)
+        // One case at a time: a case that can't run (a missing input, a twin qpdf can't make)
+        // becomes that case's failure, and the others still run.
+        func runCase(_ c: CorpusCase) throws {
+                let inputURL: URL
+                if c.input.hasPrefix("@") {
+                    guard let previous = outputs[String(c.input.dropFirst())] else { throw CorpusFailure("\(c.name): base output missing") }
+                    inputURL = previous
+                } else if c.input.hasPrefix("~") {
+                    // The plaintext twin: qpdf's decryption of the encrypted case's input.
+                    let base = String(c.input.dropFirst())
+                    guard let encrypted = cases.first(where: { $0.name == base }) else { throw CorpusFailure("\(c.name): no case \(base)") }
+                    inputURL = Repo.outputDirectory.appending(path: "\(base).twin-input.pdf")
+                    try Qpdf.run(["--decrypt", Repo.corpus.appending(path: encrypted.input).path, inputURL.path], password: encrypted.password)
+                } else {
+                    inputURL = Repo.corpus.appending(path: c.input)
                 }
-                for change in changes {
-                    switch change {
-                    case .delete(let ref):
-                        // The writer also drops the popup and replies; mirror that for expectations.
-                        let target = all.filter { $0.ref == ref }
-                        let replies = all.filter { $0.inReplyTo == ref }
-                        let popups = all.filter { info in info.subtype == "Popup" && (target + replies).contains { $0.popup != nil && $0.popup == info.ref } }
-                        removedInfo += target + replies + popups
-                        outcome.pdfKitRemoved += (target + replies + popups).map { (page: $0.pageIndex, key: shown($0)) }
-                    case .editContents(let ref, let text):
-                        let target = all.filter { $0.ref == ref }
-                        editedInfo += target
-                        for info in target {
-                            outcome.pdfKitRemoved.append((page: info.pageIndex, key: shown(info)))
-                            outcome.pdfKitAdded.append((page: info.pageIndex, key: Corpus.key(info.subtype, text)))
-                            if let popup = all.first(where: { info.popup != nil && $0.ref == info.popup }) {
-                                outcome.pdfKitRemoved.append((page: popup.pageIndex, key: shown(popup)))
-                                outcome.pdfKitAdded.append((page: popup.pageIndex, key: Corpus.key("Popup", text)))
+                guard let original = try? Data(contentsOf: inputURL) else {
+                    let hint = c.input.hasPrefix("fetched/") ? "; run scripts/corpus/bootstrap --fetch" : ""
+                    outcomes.append(CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: nil, result: nil, error: nil, changes: [],
+                                                  removedInfo: [], editedInfo: [], problem: "input \(c.input) is missing\(hint)"))
+                    return
+                }
+                var changes: [AnnotationChange] = []
+                var outcome = CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: nil, result: nil, error: nil,
+                                            changes: [], removedInfo: [], editedInfo: [])
+                var removedInfo: [AnnotationDescriptor] = []
+                var editedInfo: [AnnotationDescriptor] = []
+                if !c.isRefused {
+                    let doc = try PDFSaveDocument(data: original, password: c.password)
+                    let pk = try pdfKit(c, data: original)
+                    changes = try c.changes(doc, pk)
+                    let all = try doc.annotations()
+                    // PDFKit reports a /Popup with its parent's Contents, so key popups that way.
+                    func shown(_ info: AnnotationDescriptor) -> String {
+                        let parent = all.first { $0.popup != nil && $0.popup == info.ref }
+                        return Corpus.key(info.subtype, info.subtype == "Popup" ? parent?.contents : info.contents)
+                    }
+                    for change in changes {
+                        switch change {
+                        case .delete(let ref):
+                            // The writer also drops the popup and replies; mirror that for expectations.
+                            let target = all.filter { $0.ref == ref }
+                            let replies = all.filter { $0.inReplyTo == ref }
+                            let popups = all.filter { info in info.subtype == "Popup" && (target + replies).contains { $0.popup != nil && $0.popup == info.ref } }
+                            removedInfo += target + replies + popups
+                            outcome.pdfKitRemoved += (target + replies + popups).map { (page: $0.pageIndex, key: shown($0)) }
+                        case .editContents(let ref, let text):
+                            let target = all.filter { $0.ref == ref }
+                            editedInfo += target
+                            for info in target {
+                                outcome.pdfKitRemoved.append((page: info.pageIndex, key: shown(info)))
+                                outcome.pdfKitAdded.append((page: info.pageIndex, key: Corpus.key(info.subtype, text)))
+                                if let popup = all.first(where: { info.popup != nil && $0.ref == info.popup }) {
+                                    outcome.pdfKitRemoved.append((page: popup.pageIndex, key: shown(popup)))
+                                    outcome.pdfKitAdded.append((page: popup.pageIndex, key: Corpus.key("Popup", text)))
+                                }
                             }
+                        case .editColor(let ref, _):
+                            editedInfo += all.filter { $0.ref == ref }
+                        case .addMarkup(let m):
+                            outcome.pdfKitAdded.append((page: m.pageIndex, key: Corpus.key(m.kind.subtype, m.contents)))
+                            if let q = m.quads.first {
+                                outcome.probes.append((page: m.pageIndex, rect: q.bounds, kind: m.kind == .highlight ? .fill : .line))
+                            }
+                        case .addNote(let n):
+                            outcome.pdfKitAdded.append((page: n.pageIndex, key: Corpus.key("Text", n.contents)))
                         }
-                    case .editColor(let ref, _):
-                        editedInfo += all.filter { $0.ref == ref }
-                    case .addMarkup(let m):
-                        outcome.pdfKitAdded.append((page: m.pageIndex, key: Corpus.key(m.kind.subtype, m.contents)))
-                        if let q = m.quads.first {
-                            outcome.probes.append((page: m.pageIndex, rect: q.bounds, kind: m.kind == .highlight ? .fill : .line))
-                        }
-                    case .addNote(let n):
-                        outcome.pdfKitAdded.append((page: n.pageIndex, key: Corpus.key("Text", n.contents)))
                     }
                 }
-            }
-            outcome = CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: nil, result: nil, error: nil, changes: changes,
-                                    removedInfo: removedInfo, editedInfo: editedInfo, pdfKitRemoved: outcome.pdfKitRemoved,
-                                    pdfKitAdded: outcome.pdfKitAdded, probes: outcome.probes)
-            let writer = IncrementalWriter(options: .init(appearanceStreams: c.appearanceStreams))
-            let saved: SaveResult
-            do throws(PDFSaveError) {
-                if case .copyOnly = c.saveability {
-                    saved = try writer.saveCopy(original: original, changes: changes)
-                } else {
-                    saved = try writer.saveInPlace(original: original, changes: changes)
+                outcome = CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: nil, result: nil, error: nil, changes: changes,
+                                        removedInfo: removedInfo, editedInfo: editedInfo, pdfKitRemoved: outcome.pdfKitRemoved,
+                                        pdfKitAdded: outcome.pdfKitAdded, probes: outcome.probes)
+                let writer = IncrementalWriter(options: .init(appearanceStreams: c.appearanceStreams))
+                let saved: SaveResult
+                do throws(PDFSaveError) {
+                    if case .copyOnly = c.saveability {
+                        saved = try writer.saveCopy(original: original, changes: changes, password: c.password)
+                    } else {
+                        saved = try writer.saveInPlace(original: original, changes: changes, password: c.password)
+                    }
+                    // The app's read-back check, with the same password.
+                    try SavedFileCheck.verify(saved.data, original: original, against: saved, password: c.password)
+                } catch {
+                    outcomes.append(CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: nil, result: nil, error: error,
+                                                  changes: changes, removedInfo: removedInfo, editedInfo: editedInfo))
+                    return
                 }
+                let out = Repo.outputDirectory.appending(path: "\(c.name).pdf")
+                try saved.data.write(to: out)
+                outputs[c.name] = out
+                outcomes.append(CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: out, result: saved, error: nil,
+                                              changes: changes, removedInfo: removedInfo, editedInfo: editedInfo,
+                                              pdfKitRemoved: outcome.pdfKitRemoved, pdfKitAdded: outcome.pdfKitAdded,
+                                              probes: outcome.probes))
+        }
+        for c in cases {
+            do {
+                try runCase(c)
             } catch {
-                outcomes.append(CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: nil, result: nil, error: error,
-                                              changes: changes, removedInfo: removedInfo, editedInfo: editedInfo))
-                continue
+                outcomes.append(CorpusOutcome(testCase: c, inputURL: Repo.corpus.appending(path: c.input), outputURL: nil, result: nil,
+                                              error: nil, changes: [], removedInfo: [], editedInfo: [], problem: "\(error)"))
             }
-            let out = Repo.outputDirectory.appending(path: "\(c.name).pdf")
-            try saved.data.write(to: out)
-            outputs[c.name] = out
-            outcomes.append(CorpusOutcome(testCase: c, inputURL: inputURL, outputURL: out, result: saved, error: nil,
-                                          changes: changes, removedInfo: removedInfo, editedInfo: editedInfo,
-                                          pdfKitRemoved: outcome.pdfKitRemoved, pdfKitAdded: outcome.pdfKitAdded,
-                                          probes: outcome.probes))
         }
         try writeManifest(outcomes)
         return outcomes
@@ -375,10 +497,23 @@ enum Corpus {
     static func writeManifest(_ outcomes: [CorpusOutcome]) throws {
         func ref(_ r: ObjectRef) -> String { "\(r.number) \(r.generation)" }
         var cases: [[String: Any]] = []
-        for o in outcomes {
+        for o in outcomes where o.problem == nil {
             var entry: [String: Any] = ["name": o.testCase.name, "input": o.inputURL.path]
             entry["output"] = o.outputURL?.path ?? NSNull()
-            entry["expectError"] = o.testCase.isRefused ? "encrypted" : NSNull()
+            if case .unsupported(.encrypted(let problem)) = o.testCase.saveability {
+                entry["expectError"] = "\(PDFSaveError.encrypted(problem))"
+            } else {
+                entry["expectError"] = NSNull()
+            }
+            // The external tools' libraries take a password's bytes as given (pikepdf, poppler,
+            // MuPDF), so a non-ASCII one reaches them as UTF-8, not the PDFDocEncoding an R4 file
+            // needs: those files are opened with the (ASCII) owner password there, as in PDFKit.
+            // EncryptionTests checks the non-ASCII user passwords against qpdf's own key.
+            entry["password"] = o.testCase.pdfKitPassword ?? o.testCase.password ?? NSNull()
+            if !o.testCase.isTwin, let twin = outcomes.first(where: { $0.testCase.twinOf == o.testCase.name }) {
+                entry["twinOutput"] = twin.outputURL?.path ?? NSNull()
+            }
+            entry["twin"] = o.testCase.isTwin
             entry["error"] = o.error.map { "\($0)" } ?? NSNull()
             entry["appearanceStreams"] = o.testCase.appearanceStreams
             if let r = o.result {
@@ -414,6 +549,35 @@ enum Corpus {
         }
         let data = try JSONSerialization.data(withJSONObject: ["cases": cases], options: [.prettyPrinted, .sortedKeys])
         try data.write(to: Repo.outputDirectory.appending(path: "manifest.json"))
+    }
+}
+
+enum Qpdf {
+    /// Runs qpdf; exit 0 and 3 (warnings) are success.
+    /// The password goes through a file: Foundation's `Process` decomposes non-ASCII arguments, and
+    /// qpdf would then see other bytes than the password's.
+    static func run(_ arguments: [String], password: String? = nil) throws {
+        guard let qpdf = Tools.path("qpdf") else { throw CorpusFailure("qpdf not installed") }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: qpdf)
+        var arguments = arguments
+        if let password {
+            let file = FileManager.default.temporaryDirectory.appending(path: "lectern-pw-\(UUID().uuidString)")
+            try Data((password + "\n").utf8).write(to: file)
+            arguments.insert("--password-file=\(file.path)", at: 0)
+        }
+        process.arguments = arguments
+        // qpdf reads a non-ASCII password as UTF-8 only under a UTF-8 locale.
+        process.environment = ProcessInfo.processInfo.environment.merging(["LC_ALL": "en_US.UTF-8"]) { $1 }
+        let err = Pipe()
+        process.standardError = err
+        process.standardOutput = Pipe()
+        try process.run()
+        let message = err.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard [0, 3].contains(process.terminationStatus) else {
+            throw CorpusFailure("qpdf \(arguments.joined(separator: " ")): exit \(process.terminationStatus) \(String(decoding: message, as: UTF8.self))")
+        }
     }
 }
 

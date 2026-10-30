@@ -15,7 +15,7 @@ Answers to the open items in [spec-review.md](spec-review.md). Each one amends o
 | B3 | Split view, tabs and windows | 2026-10-29 |
 | B4 | Annotation details | 2026-10-29 |
 | B5 | Distribution channels | 2026-10-28 |
-| B6 | Permissions and passwords | 2026-10-29 |
+| B6 | Permissions and passwords | 2026-10-29 (amended 2026-10-30: annotating encrypted files) |
 | B7 | Files that change on disk | 2026-10-29 |
 | B8 | Search behaviour | 2026-10-29 |
 | B9 | Rotation | 2026-10-29 |
@@ -176,6 +176,12 @@ Together they give all four combinations.
 - The app respects owner-password restrictions on copying, printing and annotating.
 - A blocked action is never silently ignored. The app tells the user that the document doesn't allow it.
 - Entering the owner password removes the restrictions for that session.
+- *(Amended 2026-10-30, the user's decision.)* **That includes annotating and saving.** Annotations can be saved into encrypted documents before 1.0:
+  - **Supported:** the Standard (password) security handler at revisions 2 and 3 (RC4, 40 to 128 bits), revision 4 with the `/V2` (RC4), `/AESV2` (AES-128) or `/Identity` crypt filters (strings and streams may differ, and `/EncryptMetadata false` is honoured), and revision 6 with `/AESV3` (AES-256).
+  - **The file stays encrypted exactly as it was:** the same key, the same `/Encrypt` and the same `/ID`, so the same passwords open it. It is never decrypted and never re-encrypted.
+  - **Still unsupported**, with an explanation and nothing changed: revision 5 (Acrobat 9's withdrawn AES-256), the public-key handler and any other non-Standard handler, custom crypt filters, and any file whose password Lectern can't authenticate itself.
+  - **Unchanged:** a document whose permissions forbid annotating stays blocked until the owner password is entered (PDFKit's `allowsCommenting` is the gate), and signed, certified, Reader-extended and read-only files stay copy-only, encrypted or not.
+  - **The crash journal (A1) of an encrypted document is encrypted too,** and is offered back only once the document is unlocked.
 
 **Passwords**
 - **Never stored by default.** The password prompt has a "Remember in Keychain" checkbox, unchecked by default.

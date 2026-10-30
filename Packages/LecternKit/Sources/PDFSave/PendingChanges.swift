@@ -128,6 +128,24 @@ public struct PendingChanges: Sendable, Equatable, Codable {
 
     /// Everything was saved.
     public mutating func removeAll() { changes.removeAll() }
+
+    /// What the list amounts to, for the writer: each annotation's net change. The list itself
+    /// (and so undo) is left as it is.
+    /// - An edit followed by a delete of the same file annotation is just the delete. (Undoing a
+    ///   comment on a saved highlight, then the highlight itself, records exactly that.)
+    /// - Adds already carry their final state, and an add that was deleted again before a save
+    ///   has already left the list (`setContents(_:ofAddNamed:)`, `removeAdd(named:)`); a delete of an annotation that was
+    ///   in the file stays a delete.
+    public var netChanges: [AnnotationChange] {
+        let deleted = Set(changes.compactMap { change -> ObjectRef? in if case .delete(let ref) = change { ref } else { nil } })
+        guard !deleted.isEmpty else { return changes }
+        return changes.filter { change in
+            switch change {
+            case .editColor(let ref, _), .editContents(let ref, _): !deleted.contains(ref)
+            default: true
+            }
+        }
+    }
 }
 
 extension AnnotationChange {

@@ -34,6 +34,9 @@ public struct IncrementalWriter: Sendable {
         var mutateWritten: (@Sendable (inout [ObjectRef: PDFObject]) -> Void)?
         /// Runs on the complete output before verification.
         var mutateOutput: (@Sendable (inout [UInt8]) -> Void)?
+        /// Encrypts this object with the key of another object number, as a writer that moved
+        /// ciphertext between objects (or derived the key wrongly) would.
+        var encryptWithKeyOf: (@Sendable (ObjectRef) -> ObjectRef?)?
     }
 
     public var options: Options
@@ -43,8 +46,12 @@ public struct IncrementalWriter: Sendable {
     /// Saves for writing back over the original file. Refuses signed, certified and
     /// Reader-extended documents with `.copyOnly`, since those must not be modified in place (A1);
     /// whether the location itself is writable is the app's check (`Saveability`).
-    public func saveInPlace(original: Data, changes: [AnnotationChange]) throws(PDFSaveError) -> SaveResult {
-        try save(original: original, changes: changes, inPlace: true)
+    ///
+    /// An encrypted file is read with `password` (see `PDFSaveDocument.init(data:password:)`), and
+    /// every string and stream the update writes is encrypted with the file's own key. The file's
+    /// encryption never changes: `/Encrypt` and `/ID` stay exactly as they were.
+    public func saveInPlace(original: Data, changes: [AnnotationChange], password: String? = nil) throws(PDFSaveError) -> SaveResult {
+        try save(original: original, changes: changes, inPlace: true, password: password)
     }
 
     /// Saves for writing to a new file (Save a Copy): the original bytes plus the appended
@@ -54,14 +61,15 @@ public struct IncrementalWriter: Sendable {
     /// unchanged. That does not make the copy acceptable to a validator: the annotations are
     /// changes made after signing, which validators report. For a certified document whose DocMDP
     /// permissions (`/P 1` or `/P 2`) forbid annotations, they invalidate the certification, and
-    /// Reader-extended rights are dropped. Encrypted files are still refused (v1).
-    public func saveCopy(original: Data, changes: [AnnotationChange]) throws(PDFSaveError) -> SaveResult {
-        try save(original: original, changes: changes, inPlace: false)
+    /// Reader-extended rights are dropped. An encrypted file stays encrypted with its own key, as
+    /// for `saveInPlace`.
+    public func saveCopy(original: Data, changes: [AnnotationChange], password: String? = nil) throws(PDFSaveError) -> SaveResult {
+        try save(original: original, changes: changes, inPlace: false, password: password)
     }
 
-    func save(original: Data, changes: [AnnotationChange], inPlace: Bool) throws(PDFSaveError) -> SaveResult {
+    func save(original: Data, changes: [AnnotationChange], inPlace: Bool, password: String? = nil) throws(PDFSaveError) -> SaveResult {
         let bytes = [UInt8](original)
-        let doc = try PDFSaveDocument(bytes: bytes)
+        let doc = try PDFSaveDocument(bytes: bytes, password: password)
         if inPlace {
             // Throws .malformed when signatures or /Perms can't be read: never "unsigned" by default.
             let reasons = try doc.copyOnlyReasons()
@@ -364,8 +372,15 @@ private struct Session {
         let ordered = toWrite.keys.sorted()
         for ref in ordered {
             offsets[ref] = original.count + out.count
+            var object = toWrite[ref]!
+            if let security = doc.security {
+                // Every string and stream is encrypted with the key of the object number it is
+                // written as; `written` stays plaintext for the verification below.
+                let keyRef = options.testHooks.encryptWithKeyOf?(ref) ?? ref
+                object = try security.encrypt(object: object, ref: keyRef)
+            }
             out += Array("\(ref.number) \(ref.generation) obj\n".utf8)
-            PDFSerializer.write(toWrite[ref]!, to: &out)
+            PDFSerializer.write(object, to: &out)
             out += Array("\nendobj\n".utf8)
         }
 
@@ -373,10 +388,16 @@ private struct Session {
         let dropped: Set<PDFName> = ["Prev", "XRefStm", "Type", "W", "Index", "Length", "Filter", "DecodeParms",
                                      "F", "FFilter", "FDecodeParms", "DL", "Size", "ID"]
         for entry in doc.trailer.entries where !dropped.contains(entry.key) { trailer[entry.key] = entry.value }
-        let fresh = PDFString(bytes: Self.digest(original.count, out), isHex: true)
-        var firstID = fresh
-        if let ids = doc.trailer["ID"]?.arrayValue, ids.count == 2, let first = ids[0].stringValue { firstID = first }
-        trailer["ID"] = .array([.string(firstID), .string(fresh)])
+        if doc.security != nil {
+            // The key depends on /ID[0], and the encryption never changes: /Encrypt (copied above,
+            // as the same reference) and /ID stay exactly as they were, and no /ID is added.
+            if let ids = doc.trailer["ID"] { trailer["ID"] = ids }
+        } else {
+            let fresh = PDFString(bytes: Self.digest(original.count, out), isHex: true)
+            var firstID = fresh
+            if let ids = doc.trailer["ID"]?.arrayValue, ids.count == 2, let first = ids[0].stringValue { firstID = first }
+            trailer["ID"] = .array([.string(firstID), .string(fresh)])
+        }
         trailer["Prev"] = .integer(doc.startXRef)
 
         let kind = doc.latestXRefKind
@@ -431,10 +452,17 @@ private struct Session {
         var output = original + out
         options.testHooks.mutateOutput?(&output)
         if options.verify { try verify(output: output, originalCount: original.count) }
+        var annotations: [ObjectRef: WrittenAnnotation] = [:]
+        for ref in added.map(\.ref) + edited.map({ (try? existingRef($0.number)) ?? $0 }) {
+            guard let d = written[ref]?.dictionaryValue else { continue }
+            annotations[ref] = WrittenAnnotation(subtype: d["Subtype"]?.nameValue?.string ?? "",
+                                                 name: d["NM"]?.stringValue?.text, contents: d["Contents"]?.stringValue?.text)
+        }
         return SaveResult(
             data: Data(output), originalLength: original.count, xrefKind: kind,
             added: added, rewrittenObjects: rewritten.sorted(),
-            writtenObjects: Set(toWrite.keys).union(session.written.keys).sorted(), removedAnnotations: removed
+            writtenObjects: Set(toWrite.keys).union(session.written.keys).sorted(), removedAnnotations: removed,
+            writtenAnnotations: annotations, isEncrypted: doc.security != nil
         )
     }
 
@@ -455,7 +483,18 @@ private struct Session {
         guard output.count > originalCount, Array(output[0..<originalCount]) == doc.bytes else {
             throw .verificationFailed("original bytes are not a prefix of the output")
         }
-        let reread = try PDFSaveDocument(bytes: output)
+        let reread = try PDFSaveDocument(bytes: output, password: doc.password)
+        // The encryption must be the original's: the new section repeats /Encrypt and /ID exactly
+        // (and a file that encrypted before must still read as encrypted).
+        guard reread.isEncrypted == doc.isEncrypted else {
+            throw .verificationFailed("the output's encryption differs from the original's")
+        }
+        if doc.security != nil {
+            guard reread.sections[0].trailer["Encrypt"] == doc.sections[0].trailer["Encrypt"],
+                  reread.sections[0].trailer["ID"] == doc.trailer["ID"] else {
+                throw .verificationFailed("the new section changed /Encrypt or /ID")
+            }
+        }
         guard reread.sections.count == doc.sections.count + 1,
               reread.sections[0].trailer["Prev"]?.intValue == doc.startXRef else {
             throw .verificationFailed("new section does not chain to the original")

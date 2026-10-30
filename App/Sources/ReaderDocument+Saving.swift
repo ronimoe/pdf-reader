@@ -70,8 +70,10 @@ extension ReaderDocument {
         let data = originalData
         let readOnly = isReadOnlyLocation
         let delay = inspectionDelay
+        // An encrypted file is read with the password that unlocked it (or the empty one).
+        let password = sessionPassword
         let task = Task { [weak self, weak editor] in
-            let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly)
+            let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly, password: password)
             if delay > .zero { try? await Task.sleep(for: delay) }
             guard let self, let editor, editor === self.annotations, editor.original == data else { return }
             editor.load(info)
@@ -219,7 +221,9 @@ extension ReaderDocument {
         willWriteForTesting?()
         guard let editor = annotations else { throw Self.saveError("There is nothing to save.") }
         let original = originalData
-        let changes = editor.pending.changes
+        // Each annotation's net change (an edit then a delete is the delete), so undoing a comment
+        // and then its saved highlight saves; the pending list and undo stay as they are.
+        let changes = editor.pending.netChanges
         if operation != .saveOperation, let destination = saveDestination, let refusal = refusalToSave(to: destination) {
             // Checked again just before the bytes are written: the file may have changed since
             // the save began (another app, or a link made meanwhile).
@@ -236,9 +240,9 @@ extension ReaderDocument {
         do throws(PDFSaveError) {
             switch operation {
             case .saveOperation:
-                if !changes.isEmpty { result = try IncrementalWriter().saveInPlace(original: original, changes: changes) }
+                if !changes.isEmpty { result = try IncrementalWriter().saveInPlace(original: original, changes: changes, password: sessionPassword) }
             case .saveAsOperation, .saveToOperation:
-                if !changes.isEmpty { result = try IncrementalWriter().saveCopy(original: original, changes: changes) }
+                if !changes.isEmpty { result = try IncrementalWriter().saveCopy(original: original, changes: changes, password: sessionPassword) }
             default:
                 throw .unsupported("autosave")
             }
@@ -252,7 +256,10 @@ extension ReaderDocument {
         var descriptors: [AnnotationDescriptor]?
         if let result {
             do throws(PDFSaveError) {
-                descriptors = try SavedFileCheck.verify(written, original: original, against: result)
+                // Read back with the same password, comparing decrypted text, not just counts.
+                descriptors = try SavedFileCheck.verify(written, original: original, against: result, password: sessionPassword)
+                // And once more through PDFKit, which shares none of PDFSave's parsing or crypto.
+                try Self.checkWithPDFKit(written, against: result, descriptors: descriptors ?? [], password: sessionPassword)
             } catch {
                 throw Self.saveError(error)
             }
@@ -291,7 +298,7 @@ extension ReaderDocument {
         resetCachedKey()
         // A Save As rescued a deleted or trashed file: the document is the new file now.
         if written.operation == .saveAsOperation { fileIsBack() }
-        let descriptors = written.descriptors ?? (try? PDFSaveDocument(data: written.data).annotations())
+        let descriptors = written.descriptors ?? (try? PDFSaveDocument(data: written.data, password: sessionPassword).annotations())
         let saveability = editor.saveability ?? .inPlace
         editor.didSave(written.data, descriptors: descriptors ?? [], saveability: saveability, descriptorsAreComplete: descriptors != nil)
         updateChangeCount(.changeCleared)
@@ -299,10 +306,46 @@ extension ReaderDocument {
         // Re-check where it now lives (a Save As can make a copy-only document writable, or not).
         let data = written.data
         let readOnly = isReadOnlyLocation
+        let password = sessionPassword
         Task { [weak self, weak editor] in
-            let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly)
+            let info = await AnnotationFileInfo.inspect(data, readOnlyLocation: readOnly, password: password)
             guard let self, let editor, editor === self.annotations, editor.original == data else { return }
             editor.updateSaveability(info.saveability)
+        }
+    }
+
+    /// The independent read-back: PDFKit opens the written bytes, unlocking them with the session
+    /// password or the empty one, and must show every added and edited annotation with the
+    /// subtype and `/Contents` the writer meant to write. A key both PDFSave's writer and its
+    /// reader got wrong in the same way passes `SavedFileCheck`, but not this. A failure throws
+    /// before NSDocument replaces anything.
+    static func checkWithPDFKit(_ written: Data, against result: SaveResult, descriptors: [AnnotationDescriptor],
+                                password: String?) throws(PDFSaveError) {
+        guard let pdf = PDFDocument(data: written) else { throw .verificationFailed("PDFKit can't open the saved file") }
+        if pdf.isLocked, !pdf.unlock(withPassword: password ?? "") {
+            throw .verificationFailed("PDFKit can't unlock the saved file")
+        }
+        func same(_ a: String?, _ b: String?) -> Bool { (a ?? "") == (b ?? "") }
+        func subtype(_ annotation: PDFAnnotation) -> String {
+            let type = annotation.type ?? ""
+            return type.hasPrefix("/") ? String(type.dropFirst()) : type
+        }
+        let added = Set(result.added.map(\.ref))
+        for annotation in result.added {
+            let expected = result.writtenAnnotations[annotation.ref]
+            let named = pdf.page(at: annotation.pageIndex)?.annotations.filter {
+                ($0.value(forAnnotationKey: .name) as? String) == annotation.name
+            } ?? []
+            guard named.count == 1, subtype(named[0]) == annotation.subtype, same(named[0].contents, expected?.contents) else {
+                throw .verificationFailed("PDFKit doesn’t show the added \(annotation.subtype.lowercased()) as written")
+            }
+        }
+        var pages: [ObjectRef: Int] = [:]
+        for d in descriptors { if let ref = d.ref, pages[ref] == nil { pages[ref] = d.pageIndex } }
+        for (ref, expected) in result.writtenAnnotations where !added.contains(ref) {
+            guard let index = pages[ref], let page = pdf.page(at: index),
+                  page.annotations.contains(where: { subtype($0) == expected.subtype && same($0.contents, expected.contents) })
+            else { throw .verificationFailed("PDFKit doesn’t show the edited \(expected.subtype.lowercased()) as written") }
         }
     }
 
@@ -348,7 +391,7 @@ extension ReaderDocument {
 
     static func saveError(_ error: PDFSaveError) -> NSError {
         let reason: String = switch error {
-        case .encrypted: "Lectern can’t save annotations into encrypted documents."
+        case .encrypted(let problem): problem.explanation
         case .copyOnly: "This document can only be saved as a copy. Use Save As."
         case .verificationFailed(let why): "The saved file didn’t pass Lectern’s check (\(why))."
         case .malformed(let why), .unsupported(let why): "Lectern couldn’t add to this file safely (\(why))."

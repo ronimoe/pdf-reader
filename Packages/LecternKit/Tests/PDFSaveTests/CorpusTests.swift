@@ -12,7 +12,9 @@ import Testing
 
     func outcome(_ c: CorpusCase) throws -> CorpusOutcome {
         let all = try Corpus.outcomes()
-        return try #require(all.first { $0.testCase.name == c.name })
+        let o = try #require(all.first { $0.testCase.name == c.name })
+        if let problem = o.problem { throw CorpusFailure("\(c.name): \(problem)") }
+        return o
     }
 
     // 1. Original bytes intact.
@@ -29,8 +31,8 @@ import Testing
     @Test(arguments: writable) func pdfKitShowsAnnotations(_ c: CorpusCase) throws {
         let o = try outcome(c)
         let result = try #require(o.result, "writer failed: \(String(describing: o.error))")
-        let before = try #require(PDFDocument(url: o.inputURL))
-        let after = try #require(PDFDocument(data: result.data))
+        let before = try Corpus.pdfKit(c, data: try Data(contentsOf: o.inputURL))
+        let after = try Corpus.pdfKit(c, data: result.data)
         #expect(after.pageCount == before.pageCount)
 
         for page in 0..<before.pageCount {
@@ -81,8 +83,8 @@ import Testing
     @Test(arguments: writable) func pdfKitDrawsMarkup(_ c: CorpusCase) throws {
         let o = try outcome(c)
         let result = try #require(o.result)
-        let before = try #require(PDFDocument(url: o.inputURL))
-        let after = try #require(PDFDocument(data: result.data))
+        let before = try Corpus.pdfKit(c, data: try Data(contentsOf: o.inputURL))
+        let after = try Corpus.pdfKit(c, data: result.data)
         for probe in o.probes {
             let pageBefore = try #require(before.page(at: probe.page))
             let pageAfter = try #require(after.page(at: probe.page))
@@ -108,37 +110,83 @@ import Testing
         }
     }
 
-    // 7. Encrypted input can't be saved at all, in place or as a copy (v1).
-    @Test(arguments: refused) func encryptedInputIsRefused(_ c: CorpusCase) throws {
+    // 7. Encryption Lectern doesn't write (R5, the public-key handler) can't be saved at all, in
+    // place or as a copy, even with the password.
+    @Test(arguments: refused) func unsupportedEncryptionIsRefused(_ c: CorpusCase) throws {
         let o = try outcome(c)
+        guard case .unsupported(.encrypted(let problem)) = c.saveability else { Issue.record("not an encryption case"); return }
         #expect(o.result == nil)
-        #expect(o.error == .encrypted)
+        #expect(o.error == .encrypted(problem))
         let data = try Data(contentsOf: o.inputURL)
-        #expect(throws: PDFSaveError.encrypted) { try IncrementalWriter().saveCopy(original: data, changes: [.testNote]) }
+        #expect(throws: PDFSaveError.encrypted(problem)) {
+            try IncrementalWriter().saveCopy(original: data, changes: [.testNote], password: c.password)
+        }
+    }
+
+    // 7. Supported encryption: the output is encrypted with the original's key, keeps /Encrypt
+    // and /ID exactly, and re-reads only with the password.
+    @Test(arguments: writable.filter { $0.password != nil || $0.input.contains("encrypted") && !$0.isTwin })
+    func encryptedOutputsKeepTheirEncryption(_ c: CorpusCase) throws {
+        let o = try outcome(c)
+        let result = try #require(o.result, "writer failed: \(String(describing: o.error))")
+        let original = try Data(contentsOf: o.inputURL)
+        let before = try PDFSaveDocument(data: original, password: c.password)
+        let after = try PDFSaveDocument(data: result.data, password: c.password)
+        #expect(before.isEncrypted && after.isEncrypted && result.isEncrypted)
+        #expect(after.fileEncryptionKey == before.fileEncryptionKey)
+        #expect(after.sections[0].trailer["Encrypt"] == before.sections[0].trailer["Encrypt"])
+        #expect(after.sections[0].trailer["ID"] == before.trailer["ID"])
+        if c.password != nil, !(c.password == "owner-pass") {
+            #expect(throws: PDFSaveError.encrypted(.passwordNotAuthenticated)) { try PDFSaveDocument(data: result.data) }
+        }
+        // Nothing the update wrote is in the clear: no annotation text or name, in any of the forms
+        // the writer would use (a literal, or hex of PDFDocEncoding or UTF-16), and no appearance
+        // operator. Under /StrF /Identity the strings are meant to be in the clear: a positive control.
+        let update = result.data.suffix(from: original.count)
+        let stringsInTheClear = before.security?.strings == .identity
+        for change in o.changes {
+            for text in [change.addedContents, change.addedName].compactMap({ $0 }) where !text.isEmpty {
+                let hex = PDFString(text: text).bytes.map { String(format: "%02X", $0) }.joined()
+                let found = update.range(of: Data(text.utf8)) != nil || update.range(of: Data(hex.utf8)) != nil
+                #expect(found == stringsInTheClear, "\(text): in the clear \(found), expected \(stringsInTheClear)")
+            }
+        }
+        if before.security?.streams != .identity {
+            #expect(update.range(of: Data("LecternHL gs".utf8)) == nil && update.range(of: Data(" re B".utf8)) == nil)
+        }
+    }
+
+    // The strong oracle: the same edits on the plaintext twin and on the encrypted file give the
+    // same annotations once qpdf decrypts the output (scripts/corpus/verify --check oracle).
+    @Test(.enabled(if: Tools.gate(Tools.objectsCheck), "qpdf or repo .venv with pikepdf missing (scripts/corpus/bootstrap)"))
+    func encryptedOutputsMatchTheirPlaintextTwins() throws {
+        let encrypted = Corpus.cases.filter { c in Corpus.cases.contains { $0.twinOf == c.name } }.map(\.name)
+        #expect(encrypted.count >= 14)
+        try runVerify("oracle", available: Tools.objectsCheck, mustApply: Set(encrypted))
     }
 
     // Saveability: every input is classified as expected, and the writer's in-place guard agrees.
     @Test(arguments: Corpus.cases) func saveabilityIsAsExpected(_ c: CorpusCase) throws {
         let o = try outcome(c)
         let data = try Data(contentsOf: o.inputURL)
-        #expect(Saveability.evaluate(data) == c.saveability)
+        #expect(Saveability.evaluate(data, password: c.password) == c.saveability)
         switch c.saveability {
         case .inPlace:
-            #expect(Saveability.evaluate(data, readOnlyLocation: true) == .copyOnly([.readOnlyLocation]))
+            #expect(Saveability.evaluate(data, readOnlyLocation: true, password: c.password) == .copyOnly([.readOnlyLocation]))
         case .copyOnly(let reasons):
             #expect(throws: PDFSaveError.copyOnly(reasons)) {
-                try IncrementalWriter().saveInPlace(original: data, changes: [.testNote])
+                try IncrementalWriter().saveInPlace(original: data, changes: [.testNote], password: c.password)
             }
-            #expect(Saveability.evaluate(data, readOnlyLocation: true) == .copyOnly(reasons + [.readOnlyLocation]))
+            #expect(Saveability.evaluate(data, readOnlyLocation: true, password: c.password) == .copyOnly(reasons + [.readOnlyLocation]))
         case .unsupported:
-            #expect(Saveability.evaluate(data, readOnlyLocation: true) == c.saveability)
+            #expect(Saveability.evaluate(data, readOnlyLocation: true, password: c.password) == c.saveability)
         }
     }
 
     @Test func outputsOnlyRewriteWhatTheyMust() throws {
-        for o in try Corpus.outcomes() {
+        for o in try Corpus.outcomes() where o.problem == nil {
             guard let r = o.result else { continue }
-            let doc = try PDFSaveDocument(data: try Data(contentsOf: o.inputURL))
+            let doc = try PDFSaveDocument(data: try Data(contentsOf: o.inputURL), password: o.testCase.password)
             let pages = Set(doc.pageRefs.map(\.number))
             for ref in r.rewrittenObjects {
                 let object = try doc.object(ref)
@@ -213,7 +261,7 @@ import Testing
     // 5. Signature intact; "n/a" is not acceptable for the signed and certified files.
     @Test(.enabled(if: Tools.gate(Tools.venv), "repo .venv with pyHanko missing (scripts/corpus/bootstrap)"))
     func signatureStillIntact() throws {
-        try runVerify("signature", available: Tools.venv, mustApply: ["signed-approval", "certified-docmdp"])
+        try runVerify("signature", available: Tools.venv, mustApply: ["signed-approval", "certified-docmdp", "encrypted-signed"])
     }
 
     // 6. Other readers: MuPDF, Poppler and pdf.js.

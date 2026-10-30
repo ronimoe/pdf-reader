@@ -30,7 +30,7 @@ Lectern is a PDF reader first, plus a personal space for highlights and notes. I
 - **Search:** results as they're found, with Match Case and Whole Word. Scanned pages are reported as having no searchable text instead of silently finding nothing.
 - **Annotations:** highlight, underline, strike-through, sticky notes and comments in six colours, with undo, an annotation list, and a crash journal that offers back unsaved work. Signed and certified files are saved as a copy so their signatures stay intact.
 - **Reader bookmarks:** named places in a document, kept on your Mac and exportable as JSON.
-- **Passwords and permissions:** encrypted PDFs, the document's own restrictions respected, and an optional "Remember in Keychain".
+- **Passwords and permissions:** encrypted PDFs, the document's own restrictions respected, and an optional "Remember in Keychain". Annotations can be saved into password-protected PDFs, which stay encrypted with the same password.
 - **Accessibility:** every control has a name and works from the keyboard, Help ▸ Keyboard Shortcuts lists every shortcut, and animations follow Reduce Motion.
 
 What Lectern doesn't do yet is listed in [docs/known-limitations.md](docs/known-limitations.md). In short: forms are read-only, pages are never recoloured in dark mode, scanned PDFs aren't run through text recognition, and the app isn't signed with an Apple Developer ID.

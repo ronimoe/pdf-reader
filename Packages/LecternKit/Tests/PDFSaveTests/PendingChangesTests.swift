@@ -126,4 +126,25 @@ private func page1(objects: [(Int, String)] = [], annots: String = "") -> Data {
         other[20] ^= 0x01
         #expect(throws: PDFSaveError.self) { try SavedFileCheck.verify(result.data, original: other, against: result) }
     }
+    // MARK: Net changes (M7 review, D3)
+
+    @Test func anEditFollowedByADeleteIsJustTheDelete() {
+        var list = PendingChanges()
+        let saved = ObjectRef(11)
+        list.editContents(saved, nil)
+        list.editColor(saved, .yellow)
+        list.editContents(ObjectRef(12), "kept")
+        list.delete(saved)
+        #expect(list.changes.count == 4)
+        #expect(list.netChanges == [.editContents(ObjectRef(12), "kept"), .delete(saved)])
+        // The list itself, which undo works on, is unchanged.
+        #expect(list.changes.count == 4)
+    }
+
+    @Test func withoutADeleteNothingIsDropped() throws {
+        var list = PendingChanges()
+        list.editContents(ObjectRef(11), "a")
+        try list.add(.addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 1, y: 1), contents: "b", name: "lectern-n")))
+        #expect(list.netChanges == list.changes)
+    }
 }

@@ -266,43 +266,88 @@ extension M4Tests {
         }
     }
 
-    /// Encrypted files can't be saved with annotations (A1, §4.3); restricted ones explain (B6).
+    /// Encryption Lectern can't save into (R5 here; public-key and custom handlers too) refuses
+    /// annotations with an explanation (A1, §4.3); restricted files explain and offer the owner
+    /// password (B6), which since M7 also lets annotations be saved.
     @MainActor @Suite struct Unsupported {
-        @Test func encryptedFileRefusesAnnotationsWithAnExplanation() async throws {
+        static let r5 = UnsupportedReason.encrypted(.revision(version: 5, revision: 5))
+
+        @Test func unsupportedEncryptionRefusesAnnotationsWithAnExplanation() async throws {
             let folder = try TemporaryFolder()
-            let url = try folder.write(try Corpus.data("encrypted-aes256"), to: "encrypted.pdf")
+            let url = try folder.write(try Corpus.data("encrypted-r5"), to: "encrypted.pdf")
             let harness = try await AnnotationHarness(file: url, folder: folder, password: "user-pass")
             defer { harness.close() }
             await harness.waitForInspection()
-            #expect(harness.editor.saveability == .unsupported(.encrypted))
+            #expect(!harness.pdf.isLocked)
+            #expect(harness.editor.saveability == .unsupported(Self.r5))
             try harness.select("quick brown fox")
             harness.controller.highlightSelection(nil)
-            #expect(harness.presenter.refusals == [.cannotSave(.encrypted)])
+            #expect(harness.presenter.refusals == [.cannotSave(Self.r5)])
             #expect(harness.editor.pending.isEmpty)
             #expect(harness.pdf.page(at: 0)?.annotations.isEmpty == true)
-            #expect(AnnotationRefusal.cannotSave(.encrypted).message.contains("encrypted"))
+            // The message names what's unsupported, not encryption in general.
+            let message = AnnotationRefusal.cannotSave(Self.r5).message
+            #expect(message.contains("revision 5"))
+            #expect(!message.contains("can’t save annotations into encrypted documents"))
             // ⌘S explains instead of doing nothing, and writes nothing.
-            #expect(harness.document.saveRoute == .refused(.cannotSave(.encrypted)))
+            #expect(harness.document.saveRoute == .refused(.cannotSave(Self.r5)))
             let before = harness.fileBytes
             harness.document.save(nil)
-            #expect(harness.presenter.refusals.last == .cannotSave(.encrypted))
+            #expect(harness.presenter.refusals.last == .cannotSave(Self.r5))
             #expect(harness.presenter.refusals.count == 2)
             #expect(harness.fileBytes == before)
+            // An unsupported encrypted file never journals anything (there is nothing to seal it with).
+            #expect(harness.editor.info?.isEncrypted == true)
+            #expect(harness.editor.info?.journalKey == nil)
         }
 
-        @Test func restrictedCommentingExplainsAndOffersTheOwnerPassword() async throws {
+        @Test func everyUnsupportedReasonIsExplainedByName() {
+            let cases: [(EncryptionProblem, String)] = [
+                (.securityHandler("Adobe.PubSec"), "certificates"),
+                (.securityHandler("FOO.Custom"), "security handler Lectern doesn’t support"),
+                (.revision(version: 5, revision: 5), "revision 5"),
+                (.revision(version: 3, revision: 3), "version 3, revision 3"),
+                (.cryptFilter("Custom"), "Custom"),
+                (.passwordNotAuthenticated, "password"),
+                (.malformed("x"), "encryption settings"),
+            ]
+            for (problem, phrase) in cases {
+                let message = AnnotationRefusal.cannotSave(.encrypted(problem)).message
+                #expect(message.contains(phrase), "\(problem): \(message)")
+                let saveError = ReaderDocument.saveError(.encrypted(problem))
+                #expect(saveError.localizedRecoverySuggestion?.contains(phrase) == true)
+                #expect(saveError.localizedRecoverySuggestion?.contains("encrypted documents") == false)
+            }
+        }
+
+        @Test func restrictedCommentingExplainsAndTheOwnerPasswordAllowsSaving() async throws {
             let harness = try await AnnotationHarness(corpus: "encrypted-aes256-owner-only")
             defer { harness.close() }
             #expect(harness.pdf.allowsCommenting == false)
+            // The file itself is supported: only its /P stands in the way.
+            #expect(harness.editor.saveability == .inPlace)
             try harness.select("quick brown fox")
             harness.controller.highlightSelection(nil)
             #expect(harness.presenter.refusals == [.commentingNotAllowed])
             #expect(harness.presenter.ownerPasswordOffers == 1)
-            // The owner password lifts the restriction, but the file is still encrypted.
+            #expect(harness.editor.pending.isEmpty)
+            // The owner password lifts the restriction for the session (B6, amended 2026-10-30):
+            // annotating and saving work.
             #expect(harness.controller.submitPassword("owner-pass", remember: false, purpose: .removeRestrictions))
             try harness.select("quick brown fox")
             harness.controller.highlightSelection(nil)
-            #expect(harness.presenter.refusals.last == .cannotSave(.encrypted))
+            #expect(harness.presenter.refusals.count == 1)
+            #expect(harness.editor.pending.changes.count == 1)
+            let original = harness.fileBytes
+            try await harness.save()
+            let saved = harness.fileBytes
+            #expect(saved.prefix(original.count) == original)
+            let file = try SavedFile(saved, password: "owner-pass")
+            #expect(file.lecternDescriptors.count == 1)
+            #expect(try ExternalTool.qpdfCheck(harness.fileURL, password: "owner-pass").status == 0)
+            // Still restricted for anyone without the owner password.
+            let reopened = try #require(PDFDocument(data: saved))
+            #expect(!reopened.allowsCommenting)
         }
 
         @Test func actionsWaitForTheSaveCheck() throws {

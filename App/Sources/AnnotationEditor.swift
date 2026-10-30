@@ -47,8 +47,8 @@ enum AnnotationRefusal: Error, Equatable {
             "Its author restricted adding and changing annotations. If you have the owner password, you can enter it to remove the restriction."
         case .stillChecking:
             "It takes a moment to check whether a document can be saved with annotations. Try again in a second."
-        case .cannotSave(.encrypted):
-            "This document is encrypted, and this version of Lectern can’t save annotations into encrypted documents. You can still read it, and nothing in the file is changed."
+        case .cannotSave(.encrypted(let problem)):
+            problem.explanation + " You can still read it, and nothing in the file is changed."
         case .cannotSave(.malformed), .cannotSave(.unsupportedStructure):
             "Lectern couldn’t read this file’s structure reliably enough to add to it without risking damage, so it won’t change it. You can still read it."
         case .notMatched(.ambiguous):
@@ -74,31 +74,83 @@ enum AnnotationRefusal: Error, Equatable {
     var offersOwnerPassword: Bool { self == .commentingNotAllowed }
 }
 
+extension EncryptionProblem {
+    /// Why annotations can't be saved into this encrypted document. Only what is still
+    /// unsupported (architecture §4.3): Standard password encryption (RC4, AES-128, AES-256) is.
+    nonisolated var explanation: String {
+        switch self {
+        case .securityHandler("Adobe.PubSec"):
+            "This document is encrypted for particular recipients’ certificates rather than with a password, and Lectern can save annotations only into password-protected documents."
+        case .securityHandler:
+            "This document is protected by a security handler Lectern doesn’t support, so Lectern can’t save annotations into it."
+        case .revision(5, 5):
+            "This document uses Acrobat 9’s AES-256 encryption (revision 5), which was withdrawn from the PDF standard, and Lectern can’t save annotations into it."
+        case .revision(let v, let r):
+            "This document uses an encryption method Lectern can’t save annotations into (version \(v), revision \(r))."
+        case .cryptFilter(let name):
+            "This document uses an encryption filter Lectern can’t save annotations into (“\(name)”)."
+        case .passwordNotAuthenticated:
+            "Lectern couldn’t confirm this document’s password itself, so it can’t encrypt annotations with the document’s own key."
+        case .malformed:
+            "This document’s encryption settings can’t be read reliably, so Lectern won’t add to it."
+        }
+    }
+}
+
+extension EncryptionProblem {
+    /// A quiet line shown when such a document opens (M7 review, D2): PDFKit may show it with
+    /// blank pages and no explanation. Nil for everything Lectern can at least read.
+    nonisolated var openingNotice: String? {
+        switch self {
+        case .securityHandler("Adobe.PubSec"):
+            "This document is encrypted for particular recipients’ certificates. Lectern can’t decrypt it, so its pages may appear blank."
+        case .securityHandler:
+            "This document uses a security handler Lectern doesn’t support. Lectern can’t decrypt it, so its pages may appear blank."
+        default:
+            nil
+        }
+    }
+}
+
 /// What a background look at the file found (architecture §3.2, §4.6).
 struct AnnotationFileInfo: Sendable {
     var saveability: Saveability
     var descriptors: [AnnotationDescriptor]
     var sha256: String
-    /// False when the file's annotations couldn't be read (encrypted or malformed): the
-    /// descriptors are then empty, not a list of every annotation.
+    /// False when the file's annotations couldn't be read (an unsupported encryption, or a
+    /// malformed file): the descriptors are then empty, not a list of every annotation.
     var descriptorsAreComplete = true
     /// The page count the descriptors were read against (nil when unknown). If it isn't PDFKit's,
     /// their page indices can't be trusted for the annotation list.
     var pageCount: Int?
+    /// True for an encrypted file, supported or not. Its crash journal is sealed, or not written.
+    var isEncrypted = false
+    /// The key an encrypted file's crash journal is sealed with (architecture §6). Nil when the
+    /// file isn't encrypted, or when its key couldn't be authenticated: then nothing is journaled.
+    var journalKey: JournalKey?
 
     /// Parses the file off the main thread: Saveability, every annotation's descriptor, and the
-    /// SHA-256 the crash journal is keyed to.
-    nonisolated static func inspect(_ data: Data, readOnlyLocation: Bool) async -> AnnotationFileInfo {
+    /// SHA-256 the crash journal is keyed to. An encrypted file is read with `password` (the
+    /// session password, or the empty one when nil), and its journal key is derived.
+    nonisolated static func inspect(_ data: Data, readOnlyLocation: Bool, password: String? = nil) async -> AnnotationFileInfo {
         await Task.detached(priority: .userInitiated) {
-            let saveability = Saveability.evaluate(data, readOnlyLocation: readOnlyLocation)
+            let saveability = Saveability.evaluate(data, readOnlyLocation: readOnlyLocation, password: password)
             var descriptors: [AnnotationDescriptor]?
             var pageCount: Int?
-            if case .unsupported = saveability {} else if let document = try? PDFSaveDocument(data: data) {
+            var isEncrypted = false
+            var journalKey: JournalKey?
+            if case .unsupported(.encrypted) = saveability { isEncrypted = true }
+            if case .unsupported = saveability {} else if let document = try? PDFSaveDocument(data: data, password: password) {
                 descriptors = try? document.annotations()
                 pageCount = document.pageCount
+                isEncrypted = document.isEncrypted
+                if let fileKey = document.fileEncryptionKey, let digest = document.encryptionDigest {
+                    journalKey = JournalKey(fileKey: fileKey, encryptionDigest: digest)
+                }
             }
             return AnnotationFileInfo(saveability: saveability, descriptors: descriptors ?? [], sha256: JournalHash.of(data),
-                                      descriptorsAreComplete: descriptors != nil, pageCount: pageCount)
+                                      descriptorsAreComplete: descriptors != nil, pageCount: pageCount,
+                                      isEncrypted: isEncrypted, journalKey: journalKey)
         }.value
     }
 }
@@ -438,8 +490,10 @@ final class AnnotationEditor {
         pending.removeAll()
         newNames = [:]
         // An incremental save adds annotations, never pages: the page count read at open still holds.
+        // A save never changes the encryption, so the journal key stays the same (EncryptedJournalTests).
         info = AnnotationFileInfo(saveability: saveability, descriptors: descriptors, sha256: JournalHash.of(data),
-                                  descriptorsAreComplete: descriptorsAreComplete, pageCount: info?.pageCount)
+                                  descriptorsAreComplete: descriptorsAreComplete, pageCount: info?.pageCount,
+                                  isEncrypted: info?.isEncrypted ?? false, journalKey: info?.journalKey)
         matches = [:]
         matchedPages = []
         didChange()

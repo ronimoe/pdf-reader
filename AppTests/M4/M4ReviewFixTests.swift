@@ -222,12 +222,12 @@ extension M4Tests {
             #expect(harness.presenter.changedFileQuestions == 1)
 
             let folder = try TemporaryFolder()
-            let url = try folder.write(try Corpus.data("encrypted-aes256"), to: "encrypted.pdf")
+            let url = try folder.write(try Corpus.data("encrypted-r5"), to: "encrypted.pdf")
             let encrypted = try await AnnotationHarness(file: url, folder: folder, password: "user-pass")
             defer { encrypted.close() }
             encrypted.document.save(withDelegate: recorder, didSave: didSave, contextInfo: nil)
             #expect(recorder.saves == [false, false])
-            #expect(encrypted.presenter.refusals == [.cannotSave(.encrypted)])
+            #expect(encrypted.presenter.refusals == [.cannotSave(.encrypted(.revision(version: 5, revision: 5)))])
         }
 
         // MARK: 6. Undoing a recolour of an annotation without /C

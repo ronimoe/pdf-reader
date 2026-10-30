@@ -1,9 +1,9 @@
 import Foundation
 
 public enum PDFSaveError: Error, Equatable, Sendable {
-    /// The file has an `/Encrypt` dictionary. New objects would have to be encrypted with the
-    /// document key, which the writer doesn't do. In v1 these files can't be saved with annotations.
-    case encrypted
+    /// The file is encrypted in a way the writer doesn't handle, or no password it was given
+    /// authenticates (architecture §4.3). Standard-handler revisions 2, 3, 4 and 6 are supported.
+    case encrypted(EncryptionProblem)
     /// The file's structure can't be trusted (bad xref offsets, broken trailer chain, …). The
     /// writer never appends on top of a guessed cross-reference.
     case malformed(String)
@@ -218,6 +218,18 @@ public struct SaveResult: Sendable {
     public let writtenObjects: [ObjectRef]
     /// References removed from `/Annots` arrays (deleted annotations and their popups/replies).
     public let removedAnnotations: [ObjectRef]
+    /// What the update says each annotation it created or rewrote is, before any encryption, so
+    /// the read-back check can compare the decrypted file with it (`SavedFileCheck`).
+    public let writtenAnnotations: [ObjectRef: WrittenAnnotation]
+    /// True when the update was encrypted with the file's key.
+    public let isEncrypted: Bool
 
     public var addedAnnotations: [ObjectRef] { added.map(\.ref) }
+}
+
+/// An annotation object as a save wrote it: the values a reader must get back.
+public struct WrittenAnnotation: Sendable, Equatable, Hashable {
+    public let subtype: String
+    public let name: String?
+    public let contents: String?
 }

@@ -126,15 +126,40 @@ private func save(_ data: Data, _ changes: [AnnotationChange] = [.testNote],
         try Self.fuzz(files, iterations: 600, seed: 0x5245_414C_574F_524C, label: "real-world")
     }
 
-    static func fuzz(_ files: [[UInt8]], iterations: Int, seed: UInt64, label: String) throws {
+    /// The encrypted files, opened with their passwords. Half the mutations land around the
+    /// encryption dictionary (/V, /R, /Length, /O, /U, /OE, /UE, /Perms, /CF) or the trailer's
+    /// reference to it, which must fail safely, never trap.
+    @Test func fuzzEncryptedMutations() throws {
+        let fixtures = EncryptedFixture.all
+        let files = try fixtures.map { try [UInt8]($0.data()) }
+        try Self.fuzz(files, passwords: fixtures.map(\.password), iterations: 1500, seed: 0x454E_4352_5950_5400,
+                      label: "encrypted", hotspot: Array("/Encrypt".utf8))
+        try Self.fuzz(files, passwords: fixtures.map(\.password), iterations: 1500, seed: 0x454E_4352_5950_5401,
+                      label: "encryption dictionary", hotspot: Array("/Standard".utf8))
+    }
+
+    static func fuzz(_ files: [[UInt8]], passwords: [String?]? = nil, iterations: Int, seed: UInt64, label: String,
+                     hotspot: [UInt8]? = nil) throws {
         try #require(!files.isEmpty)
         var rng = SplitMix64(seed: seed)
         var succeeded = 0, refused = 0
         let alphabet = Array("0123456789 -/<>[]R".utf8)
         let start = ContinuousClock.now
         for _ in 0..<iterations {
-            var bytes = files[Int(rng.next() % UInt64(files.count))]
-            switch rng.next() % 5 {
+            let pick = Int(rng.next() % UInt64(files.count))
+            var bytes = files[pick]
+            let password = passwords?[pick]
+            var mode = rng.next() % 5
+            if let hotspot, rng.next() % 2 == 0, let found = PDFParser.findLast(hotspot, in: bytes) {
+                // Around the hotspot: the encryption dictionary, or the trailer's reference to it.
+                for _ in 0..<(1 + rng.next() % 3) {
+                    let at = min(bytes.count - 1, max(0, found - 40 + Int(rng.next() % 400)))
+                    bytes[at] = rng.next() % 2 == 0 ? alphabet[Int(rng.next() % UInt64(alphabet.count))] : UInt8(truncatingIfNeeded: rng.next())
+                }
+                mode = 99
+            }
+            switch mode {
+            case 99: break
             case 0:  // truncate
                 bytes = Array(bytes.prefix(1 + Int(rng.next() % UInt64(bytes.count))))
             case 1:  // random bytes anywhere
@@ -153,9 +178,9 @@ private func save(_ data: Data, _ changes: [AnnotationChange] = [.testNote],
             }
             // Neither the pre-check nor the save may trap; the copy path exercises the writer on
             // signed and Reader-extended inputs too.
-            _ = Saveability.evaluate(Data(bytes))
+            _ = Saveability.evaluate(Data(bytes), password: password)
             do {
-                let result = try IncrementalWriter().saveCopy(original: Data(bytes), changes: [.testNote])
+                let result = try IncrementalWriter().saveCopy(original: Data(bytes), changes: [.testNote], password: password)
                 #expect(result.data.prefix(bytes.count) == Data(bytes))
                 succeeded += 1
             } catch {

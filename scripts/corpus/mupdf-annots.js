@@ -1,6 +1,9 @@
-// Lists annotations as MuPDF sees them. Usage: mutool run mupdf-annots.js <file.pdf>
+// Lists annotations as MuPDF sees them. Usage: mutool run mupdf-annots.js <file.pdf> [password]
 // Prints JSON: [{page, ref, type, contents, hasAP}], plus widgets with type "Widget".
 var doc = Document.openDocument(scriptArgs[0]);
+if (doc.needsPassword() && !doc.authenticatePassword(scriptArgs[1] || "")) {
+  throw new Error("wrong password");
+}
 var out = [];
 function hasAP(obj) {
   var ap = obj.get("AP");

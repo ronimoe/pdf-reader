@@ -88,10 +88,22 @@ struct ReleaseTests {
     }
 
     @Test func anUnreadableFileFallsBackToReadingEveryPage() async throws {
-        // Encrypted: the inspection can't read its annotations, so every page is read.
-        let harness = try await AnnotationHarness(corpus: "encrypted-aes256-owner-only")
+        // Encrypted in a way Lectern doesn't save into (R5): the inspection doesn't read its
+        // annotations, so every page is read.
+        let harness = try await AnnotationHarness(corpus: "encrypted-r5", password: "user-pass")
         defer { harness.close() }
+        #expect(harness.editor.info?.descriptorsAreComplete == false)
         #expect(harness.editor.pagesThatCanHoldListedAnnotations() == nil)
+        #expect(listed(harness) == everyPage(harness))
+    }
+
+    @Test func aSupportedEncryptedFileHasCompleteDescriptors() async throws {
+        // M7: the inspection decrypts the file, so the page filter works on it too.
+        let harness = try await AnnotationHarness(corpus: "encrypted-r3-rc4-annotated")
+        defer { harness.close() }
+        #expect(harness.editor.info?.descriptorsAreComplete == true)
+        #expect(harness.editor.info?.descriptors.contains { $0.contents == "Highlight from MuPDF" } == true)
+        #expect(harness.editor.pagesThatCanHoldListedAnnotations() == [0])
         #expect(listed(harness) == everyPage(harness))
     }
 

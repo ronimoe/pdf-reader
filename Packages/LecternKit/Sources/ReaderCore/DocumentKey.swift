@@ -10,10 +10,12 @@ import Foundation
 /// readable even while the document is locked. That element survives
 /// re-encryption with a different password, so encrypted files also carry a
 /// hash of the encryption dictionary's `/O` and `/U` entries: a remembered
-/// password can then only ever belong to this exact encryption. Files without
-/// an `/ID` (or with an encryption dictionary that can't be read) fall back
-/// to a SHA-256 of their first 64 KB. The prefixes record which was used, so
-/// the kinds can never collide.
+/// password can then only ever belong to this exact encryption. An encrypted
+/// file without an `/ID` is keyed by that hash alone (`enc:`), which an
+/// annotation save keeps, so its Keychain entry follows it across saves
+/// *(M7 review)*. Other files without an `/ID` (or with an encryption
+/// dictionary that can't be read) fall back to a SHA-256 of their first
+/// 64 KB. The prefixes record which was used, so the kinds can never collide.
 public struct DocumentKey: RawRepresentable, Codable, Hashable, Sendable, CustomStringConvertible {
     public let rawValue: String
 
@@ -36,13 +38,14 @@ public struct DocumentKey: RawRepresentable, Codable, Hashable, Sendable, Custom
 
     private static func identifierKey(for data: Data) -> String? {
         guard let provider = CGDataProvider(data: data as CFData),
-              let document = CGPDFDocument(provider),
-              let id = firstIdentifier(of: document)
+              let document = CGPDFDocument(provider)
         else { return nil }
-        let key = "id:" + hex(id)
-        guard document.isEncrypted else { return key }
+        let id = firstIdentifier(of: document)
+        guard document.isEncrypted else { return id.map { "id:" + hex($0) } }
         guard let entries = EncryptionDictionary.passwordEntries(in: data) else { return nil }
-        return key + ";enc:" + hex(Data(SHA256.hash(data: entries.owner + entries.user)))
+        let encryption = "enc:" + hex(Data(SHA256.hash(data: entries.owner + entries.user)))
+        guard let id else { return encryption }
+        return "id:" + hex(id) + ";" + encryption
     }
 
     private static func firstIdentifier(of document: CGPDFDocument) -> Data? {
