@@ -429,6 +429,7 @@ final class ReaderWindowController: NSWindowController {
     }
 
     func windowWillClose(_ notification: Notification) {
+        for pane in panes { pane.view.outliveQueuedPDFKitWork() }
         saveStateNow()
         search?.cancel()
         dismissPreview()

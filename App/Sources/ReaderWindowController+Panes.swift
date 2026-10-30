@@ -119,6 +119,7 @@ extension ReaderWindowController {
         }
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: secondary.view)
         secondary.view.show(nil)
+        secondary.view.outliveQueuedPDFKitWork()
         secondaryPane = nil
         paneContainers[.secondary] = nil
         focusedPaneID = .primary

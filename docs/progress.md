@@ -481,3 +481,26 @@ PDFSave's file key matched qpdf's for the user and owner passwords of every fixt
 - A sealed journal restored after a real crash and relaunch.
 - Key lengths other than 40, 56 and 128 bits.
 - The unsupported-handler notice on screen.
+
+## After M7: logo licence and a rotation crash (PRs #19, #20)
+
+**PR #19, logo licence:** the logo and app icon are kept out of the GPL (`design/logo/LICENSE.md`), and the app's Acknowledgements say so. The DMG and cask were rebuilt.
+
+**PR #20, a crash closing a window right after rotating:**
+- **What happened:** while PR #19 was being checked, two full test runs crashed the test host inside PDFKit, in `SplitView.layoutRotationAndZoomKeepBothPanesPlaces`. The faulting frame was `-[PDFDocumentView layoutDocumentView]`, a null dereference, from the block `-[PDFDocumentView didRotatePageNotification:]` queues on the main queue.
+- **Cause, established by experiment:**
+  - A page rotation queues one relayout block per view per page. Each block retains PDFKit's inner document view but not the `PDFView`, so if the `PDFView` is freed first, the relayout crashes.
+  - Closing the document is harmless while the views stay alive.
+  - A rotation on another `PDFDocument`, such as the thumbnail renderer's copy, doesn't reach the view.
+- **How the app could hit it:** the queued relayouts normally run within about 3 ms. But AppKit takes events that are already waiting before it drains the main queue, so a ⌘W typed during a slow rotation can free the views first.
+- **Fix:** `ReaderPDFView.outliveQueuedPDFKitWork()` keeps a view alive until the main queue has run what is already on it (two hops). It is called when a pane closes, when the document closes and when the window closes.
+- **Test:** `SplitView.closingInTheSameTurnAsARotationIsSafe` replays the original test's sequence and frees the window inside an autorelease pool. It crashed with the same stack without the fix.
+
+**Verified:**
+- **Before the fix:** the original test crashed within 5 repeats.
+- **With the fix:**
+  - the original test alone passed 50 repeats in a row;
+  - the original and the new test together passed 20 repeats;
+  - the full gate results are in PR #20.
+
+**Not verified:** the crash itself in a running copy of the app, from a real ⌘R then ⌘W. That needs a hand check.

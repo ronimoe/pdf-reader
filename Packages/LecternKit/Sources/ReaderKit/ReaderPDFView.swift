@@ -167,6 +167,23 @@ public final class ReaderPDFView: PDFView {
         if let inputMonitor { NSEvent.removeMonitor(inputMonitor) }
     }
 
+    /// Keeps this view alive until the main queue has run the work already on it.
+    /// Call it when the view is about to be freed (a pane or window closing).
+    ///
+    /// A page rotation makes PDFKit queue a relayout of each view on the main
+    /// queue, in blocks that retain its inner document view but not the
+    /// `PDFView`. If the `PDFView` is freed first, the relayout dereferences
+    /// null in `-[PDFDocumentView layoutDocumentView]`. A close typed during a
+    /// slow rotation can arrive before the main queue drains, since AppKit
+    /// takes waiting events first. The second hop covers work those blocks
+    /// queue in turn.
+    public func outliveQueuedPDFKitWork() {
+        nonisolated(unsafe) let view = self
+        DispatchQueue.main.async {
+            DispatchQueue.main.async { withExtendedLifetime(view) {} }
+        }
+    }
+
     /// Shows `document` and resets per-document view state. Always use this
     /// rather than assigning `document`.
     ///

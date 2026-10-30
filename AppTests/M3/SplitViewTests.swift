@@ -175,6 +175,26 @@ extension M3Tests {
             expectKeptPlace(second, in: secondary.view)
         }
 
+        /// A close that arrives before the main queue drains (typed during a slow
+        /// rotation) used to free the views under PDFKit's queued relayout, which
+        /// crashed in `-[PDFDocumentView layoutDocumentView]`.
+        @Test func closingInTheSameTurnAsARotationIsSafe() throws {
+            for _ in 0..<10 {
+                try autoreleasepool {
+                    let harness = try M3Harness(FixturePDF.prose(pages: 12))
+                    let controller = harness.controller
+                    controller.openSplit()
+                    controller.showTwoPages(nil)
+                    controller.rotateDocumentRight(nil)
+                    controller.showSinglePage(nil)
+                    controller.rotateDocumentLeft(nil)
+                    controller.increaseZoom(nil)
+                    harness.close()
+                }
+                spin(timeout: 0.1) { false }
+            }
+        }
+
         @Test func theSplitAndEachPanesPlaceAndHistoryComeBackOnReopen() throws {
             let folder = try TemporaryFolder()
             let file = try folder.write(FixturePDF.prose(pages: 12), to: "split.pdf")
