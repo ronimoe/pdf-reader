@@ -516,3 +516,45 @@ PDFSave's file key matched qpdf's for the user and owner passwords of every fixt
 - **Earlier version of the fix (d49b14a):** the full gate passed twice and performance passed 37 of 37.
 
 **Not verified:** the crash in a running copy of the app, from a real ⌘R then ⌘W on a long document. That needs a hand check.
+
+## After M7: the DMG window (PR #21)
+
+The DMG opened to a plain Finder window: five small icons in a row, a toolbar and a status bar, and nothing saying what to do. It now opens to a "drag Lectern to Applications" window.
+
+- **Layout:** `packaging/dmg/layout.json` holds the window size, icon size, icon positions and the text on the background.
+  - **Top row:** Lectern and Applications at 112 pt, with an arrow between them and the caption "Drag Lectern to Applications".
+  - **Bottom row:** below a separator, `Read Me First.txt`, `License.txt` and `Acknowledgements.txt`, under a note that Read Me First explains the one-time step.
+  - **Chrome:** no toolbar, sidebar, path bar or status bar. The volume icon is the app icon.
+- **Background:** `packaging/dmg/make-background.swift` draws it offscreen at 1× and 2×.
+  - **Follows the icons:** the arrow is computed from the positions of the app and Applications.
+  - **Refuses bad layouts:** an icon or label outside the window, with 40 pt left for the title bar.
+  - **One flat mid-tone (#70777F):** Finder draws the icon labels itself, presumably black in light mode and white in dark mode. That colour gives 4.53:1 against white and 4.63:1 against black, and the script refuses a colour where either is below 4.5:1.
+- **Building:** dmgbuild 1.6.7 runs through `uvx`, pinned together with the two libraries it writes with (ds_store 1.3.3, mac_alias 2.2.3) and Python 3.11. It writes the `.DS_Store` itself and mounts its scratch image with `-nobrowse`, so nothing opens in Finder.
+- **Volume name in use:** the background alias records the scratch volume's mount point. If another volume named "Lectern 1.0.0" is mounted (an open DMG, or a hidden scratch volume left by an interrupted run), that mount point would be "/Volumes/Lectern 1.0.0 1". Whether Finder would still find the background then is untested, so it is refused twice:
+  - `build-dmg` checks before it deletes anything, and again just before dmgbuild. The message gives the `hdiutil detach` command.
+  - The settings' `create_hook` raises unless dmgbuild's real mount point is `/Volumes/<name>`. Tested with a blocking volume mounted: dmgbuild stopped and detached its scratch image.
+- **Filesystem:** the image is now HFS+ instead of APFS. HFS+ is dmgbuild's default, and `mac_alias` always records the background's filesystem as HFS+. No reason for APFS was recorded.
+- **Extensions:** they are not hidden. dmgbuild's `hide_extensions` writes Finder info onto `Lectern.app`. A copy then failed `codesign --verify --deep --strict` with "Finder information, or similar detritus", which `verify-dmg` step 3 caught.
+- **verify-dmg:** step 2 now also checks the following, using the same pinned libraries. That covers what Finder is told, not how it draws it.
+  - `.background.tiff`, `.VolumeIcon.icns` and the volume's custom-icon flag;
+  - the `.DS_Store` against `layout.json`: icon view, window bounds, no toolbars, no arranging, icon positions, icon and text size, labels below;
+  - the background alias: volume name, mount point, HFS+, path `/.background.tiff`, and the file id of that file.
+- **Review:** one round by the code-reviewer, which found no blockers.
+  - **Fixed:**
+    - the layout check missed arranging, list view, window bounds, text size and the alias's mount point;
+    - the volume guard ran after the old outputs were deleted;
+    - the message gave no way to detach a hidden volume;
+    - "can't drift apart" wasn't true until the arrow followed the icons;
+    - only dmgbuild itself was pinned;
+    - a `uvx` failure was reported as a layout mismatch;
+    - the summary line was fixed text;
+    - the arrow had a brighter seam where its shapes overlapped.
+  - **Mutation test:** the reviewer tested the earlier check against 11 edited `.DS_Store` files. The new check also failed as it should on the previous build, whose bottom row was 4 pt lower.
+
+**Verified:**
+- `./scripts/test.sh` passed twice in a row on this branch: 93 + 43 + 149 package tests and 415 app tests. No app code changed, and the review fixes touch only the packaging scripts.
+- `build-dmg` and `verify-dmg` passed, including the full layout check and the self-check (13 of 13).
+- `update-cask`, `check-cask` and `sign-update` passed. The cask sha256 is `d40f33c5…a68e837`.
+- A composite mock-up of the background, icons and labels, in both light and dark, looked as intended.
+
+**Not verified:** what Finder actually draws when the DMG is opened. In particular, how much of the window's 520 pt height the title bar takes. The background is 540 pt tall with a plain strip at the bottom to absorb that. Opening the DMG by hand is the check.

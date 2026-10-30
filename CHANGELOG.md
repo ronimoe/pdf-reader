@@ -40,7 +40,7 @@ The first release: a calm, native PDF reader for macOS 26 on Apple Silicon. No a
 - Optional update checks (Sparkle 2, EdDSA-signed), off unless you turn them on.
 
 ### Release
-- Ad-hoc signed DMG and a Homebrew cask in the project's own tap; see [docs/INSTALL.md](docs/INSTALL.md).
+- Ad-hoc signed DMG that opens to a "drag Lectern to Applications" window, and a Homebrew cask in the project's own tap; see [docs/INSTALL.md](docs/INSTALL.md).
 - The GPL-3.0 licence and third-party notices are in the app (Help ▸ Licence, Help ▸ Acknowledgements) and on the disk image. The About panel shows the version, copyright, source repository and the no-telemetry promise.
 - Help ▸ Known Limitations lists what 1.0 doesn't do; see [docs/known-limitations.md](docs/known-limitations.md).
 - Performance measured on representative documents (a 475-page book, a 3,270-page manual, a 200-page image report and a scan); see [docs/performance.md](docs/performance.md).
