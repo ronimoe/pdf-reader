@@ -17,10 +17,14 @@ struct Layout: Decodable {
     struct Size: Decodable { let width: Double; let height: Double }
     struct Text: Decodable { let text: String; let y: Double; let size: Double }
     struct Item: Decodable { let name: String; let x: Double; let y: Double }
-    struct Arrow: Decodable { let fromX: Double; let toX: Double; let y: Double }
+    let window: Size
     let image: Size
+    let iconSize: Double
+    let textSize: Double
+    let app: Item
+    let applications: Item
+    let files: [Item]
     let caption: Text
-    let arrow: Arrow
     let separatorY: Double
     let note: Text
 }
@@ -39,6 +43,28 @@ do {
     fail("can't read \(arguments[1]): \(error)")
 }
 let outputFolder = URL(fileURLWithPath: arguments[2], isDirectory: true)
+
+// Every icon and its label must fit in the window, leaving room for the title bar, which Finder
+// counts in the window's height.
+let titleBarAllowance = 40.0, labelHeight = 2 * layout.textSize + 6
+guard layout.image.width >= layout.window.width, layout.image.height >= layout.window.height else {
+    fail("the image must be at least as large as the window")
+}
+for item in [layout.app, layout.applications] + layout.files {
+    let half = layout.iconSize / 2
+    guard item.x - half >= 0, item.x + half <= layout.window.width, item.y - half >= 0,
+          item.y + half + labelHeight <= layout.window.height - titleBarAllowance else {
+        fail("\(item.name) at (\(item.x), \(item.y)) doesn't fit in the window with its label")
+    }
+}
+// The arrow runs between the app and Applications, so it moves with them.
+guard layout.app.y == layout.applications.y, layout.app.x < layout.applications.x else {
+    fail("Lectern and Applications must be on one row, Lectern on the left")
+}
+let arrowGap = 22.0
+let arrow = (fromX: layout.app.x + layout.iconSize / 2 + arrowGap,
+             toX: layout.applications.x - layout.iconSize / 2 - arrowGap, y: layout.app.y)
+guard arrow.toX - arrow.fromX >= 60 else { fail("Lectern and Applications are too close for the arrow") }
 
 // #70777F
 let base = (red: 0x70, green: 0x77, blue: 0x7F)
@@ -91,11 +117,13 @@ func render(scale: Int) -> CGImage {
 
     drawText(layout.caption.text, size: layout.caption.size, emphasized: true, centreY: layout.caption.y, in: context)
 
-    // The arrow: a rounded shaft and a solid head, pointing at Applications.
-    let arrow = layout.arrow
+    // The arrow: a rounded shaft and a solid head, pointing at Applications. Drawn opaque inside a
+    // transparency layer, so the overlapping shaft and head blend as one shape at 90%.
     let headLength = 24.0, headHalfWidth = 15.0, shaft = 7.0
-    context.setFillColor(white.copy(alpha: 0.9)!)
-    context.setStrokeColor(white.copy(alpha: 0.9)!)
+    context.setAlpha(0.9)
+    context.beginTransparencyLayer(auxiliaryInfo: nil)
+    context.setFillColor(white)
+    context.setStrokeColor(white)
     context.setLineWidth(shaft)
     context.setLineCap(.round)
     context.move(to: CGPoint(x: arrow.fromX, y: arrow.y))
@@ -108,6 +136,8 @@ func render(scale: Int) -> CGImage {
     context.addLine(to: CGPoint(x: arrow.toX - headLength, y: arrow.y + headHalfWidth))
     context.closePath()
     context.drawPath(using: .fillStroke)
+    context.endTransparencyLayer()
+    context.setAlpha(1)
 
     context.setStrokeColor(white.copy(alpha: 0.3)!)
     context.setLineWidth(1)

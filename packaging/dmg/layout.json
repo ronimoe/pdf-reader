@@ -1,5 +1,5 @@
 {
-  "_comment": "The DMG window, in points from its top-left corner. Read by make-background.swift (what it draws) and dmgbuild-settings.py (where Finder puts the icons), so the arrow and the icons can't drift apart. The image is taller than the window: Finder's title bar takes some of the window's height, and the spare plain strip at the bottom absorbs it.",
+  "_comment": "The DMG window, in points from its top-left corner. dmgbuild-settings.py places the icons from it; make-background.swift draws the arrow between the app and Applications from the same positions and refuses a layout whose icons or labels fall outside the window. verify-dmg checks the built .DS_Store against it. The image is taller than the window: Finder's title bar takes some of the window's height, and the spare plain strip at the bottom absorbs it.",
   "window": { "width": 680, "height": 520 },
   "image": { "width": 680, "height": 540 },
   "iconSize": 112,
@@ -7,12 +7,11 @@
   "caption": { "text": "Drag Lectern to Applications", "y": 58, "size": 20 },
   "app": { "name": "Lectern.app", "x": 190, "y": 186 },
   "applications": { "name": "Applications", "x": 490, "y": 186 },
-  "arrow": { "fromX": 270, "toX": 410, "y": 186 },
   "separatorY": 300,
   "note": { "text": "Opening it for the first time? Read Me First explains the one-time step.", "y": 322, "size": 13 },
   "files": [
-    { "name": "Read Me First.txt", "x": 190, "y": 394 },
-    { "name": "License.txt", "x": 340, "y": 394 },
-    { "name": "Acknowledgements.txt", "x": 490, "y": 394 }
+    { "name": "Read Me First.txt", "x": 190, "y": 390 },
+    { "name": "License.txt", "x": 340, "y": 390 },
+    { "name": "Acknowledgements.txt", "x": 490, "y": 390 }
   ]
 }

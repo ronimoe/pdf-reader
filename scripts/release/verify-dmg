@@ -6,10 +6,12 @@
 #  1. The .sha256 file matches.
 #  2. Mounted read-only and hidden (-nobrowse -noautoopen: no Finder window), the image holds
 #     Lectern.app, an Applications link, "Read Me First.txt", License.txt and Acknowledgements.txt,
-#     plus the window layout: a background, a volume icon, and a .DS_Store whose icon positions,
-#     icon size and hidden toolbars match packaging/dmg/layout.json and whose background points
-#     at the image's own .background.tiff. That is what Finder is told to show; whether Finder
-#     draws it as intended can only be seen by opening the DMG.
+#     plus the window layout: a background, a volume icon (and the volume's custom-icon flag), and
+#     a .DS_Store that matches packaging/dmg/layout.json (icon view, window bounds, no toolbars,
+#     no arranging, icon positions, icon and text size, labels below) and whose background alias
+#     names this volume at /Volumes/<name> and the image's own .background.tiff by path and file
+#     id. That is what Finder is told to show; whether Finder draws it as intended can only be
+#     seen by opening the DMG.
 #  3. A copy of the app in a temporary folder has a valid ad-hoc, sandboxed signature, no
 #     get-task-allow, and no quarantine attribute.
 #  4. That copy runs its headless self-check: its executable is started directly with
@@ -54,6 +56,7 @@ fi
 [[ -f $DMG ]] || die "$DMG not found"
 VERSION=${${DMG:t:r}#Lectern-}
 REPORT=${DMG:h}/verify-$VERSION.txt
+command -v uvx >/dev/null || die "uvx not found (it runs the pinned ds_store and mac_alias that read the window layout)"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
 exec > >(tee $REPORT) 2>&1
@@ -104,35 +107,50 @@ grep -q "GNU GENERAL PUBLIC LICENSE" $MNT/License.txt 2>/dev/null || die "no Lic
 grep -q "Andy Matuschak" $MNT/Acknowledgements.txt 2>/dev/null || die "no Acknowledgements.txt with Sparkle's licence"
 [[ -f $MNT/.background.tiff ]] || die "no window background (.background.tiff)"
 [[ -f $MNT/.VolumeIcon.icns ]] || die "no volume icon (.VolumeIcon.icns)"
+[[ $(GetFileInfo -aC $MNT) == 1 ]] || die "the volume's custom-icon flag isn't set"
 [[ -f $MNT/.DS_Store ]] || die "no window layout (.DS_Store)"
-# ds_store and mac_alias come with the dmgbuild that build-dmg uses.
-uvx --quiet --from dmgbuild==1.6.7 python -I - $MNT packaging/dmg/layout.json <<'PY' || die "the window layout doesn't match packaging/dmg/layout.json"
-import json, sys
+# Reads the .DS_Store with the same pinned libraries build-dmg writes it with, so this checks
+# what Finder is told, not how Finder draws it.
+uvx --quiet --python 3.11 --from dmgbuild==1.6.7 --with ds_store==1.3.3 --with mac_alias==2.2.3 \
+  python -I - $MNT packaging/dmg/layout.json "Lectern $VERSION" <<'PY' || die "the window layout is wrong (above), or uvx couldn't run"
+import json, os, sys
 from ds_store import DSStore
 from mac_alias import Alias
-mnt, layout = sys.argv[1], json.load(open(sys.argv[2]))
+mnt, layout, volume = sys.argv[1], json.load(open(sys.argv[2])), sys.argv[3]
 with DSStore.open(mnt + "/.DS_Store", "r") as store:
     entries = {(e.filename, e.code): e.value for e in store}
 problems = []
+def expect(what, found, wanted):
+    if found != wanted:
+        problems.append(f"{what} is {found!r}, expected {wanted!r}")
 for item in [layout["app"], layout["applications"]] + layout["files"]:
-    found = entries.get((item["name"], b"Iloc"))
-    if found != (item["x"], item["y"]):
-        problems.append(f"{item['name']} at {found}, expected {(item['x'], item['y'])}")
+    expect(f"{item['name']}'s position", entries.get((item["name"], b"Iloc")), (item["x"], item["y"]))
 bwsp, icvp = entries.get((".", b"bwsp"), {}), entries.get((".", b"icvp"), {})
+expect("the view", entries.get((".", b"icvl")), b"icnv")
+window = layout["window"]
+expect("WindowBounds", bwsp.get("WindowBounds"), "{{200, 120}, {%d, %d}}" % (window["width"], window["height"]))
 for key in ("ShowToolbar", "ShowSidebar", "ShowStatusBar", "ShowPathbar"):
-    if bwsp.get(key) is not False:
-        problems.append(f"{key} is {bwsp.get(key)}, expected False")
-if icvp.get("iconSize") != layout["iconSize"]:
-    problems.append(f"icon size {icvp.get('iconSize')}, expected {layout['iconSize']}")
-if icvp.get("backgroundType") != 2 or "backgroundImageAlias" not in icvp:
-    problems.append("no background picture")
+    expect(key, bwsp.get(key), False)
+expect("arrangeBy", icvp.get("arrangeBy"), "none")
+expect("iconSize", icvp.get("iconSize"), float(layout["iconSize"]))
+expect("textSize", icvp.get("textSize"), float(layout["textSize"]))
+expect("labelOnBottom", icvp.get("labelOnBottom"), True)
+expect("backgroundType", icvp.get("backgroundType"), 2)
+if "backgroundImageAlias" in icvp:
+    alias = Alias.from_bytes(icvp["backgroundImageAlias"])
+    expect("the background's volume", alias.volume.name, volume)
+    expect("the background's volume path", alias.volume.posix_path, "/Volumes/" + volume)
+    expect("the background's filesystem", alias.volume.fs_type, b"H+")
+    expect("the background's path", alias.target.posix_path, "/.background.tiff")
+    expect("the background's folder", alias.target.folder_cnid, 2)
+    expect("the background's file id", alias.target.cnid, os.stat(mnt + "/.background.tiff").st_ino)
+    print(f"  background alias: {alias.volume.name!r} at {alias.volume.posix_path}, {alias.target.posix_path}")
 else:
-    target = Alias.from_bytes(icvp["backgroundImageAlias"]).target
-    if target.filename != ".background.tiff":
-        problems.append(f"the background points at {target.filename!r}")
+    problems.append("no background alias")
+print(f"  window {bwsp.get('WindowBounds')}, view {entries.get(('.', b'icvl'))!r}, arrangeBy {icvp.get('arrangeBy')!r}, "
+      f"icons {icvp.get('iconSize')} pt, text {icvp.get('textSize')} pt, {sum(1 for k in entries if k[1] == b'Iloc')} icon positions")
 for line in problems:
     print("  " + line)
-print(f"  layout: {len(layout['files']) + 2} icon positions, {layout['iconSize']} pt icons, no toolbars, background .background.tiff, window {bwsp.get('WindowBounds')}")
 sys.exit(1 if problems else 0)
 PY
 mkdir -p ${APP:h} ${QAPP:h}

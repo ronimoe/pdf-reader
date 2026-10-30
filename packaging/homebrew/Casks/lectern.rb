@@ -1,7 +1,7 @@
 cask "lectern" do
   # scripts/release/update-cask writes both from the DMG built by scripts/release/build-dmg.
   version "1.0.0"
-  sha256 "ea57ee4977629c2bac46f5ca27f0dd06e481e156a87503b923e4f3fce4b3c43a"
+  sha256 "d40f33c5dc7c0de96b317abb920ceac2ba6b6d9f9c7c239f1810e0225a68e837"
 
   url "https://github.com/ronimoe/pdf-reader/releases/download/v#{version}/Lectern-#{version}.dmg"
   name "Lectern"

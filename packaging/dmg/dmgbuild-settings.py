@@ -41,3 +41,14 @@ arrange_by = None
 icon_size = layout["iconSize"]
 text_size = layout["textSize"]
 label_pos = "bottom"
+
+
+def create_hook(mount_point, options):
+    # The background is recorded as an alias that includes the scratch volume's mount point. If
+    # another volume with this name was mounted, hdiutil picked "/Volumes/<name> 1" instead, and
+    # the alias would record that path rather than the one a user's Mac mounts the DMG at (whether
+    # Finder would still find the background is untested). Raising makes dmgbuild detach and fail.
+    expected = "/Volumes/" + options["volume_name"]
+    if mount_point != expected:
+        raise RuntimeError(f"the scratch image mounted at {mount_point!r}, not {expected!r}; "
+                           f"eject the other volume named {options['volume_name']!r}")

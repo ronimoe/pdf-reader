@@ -32,7 +32,8 @@ SIGNATURE_REPORT=$OUT/signature.txt
 say() { print -r -- "== $*"; }
 die() { print -r -- "build-dmg: $*" >&2; exit 1; }
 
-DMGBUILD=(uvx --quiet --from dmgbuild==1.6.7 dmgbuild)
+# dmgbuild and the two libraries it writes the .DS_Store and the background alias with, all pinned.
+DMGBUILD=(uvx --quiet --python 3.11 --from dmgbuild==1.6.7 --with ds_store==1.3.3 --with mac_alias==2.2.3 dmgbuild)
 
 for tool in xcodegen xcodebuild codesign hdiutil ditto plutil shasum swift uvx; do
   command -v $tool >/dev/null || die "$tool not found"
@@ -49,12 +50,15 @@ VERSION=$(xcodebuild -project Lectern.xcodeproj -target Lectern -configuration R
 DMG=$OUT/Lectern-$VERSION.dmg
 SHA_FILE=$DMG.sha256
 say "version $VERSION"
+# dmgbuild mounts its scratch image under the volume name. With a copy already mounted (an open
+# DMG, or a scratch image left by an interrupted run, which is mounted hidden) the background alias
+# would record "/Volumes/Lectern <version> 1". Checked here, before anything is deleted, and again
+# by the settings' create_hook at the moment dmgbuild mounts.
+volume_in_use() { die "a volume named 'Lectern $VERSION' is mounted; eject it, or run: hdiutil detach \"/Volumes/Lectern $VERSION\""; }
+[[ -e "/Volumes/Lectern $VERSION" ]] && volume_in_use
 # A failed run must not leave the previous DMG looking like this build's.
 ZIP=$OUT/Lectern-$VERSION.zip
 rm -rf $DMG $SHA_FILE $ZIP $PARTIAL $STAGING $OUT/dmg-background
-# dmgbuild mounts its scratch image under the volume name; a copy already mounted (an open
-# DMG) would push it to "Lectern <version> 1", and the window's background would point there.
-[[ -e "/Volumes/Lectern $VERSION" ]] && die "a volume named 'Lectern $VERSION' is mounted; eject it first"
 
 say "archive the Release configuration, clean (log: $LOG)"
 rm -rf $ARCHIVE $DERIVED
@@ -131,6 +135,7 @@ EOF
 cp LICENSE $STAGING/License.txt
 cp App/Resources/Acknowledgements.txt $STAGING/Acknowledgements.txt
 swift packaging/dmg/make-background.swift packaging/dmg/layout.json $OUT/dmg-background
+[[ -e "/Volumes/Lectern $VERSION" ]] && volume_in_use
 $DMGBUILD -s packaging/dmg/dmgbuild-settings.py -D staging=$STAGING -D layout=packaging/dmg/layout.json \
   -D background=$OUT/dmg-background/background.png -D icon=$APP/Contents/Resources/AppIcon.icns \
   "Lectern $VERSION" $PARTIAL/${DMG:t} || die "dmgbuild failed"
