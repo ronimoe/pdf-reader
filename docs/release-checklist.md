@@ -10,7 +10,7 @@ In `build/release/` (git-ignored) of the worktree where M6 was built, from `scri
 
 | File | What it is |
 |---|---|
-| `Lectern-1.0.0.dmg` | The disk image: Lectern.app, an Applications link, `Read Me First.txt`, `License.txt`, `Acknowledgements.txt` |
+| `Lectern-1.0.0.dmg` | The disk image: Lectern.app, an Applications link, `Read Me First.txt`, `License.txt`, `Acknowledgements.txt`, in a window with a "drag to Applications" background (`packaging/dmg/`) |
 | `Lectern-1.0.0.dmg.sha256` | Its checksum, in `shasum -a 256 -c` format |
 | `Lectern-1.0.0.zip` | The Sparkle update archive (the same app) |
 | `appcast.xml` | The update feed, with the zip's EdDSA signature |

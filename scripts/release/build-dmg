@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Builds a Release Lectern.app, checks its signature, and packages it as
 #   build/release/Lectern-<version>.dmg        (Lectern.app, an Applications link, "Read Me First.txt",
-#                                              License.txt and Acknowledgements.txt)
+#                                              License.txt and Acknowledgements.txt, laid out in a
+#                                              "drag to Applications" window; packaging/dmg/)
 #   build/release/Lectern-<version>.dmg.sha256 (shasum -a 256 format; `shasum -c` from build/release)
 #   build/release/Lectern-<version>.zip        the Sparkle update archive (sign it with
 #                                              scripts/release/sign-update, which writes appcast.xml)
@@ -12,6 +13,9 @@
 # the app is built clean. Stops at the first error. The DMG and .sha256 are written
 # under build/release/.partial and moved into place only after `hdiutil verify` passes
 # and the checksum is written, so a failed run never leaves a DMG behind.
+#
+# The window's background is drawn by packaging/dmg/make-background.swift, and dmgbuild (pinned,
+# run through uvx) writes the image with the window layout. Neither opens a Finder window.
 #
 # Usage: scripts/release/build-dmg
 set -euo pipefail
@@ -28,7 +32,9 @@ SIGNATURE_REPORT=$OUT/signature.txt
 say() { print -r -- "== $*"; }
 die() { print -r -- "build-dmg: $*" >&2; exit 1; }
 
-for tool in xcodegen xcodebuild codesign hdiutil ditto plutil shasum; do
+DMGBUILD=(uvx --quiet --from dmgbuild==1.6.7 dmgbuild)
+
+for tool in xcodegen xcodebuild codesign hdiutil ditto plutil shasum swift uvx; do
   command -v $tool >/dev/null || die "$tool not found"
 done
 mkdir -p $OUT
@@ -45,7 +51,10 @@ SHA_FILE=$DMG.sha256
 say "version $VERSION"
 # A failed run must not leave the previous DMG looking like this build's.
 ZIP=$OUT/Lectern-$VERSION.zip
-rm -rf $DMG $SHA_FILE $ZIP $PARTIAL $STAGING
+rm -rf $DMG $SHA_FILE $ZIP $PARTIAL $STAGING $OUT/dmg-background
+# dmgbuild mounts its scratch image under the volume name; a copy already mounted (an open
+# DMG) would push it to "Lectern <version> 1", and the window's background would point there.
+[[ -e "/Volumes/Lectern $VERSION" ]] && die "a volume named 'Lectern $VERSION' is mounted; eject it first"
 
 say "archive the Release configuration, clean (log: $LOG)"
 rm -rf $ARCHIVE $DERIVED
@@ -121,9 +130,12 @@ EOF
 # The licence (GPL-3.0) and third-party notices travel with the app; both are also inside it.
 cp LICENSE $STAGING/License.txt
 cp App/Resources/Acknowledgements.txt $STAGING/Acknowledgements.txt
-hdiutil create -quiet -volname "Lectern $VERSION" -srcfolder $STAGING -fs APFS -format UDZO -ov $PARTIAL/${DMG:t}
+swift packaging/dmg/make-background.swift packaging/dmg/layout.json $OUT/dmg-background
+$DMGBUILD -s packaging/dmg/dmgbuild-settings.py -D staging=$STAGING -D layout=packaging/dmg/layout.json \
+  -D background=$OUT/dmg-background/background.png -D icon=$APP/Contents/Resources/AppIcon.icns \
+  "Lectern $VERSION" $PARTIAL/${DMG:t} || die "dmgbuild failed"
 hdiutil verify -quiet $PARTIAL/${DMG:t}
-rm -rf $STAGING
+rm -rf $STAGING $OUT/dmg-background
 (cd $PARTIAL && shasum -a 256 ${DMG:t} >${SHA_FILE:t} && shasum -a 256 -c -s ${SHA_FILE:t})
 
 # The Sparkle update archive: the same app, zipped with its resource forks and signatures intact.

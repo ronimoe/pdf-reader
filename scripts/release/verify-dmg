@@ -5,7 +5,11 @@
 #
 #  1. The .sha256 file matches.
 #  2. Mounted read-only and hidden (-nobrowse -noautoopen: no Finder window), the image holds
-#     Lectern.app, an Applications link, "Read Me First.txt", License.txt and Acknowledgements.txt.
+#     Lectern.app, an Applications link, "Read Me First.txt", License.txt and Acknowledgements.txt,
+#     plus the window layout: a background, a volume icon, and a .DS_Store whose icon positions,
+#     icon size and hidden toolbars match packaging/dmg/layout.json and whose background points
+#     at the image's own .background.tiff. That is what Finder is told to show; whether Finder
+#     draws it as intended can only be seen by opening the DMG.
 #  3. A copy of the app in a temporary folder has a valid ad-hoc, sandboxed signature, no
 #     get-task-allow, and no quarantine attribute.
 #  4. That copy runs its headless self-check: its executable is started directly with
@@ -92,12 +96,45 @@ print -r -- "size: $(stat -f %z $DMG) bytes"
 say "2. mount read-only and check the contents"
 mkdir -p $MNT
 hdiutil attach -quiet -readonly -nobrowse -noautoopen -mountpoint $MNT $DMG
-ls -l $MNT | sed 's/^/  /'
+ls -lA $MNT | sed 's/^/  /'
 [[ -d $MNT/Lectern.app ]] || die "no Lectern.app in the image"
 [[ -L $MNT/Applications && $(readlink $MNT/Applications) == /Applications ]] || die "no Applications link"
 [[ -f "$MNT/Read Me First.txt" ]] || die "no 'Read Me First.txt'"
 grep -q "GNU GENERAL PUBLIC LICENSE" $MNT/License.txt 2>/dev/null || die "no License.txt with the GPL-3.0"
 grep -q "Andy Matuschak" $MNT/Acknowledgements.txt 2>/dev/null || die "no Acknowledgements.txt with Sparkle's licence"
+[[ -f $MNT/.background.tiff ]] || die "no window background (.background.tiff)"
+[[ -f $MNT/.VolumeIcon.icns ]] || die "no volume icon (.VolumeIcon.icns)"
+[[ -f $MNT/.DS_Store ]] || die "no window layout (.DS_Store)"
+# ds_store and mac_alias come with the dmgbuild that build-dmg uses.
+uvx --quiet --from dmgbuild==1.6.7 python -I - $MNT packaging/dmg/layout.json <<'PY' || die "the window layout doesn't match packaging/dmg/layout.json"
+import json, sys
+from ds_store import DSStore
+from mac_alias import Alias
+mnt, layout = sys.argv[1], json.load(open(sys.argv[2]))
+with DSStore.open(mnt + "/.DS_Store", "r") as store:
+    entries = {(e.filename, e.code): e.value for e in store}
+problems = []
+for item in [layout["app"], layout["applications"]] + layout["files"]:
+    found = entries.get((item["name"], b"Iloc"))
+    if found != (item["x"], item["y"]):
+        problems.append(f"{item['name']} at {found}, expected {(item['x'], item['y'])}")
+bwsp, icvp = entries.get((".", b"bwsp"), {}), entries.get((".", b"icvp"), {})
+for key in ("ShowToolbar", "ShowSidebar", "ShowStatusBar", "ShowPathbar"):
+    if bwsp.get(key) is not False:
+        problems.append(f"{key} is {bwsp.get(key)}, expected False")
+if icvp.get("iconSize") != layout["iconSize"]:
+    problems.append(f"icon size {icvp.get('iconSize')}, expected {layout['iconSize']}")
+if icvp.get("backgroundType") != 2 or "backgroundImageAlias" not in icvp:
+    problems.append("no background picture")
+else:
+    target = Alias.from_bytes(icvp["backgroundImageAlias"]).target
+    if target.filename != ".background.tiff":
+        problems.append(f"the background points at {target.filename!r}")
+for line in problems:
+    print("  " + line)
+print(f"  layout: {len(layout['files']) + 2} icon positions, {layout['iconSize']} pt icons, no toolbars, background .background.tiff, window {bwsp.get('WindowBounds')}")
+sys.exit(1 if problems else 0)
+PY
 mkdir -p ${APP:h} ${QAPP:h}
 ditto $MNT/Lectern.app $APP
 ditto $MNT/Lectern.app $QAPP
