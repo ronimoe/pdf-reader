@@ -5,6 +5,11 @@ Lectern is free software under the GNU General Public License, version 3
 (Help > Licence). It is built on Apple's system frameworks (AppKit, SwiftUI,
 PDFKit, Security), which are part of macOS and aren't distributed with it.
 
+The Lectern logo and app icon are not covered by the GPL. Copyright (c) 2026
+Roni Moe, all rights reserved. They may be redistributed unchanged with
+Lectern, but modified versions must use their own; see design/logo/LICENSE.md
+in the source.
+
 Lectern ships one third-party component inside the app:
 
 Sparkle 2.10.1 (https://sparkle-project.org), the opt-in update checker,

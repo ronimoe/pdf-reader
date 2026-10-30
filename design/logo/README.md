@@ -17,6 +17,6 @@ ictool=/Applications/Xcode.app/Contents/Applications/Icon\ Composer.app/Contents
 
 The other renditions are `Dark`, `TintedLight`, `TintedDark`, `ClearLight` and `ClearDark`.
 
-**Licence:** not decided yet. Everything else in the repository is under GPL-3.0. Many projects keep their logo out of the code licence so that forks must use their own. Record the maintainer's decision here.
+**Licence:** the logo and app icon are kept out of the GPL, decided by the maintainer on 2026-10-30. They may be redistributed unchanged with Lectern and used to refer to it, but forks must use their own. The terms are in [`LICENSE.md`](LICENSE.md).
 
 **Higher resolution:** the source is about 1,030 px across inside its rounded square, so 1024 px is the most the icon can honestly use. A vector version, or a 2048 px or larger PNG, would sharpen it on Retina screens at the largest sizes.
