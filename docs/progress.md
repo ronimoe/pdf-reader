@@ -569,4 +569,6 @@ The DMG opened to a plain Finder window: five small icons in a row, a toolbar an
 - Re-signing the zip with the release key gives the same EdDSA signature as the published appcast.
 - Downloaded without signing in: the DMG matches its `.sha256`, and the zip and appcast are byte-identical to the local files. `releases/latest/download/appcast.xml` resolves.
 
-**Not verified:** `verify-dmg` wasn't re-run, because a copy of Lectern was open in `/Applications`; its PASS from 2026-10-30 covers the same bytes. The tap (checklist §4) and the hand checks (§5) are still open.
+**Not verified:** `verify-dmg` wasn't re-run, because a copy of Lectern was open in `/Applications`; its PASS from 2026-10-30 covers the same bytes. The hand checks (checklist §5) are still open.
+
+**The tap (2026-11-01):** the maintainer created `ronimoe/homebrew-lectern`, and the prepared cask and README were pushed to it. `brew tap ronimoe/lectern` and `brew install --cask --appdir=<scratch folder> ronimoe/lectern/lectern` on Homebrew 7.0.11 installed 1.0.0 with no quarantine mark (the postflight works) and a valid `codesign --strict` signature, and needed no `brew trust`. The test copy was then uninstalled and the tap removed. Not verified: opening a tap-installed copy, and a Mac without Lectern.

@@ -65,6 +65,8 @@ gh release create v1.0.0 --title "Lectern 1.0.0" --notes-file <notes> \
 
 ## 4. Create the Homebrew tap
 
+*(Done 2026-11-01.)* [`ronimoe/homebrew-lectern`](https://github.com/ronimoe/homebrew-lectern) is public, with `Casks/lectern.rb` and a README. The install was tested on the maintainer's Mac into a scratch folder (`--appdir`), then uninstalled and untapped: no quarantine mark left, `codesign --strict` passed, version 1.0.0. Homebrew 7.0.11 trusted the newly added tap without `brew trust`. Still owed: a Mac without Lectern, and opening the installed app (§5).
+
 1. Create the public repository **`ronimoe/homebrew-lectern`** (Homebrew finds `brew tap ronimoe/lectern` there).
 2. Add `packaging/homebrew/Casks/lectern.rb` from this repository as `Casks/lectern.rb`, commit and push.
 3. Test on a Mac without Lectern: `brew tap ronimoe/lectern && brew install --cask ronimoe/lectern/lectern`. If Homebrew asks, `brew trust --cask ronimoe/lectern/lectern` (whether a GitHub-hosted tap needs it is unverified).
