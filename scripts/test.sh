@@ -35,6 +35,9 @@ swift scripts/release/sparkle-key.swift generate "$keydir/k" >/dev/null 2>&1 && 
 [[ $(shasum "$keydir/k") == "$before" ]] || { echo "✘ sparkle-key: existing key changed"; key_ok=0; }
 rm -rf "$keydir"
 if (( key_ok )); then echo "✔ sparkle-key: mode 600 under umask 000, no overwrite, public key round-trips"; else result=1; fi
+# install.sh is run straight from main by `curl … | zsh`, so every case is checked offline against
+# fixture releases on each run.
+scripts/release/test-install || result=1
 
 echo "== xcodebuild test (Lectern app)"
 xcodebuild -project Lectern.xcodeproj -scheme Lectern -destination 'platform=macOS' \

@@ -1,0 +1,211 @@
+#!/bin/zsh
+# Tests scripts/install.sh offline, the way people run it (piped into zsh), against fixture
+# releases served by a fake curl. Each case checks the exit code, the message, what ends up in the
+# destination, and that nothing temporary is left: no download folder, no hidden staging folder,
+# no attached image.
+#
+# Never shows anything on screen: every image, while building fixtures and while installing, is
+# attached hidden (-nobrowse) to a folder of its own, never in /Volumes or Finder, and no fixture
+# app is ever launched.
+# A "running copy" is a plain `sleep` whose argv[0] is the app's executable path. Every
+# installation goes into a folder under this run's temporary folder, never /Applications.
+#
+# Usage: scripts/release/test-install      (scripts/test.sh runs it)
+set -euo pipefail
+cd "${0:A:h:h:h}"
+INSTALLER=${LECTERN_TEST_INSTALLER:-$PWD/scripts/install.sh}
+
+FIX=$(mktemp -d "${TMPDIR:-/tmp}/lectern-test-install.XXXXXX")
+FIX=${FIX:A}
+SLEEPERS=()
+cleanup() {
+  local pid
+  for pid in $SLEEPERS; do kill $pid 2>/dev/null || true; done
+  { hdiutil info | grep -F -- "$FIX" | awk '{print $1}' | grep '^/dev/' | while read -r dev; do hdiutil detach "$dev" -force -quiet; done } || true
+  rm -rf -- "$FIX"
+}
+trap cleanup EXIT
+
+failures=0
+pass() { print -r -- "✔ install.sh: $*"; }
+fail() { print -r -- "✘ install.sh: $*"; failures=$((failures + 1)); }
+
+# --- Fixture releases ------------------------------------------------------------------------
+# A bundle around a copy of /usr/bin/true, signed ad-hoc. Never launched.
+make_app() { # folder, bundle id, version
+  local app=$1/Lectern.app
+  mkdir -p "$app/Contents/MacOS"
+  cp /usr/bin/true "$app/Contents/MacOS/Lectern"
+  plutil -create xml1 "$app/Contents/Info.plist"
+  plutil -insert CFBundleIdentifier -string "$2" "$app/Contents/Info.plist"
+  plutil -insert CFBundleExecutable -string Lectern "$app/Contents/Info.plist"
+  plutil -insert CFBundlePackageType -string APPL "$app/Contents/Info.plist"
+  plutil -insert CFBundleShortVersionString -string "$3" "$app/Contents/Info.plist"
+  codesign -s - -f "$app" 2>/dev/null
+}
+
+make_release() { # version, kind
+  local version=$1 kind=$2 src=$FIX/src/$1 out=$FIX/releases/v$1
+  mkdir -p "$src" "$out"
+  case $kind in
+    good|mismatch|other-file|empty-sha) make_app "$src" io.github.ronimoe.Lectern "$version" ;;
+    bad-id) make_app "$src" com.example.NotLectern "$version" ;;
+    bad-seal) make_app "$src" io.github.ronimoe.Lectern "$version"; mkdir -p "$src/Lectern.app/Contents/Resources"; print added > "$src/Lectern.app/Contents/Resources/added.txt" ;;
+    no-app) print "no app here" > "$src/README.txt" ;;
+  esac
+  # An empty image, attached hidden to a folder of ours, filled with ditto, then converted to a
+  # compressed read-only image like the release's. (makehybrid would skip the attach, but it gives
+  # the bundle Finder info, which codesign --strict rightly rejects.)
+  local dmg=$out/Lectern-$version.dmg rw=$FIX/rw-$version.dmg mnt=$FIX/mnt-$version
+  mkdir -p "$mnt"
+  hdiutil create -quiet -size 4m -fs HFS+ -layout NONE -volname "Lectern $version" "$rw"
+  hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$mnt" "$rw" < /dev/null
+  ditto "$src" "$mnt"
+  hdiutil detach -quiet "$mnt"
+  hdiutil convert -quiet "$rw" -format UDZO -o "$dmg"
+  rm -f -- "$rw"
+  case $kind in
+    mismatch) print -r -- "$(printf '%064d' 0)  Lectern-$version.dmg" > "$dmg.sha256" ;;
+    other-file) shasum -a 256 /usr/bin/true > "$dmg.sha256" ;;
+    empty-sha) : > "$dmg.sha256" ;;
+    *) (cd "$out" && shasum -a 256 "Lectern-$version.dmg" > "Lectern-$version.dmg.sha256") ;;
+  esac
+}
+
+make_release 9.0.0 good
+make_release 9.0.1 good
+make_release 9.1.0 mismatch
+make_release 9.1.1 other-file
+make_release 9.1.2 empty-sha
+make_release 9.1.3 no-app
+make_release 9.1.4 bad-id
+make_release 9.1.5 bad-seal
+
+# --- Fake curl and brew ----------------------------------------------------------------------
+mkdir -p "$FIX/bin" "$FIX/tmp" "$FIX/brew-empty"
+cat > "$FIX/bin/curl" <<'EOF'
+#!/bin/zsh
+# Serves $FAKE_RELEASES/v<version>/<file> for .../releases/download/v<version>/<file>, and
+# answers the releases/latest redirect with $FAKE_LATEST.
+out= url= head=0
+while (( $# )); do
+  case $1 in
+    -o|-w|--proto|--proto-redir) [[ $1 == -o ]] && out=$2; shift 2 ;;
+    -*I*) head=1; shift ;;
+    -*) shift ;;
+    *) url=$1; shift ;;
+  esac
+done
+[[ -n ${FAKE_CURL_DELAY:-} ]] && sleep $FAKE_CURL_DELAY
+case $url in
+  https://github.com/ronimoe/pdf-reader/releases/latest)
+    (( head )) && print -rn -- "https://github.com/ronimoe/pdf-reader/releases/tag/v$FAKE_LATEST" ;;
+  https://github.com/ronimoe/pdf-reader/releases/download/*)
+    file=$FAKE_RELEASES/${url#*/releases/download/}
+    [[ -f $file ]] || { print -u2 "curl: (22) The requested URL returned error: 404"; exit 22; }
+    cp -- "$file" "$out" ;;
+  *) print -u2 "fake curl: unexpected URL $url"; exit 7 ;;
+esac
+EOF
+cat > "$FIX/bin/brew" <<'EOF'
+#!/bin/zsh
+[[ $1 == --prefix ]] && print -r -- "$FAKE_BREW_PREFIX"
+EOF
+chmod +x "$FIX/bin/curl" "$FIX/bin/brew"
+
+# --- Running the installer -------------------------------------------------------------------
+# The destination has a quote, parentheses and spaces: the trap and the running-copy check must
+# treat it literally.
+APPS="$FIX/apps/Bob's (x) Apps"
+TARGET=$APPS/Lectern.app
+OUT= RC=
+install_with() { # VAR=value ... : runs install.sh piped into zsh, like curl … | zsh
+  local appdir=$APPS arg
+  for arg in "$@"; do [[ $arg == LECTERN_APPDIR=* ]] && appdir=${arg#LECTERN_APPDIR=}; done
+  [[ ${appdir:A} == $FIX/* ]] || { print -r -- "test-install: refusing to install outside $FIX" >&2; exit 1; }
+  RC=0
+  OUT=$(env PATH="$FIX/bin:$PATH" TMPDIR="$FIX/tmp" FAKE_RELEASES="$FIX/releases" FAKE_LATEST=9.0.1 \
+    FAKE_BREW_PREFIX="$FIX/brew-empty" LECTERN_APPDIR="$APPS" "$@" zsh < "$INSTALLER" 2>&1) || RC=$?
+}
+installed_version() { plutil -extract CFBundleShortVersionString raw "$TARGET/Contents/Info.plist" 2>/dev/null || print none; }
+leftovers() { # anything temporary that survived
+  local left=()
+  left+=("$FIX"/tmp/*(N) "$APPS"/.lectern-install.*(N))
+  hdiutil info | grep -qF -- "$FIX" && left+=(an-attached-image)
+  print -r -- "${left[*]}"
+}
+expect() { # name, expected rc ("0" or "fail"), message substring, expected installed version
+  local name=$1 want_rc=$2 want_msg=$3 want_version=$4 problems=()
+  if [[ $want_rc == 0 ]]; then (( RC == 0 )) || problems+=("exit $RC"); else (( RC != 0 )) || problems+=("exit 0"); fi
+  [[ $OUT == *"$want_msg"* ]] || problems+=("no '$want_msg' in output")
+  [[ $(installed_version) == $want_version ]] || problems+=("installed $(installed_version), expected $want_version")
+  [[ -z $(leftovers) ]] || problems+=("left behind: $(leftovers)")
+  if (( ${#problems} )); then fail "$name: ${(j:; :)problems}"; print -r -- "$OUT" | sed 's/^/    /'; else pass "$name"; fi
+}
+
+install_with LECTERN_VERSION=9.0.0
+expect "fresh install into a path with ' ( ) and spaces" 0 "installed $TARGET" 9.0.0
+[[ -z $(xattr "$TARGET" 2>/dev/null | grep quarantine) ]] && pass "installed copy has no quarantine mark" || fail "installed copy has a quarantine mark"
+
+install_with
+expect "the latest release replaces the previous copy" 0 "Lectern 9.0.1 into" 9.0.1
+
+install_with LECTERN_VERSION=9.1.0
+expect "checksum mismatch is refused" fail "doesn't match its published SHA-256" 9.0.1
+install_with LECTERN_VERSION=9.1.1
+expect ".sha256 naming another file is refused" fail "doesn't match its published SHA-256" 9.0.1
+install_with LECTERN_VERSION=9.1.2
+expect "empty .sha256 is refused" fail "doesn't hold a SHA-256" 9.0.1
+install_with LECTERN_VERSION=9.1.3
+expect "a DMG without Lectern.app is refused" fail "has no Lectern.app" 9.0.1
+install_with LECTERN_VERSION=9.1.4
+expect "a wrong bundle identifier is refused" fail "bundle identifier 'com.example.NotLectern'" 9.0.1
+install_with LECTERN_VERSION=9.1.5
+expect "a broken signature is refused" fail "failed its signature check" 9.0.1
+install_with LECTERN_VERSION=9.9.9
+expect "a missing release is refused" fail "couldn't download Lectern-9.9.9.dmg" 9.0.1
+install_with "LECTERN_VERSION=1;rm"
+expect "a malformed version is refused" fail "unexpected version" 9.0.1
+install_with LECTERN_VERSION=v9.0.0
+expect "a version given with a leading v" 0 "Lectern 9.0.0 into" 9.0.0
+
+zsh -c 'exec -a "$1" sleep 60' _ "$TARGET/Contents/MacOS/Lectern" &
+SLEEPERS+=($!)
+sleep 0.5
+install_with LECTERN_VERSION=9.0.1
+expect "a copy running from the destination is never replaced" fail "Lectern is running from $TARGET" 9.0.0
+kill $SLEEPERS[-1] 2>/dev/null || true
+
+mkdir -p "$FIX/brew-managed/Caskroom/lectern"
+install_with FAKE_BREW_PREFIX="$FIX/brew-managed"
+expect "a Homebrew-managed Lectern is left to Homebrew" fail "Homebrew manages Lectern" 9.0.0
+
+# Interrupted while downloading: the trap must still clean up and keep the previous copy. A job
+# started with & ignores SIGINT, so perl restores the default first, as a terminal's Ctrl-C finds it.
+for sig code in INT 130 TERM 143; do
+  RC=0
+  env PATH="$FIX/bin:$PATH" TMPDIR="$FIX/tmp" FAKE_RELEASES="$FIX/releases" FAKE_LATEST=9.0.1 \
+    FAKE_BREW_PREFIX="$FIX/brew-empty" LECTERN_APPDIR="$APPS" FAKE_CURL_DELAY=2 \
+    perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die' zsh "$INSTALLER" >/dev/null 2>&1 &
+  pid=$!
+  sleep 1
+  kill -$sig $pid
+  wait $pid || RC=$?
+  OUT=
+  if (( RC == code )) && [[ -z $(leftovers) && $(installed_version) == 9.0.0 ]]; then pass "$sig during the download cleans up"
+  else fail "$sig during the download: exit $RC, left behind '$(leftovers)', installed $(installed_version)"; fi
+done
+
+OUT=$(sh "$INSTALLER" 2>&1) && fail "sh isn't refused" || [[ $OUT == *"run this with zsh"* ]] && pass "sh is refused with a message" || fail "sh is refused without the message"
+
+# Cut off two thirds of the way through, inside the function: zsh must fail to parse it and run
+# nothing at all.
+fresh="$FIX/apps/never created"
+size=$(wc -c < "$INSTALLER")
+RC=0
+head -c $((size * 2 / 3)) "$INSTALLER" | env PATH="$FIX/bin:$PATH" TMPDIR="$FIX/tmp" FAKE_RELEASES="$FIX/releases" \
+  FAKE_LATEST=9.0.1 FAKE_BREW_PREFIX="$FIX/brew-empty" LECTERN_APPDIR="$fresh" zsh >/dev/null 2>&1 || RC=$?
+if (( RC != 0 )) && [[ ! -e $fresh && -z $(leftovers) ]]; then pass "a cut-off script runs nothing"
+else fail "a cut-off script: exit $RC, created '$fresh': $([[ -e $fresh ]] && print yes || print no)"; fi
+
+(( failures == 0 ))

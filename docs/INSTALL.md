@@ -4,7 +4,21 @@ Lectern needs **macOS 26 (Tahoe) or later on an Apple Silicon Mac**.
 
 > **Not published yet.** Lectern 1.0.0 is built and checked, but there is no public GitHub Release or Homebrew tap until the maintainer publishes them ([release-checklist.md](release-checklist.md)). Until then only [building from source](#build-from-source) works. The download links, including the one the Homebrew cask uses, work only once the repository is public and the release exists.
 
-Lectern isn't signed with an Apple Developer ID ([why](#why-isnt-it-signed)). macOS therefore blocks a downloaded copy the first time you open it, and you have to allow it once. Each route below says how.
+Lectern isn't signed with an Apple Developer ID ([why](#why-isnt-it-signed)). A copy downloaded in a browser is therefore blocked the first time you open it, and you have to allow it once. The Terminal line and Homebrew avoid that step. Each route below says how.
+
+## One line in Terminal
+
+The quickest way, with no Homebrew and no Open Anyway step:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ronimoe/pdf-reader/main/scripts/install.sh | zsh
+```
+
+- **What it does.** [`scripts/install.sh`](../scripts/install.sh) downloads the latest DMG from this project's GitHub Releases. It compares it with the SHA-256 published with that release, checks the app's signature and bundle identifier, and moves it into `/Applications`, or `~/Applications` if you can't write to `/Applications`. Any older copy is replaced, and put back if the move fails. Everything temporary is deleted, even if you press Ctrl-C. It never uses `sudo` and never opens the app. Read it first if you like.
+- **Why macOS doesn't ask.** Gatekeeper's first-launch check applies only to an app carrying the "downloaded from the internet" mark. Browsers add that mark; `curl` doesn't. So this copy opens like one you built yourself.
+- **What you're trusting** is the same as when you download the DMG yourself: HTTPS to this project's GitHub Releases. The checksum comes from the same release, so it catches a damaged or cut-off download, not a malicious one. Run the line only as written here.
+- **It stops instead of guessing** if Lectern is running from where it would install (quit it first), or if Homebrew installed Lectern (use `brew upgrade --cask lectern`).
+- **Updating.** Run the same line again (quit Lectern first), or use the in-app update check ([Updates](#updates)).
 
 ## Homebrew
 
@@ -42,10 +56,11 @@ This removes the "downloaded from the internet" mark from the app, and macOS the
 
 ## Updates
 
-Lectern never goes online on its own unless you say so. There are two ways to update:
+Lectern never goes online on its own unless you say so. There are three ways to update:
 
 - **In the app (opt-in).** Turn on automatic checks, or use Check Now, as described below.
 - **With Homebrew.** `brew upgrade --cask lectern` installs the newest release, whether or not the in-app check is on. Homebrew doesn't rely on the in-app updater, because it's off by default.
+- **With the Terminal line.** Quit Lectern and run the [same line](#one-line-in-terminal) again.
 
 ### The in-app update check
 
@@ -85,6 +100,7 @@ ditto build/DerivedData/Build/Products/Release/Lectern.app /Applications/Lectern
 - **`swift scripts/release/sparkle-key.swift generate <file>`** makes a new key file (mode 600) without using the Keychain, and prints the public key. It refuses to overwrite a key. Only needed once.
 - **`scripts/release/sparkle-e2e`** proves, without any window, that the updater installs one ad-hoc build over another and refuses an update signed with a different key. It builds a small headless test app and installs it in a temporary folder.
 - **`scripts/release/update-cask`** writes the version and checksum of a DMG into the cask. It refuses a DMG without a matching `.sha256`. **`scripts/release/check-cask`** runs `brew style` and `brew audit` on the cask in a throwaway local tap.
+- **`scripts/install.sh`** is the [Terminal installer](#one-line-in-terminal). People run it straight from `main`, so a change to it is live as soon as it's merged, and it must keep working with the latest release's file names. Try it without touching `/Applications` with `LECTERN_APPDIR=<folder> zsh scripts/install.sh`; `LECTERN_VERSION=<x.y.z>` picks a release. **`scripts/release/test-install`** (run by `scripts/test.sh`) checks it offline, piped into `zsh` as people run it, against fixture releases served by a fake `curl`. It covers checksum, signature and bundle-identifier failures, a running copy, a Homebrew copy, Ctrl-C and TERM, a cut-off download, and a destination with quotes and spaces. It never launches an app or shows an image in Finder.
 - **`scripts/perf.sh`** runs the performance tests on the representative documents ([performance.md](performance.md)); `scripts/test.sh` skips them.
 - **Publishing** a release is a manual checklist: [release-checklist.md](release-checklist.md).
 
@@ -93,7 +109,7 @@ ditto build/DerivedData/Build/Products/Release/Lectern.app /Applications/Lectern
 1. Quit Lectern.
 2. Remove the app:
    - **Homebrew:** `brew uninstall --cask ronimoe/lectern/lectern`
-   - **Otherwise:** drag `/Applications/Lectern.app` to the Trash, then empty the Trash.
+   - **Otherwise:** drag `Lectern.app` from `/Applications` (or `~/Applications`, where the Terminal line installs it if it can't write to `/Applications`) to the Trash, then empty the Trash.
 
 Removing the app leaves your reading data behind. Lectern is sandboxed, so all of it is in two folders:
 

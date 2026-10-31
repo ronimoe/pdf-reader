@@ -59,13 +59,19 @@ It needs **macOS 26 (Tahoe) or later on Apple Silicon.**
 
 ## Install
 
-See [docs/INSTALL.md](docs/INSTALL.md) for:
+The quickest way is one line in Terminal. It downloads the latest release, checks its SHA-256 and copies Lectern into Applications, with no Open Anyway step:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ronimoe/pdf-reader/main/scripts/install.sh | zsh
+```
+
+See [docs/INSTALL.md](docs/INSTALL.md) for what that line does, and for:
 - the Homebrew tap: `brew tap ronimoe/lectern && brew install --cask lectern`;
 - the DMG, with the one-time **Open Anyway** step;
 - building from source;
 - updating and uninstalling.
 
-The app isn't signed with an Apple Developer ID, so macOS asks you to allow it once; INSTALL.md explains how and why.
+The app isn't signed with an Apple Developer ID. A DMG downloaded in a browser has to be allowed once in System Settings; the Terminal line and Homebrew skip that step. INSTALL.md explains how and why.
 
 ## Getting started
 
