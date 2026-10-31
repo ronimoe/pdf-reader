@@ -2,7 +2,7 @@
 
 All notable changes to Lectern. Versions follow [Semantic Versioning](https://semver.org); the build number (`CFBundleVersion`) goes up by one with every release.
 
-## 1.0.0 (build 1), unreleased
+## 1.0.0 (build 1), 2026-10-31
 
 The first release: a calm, native PDF reader for macOS 26 on Apple Silicon. No accounts, no telemetry, no ads, no AI, and it works offline.
 

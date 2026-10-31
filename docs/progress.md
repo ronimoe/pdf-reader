@@ -558,3 +558,15 @@ The DMG opened to a plain Finder window: five small icons in a row, a toolbar an
 - A composite mock-up of the background, icons and labels, in both light and dark, looked as intended.
 
 **Not verified:** what Finder actually draws when the DMG is opened. In particular, how much of the window's 520 pt height the title bar takes. The background is 540 pt tall with a plain strip at the bottom to absorb that. Opening the DMG by hand is the check.
+
+## Release 1.0.0 (2026-10-31)
+
+- **What was published:** tag `v1.0.0` on `705221c`, and a full GitHub Release (not a draft or pre-release) with `Lectern-1.0.0.dmg`, its `.sha256`, `Lectern-1.0.0.zip` and `appcast.xml`. The repository was made public the same day, after an audit of every commit and branch for secrets and personal data (gitleaks, the real Sparkle key, key files, emails, machine identifiers, PR text) that found nothing to fix.
+- **Not rebuilt:** the published DMG is the one built from `705221c`'s tree for PR #21. The cask on main already carried its sha256 (`d40f33c5…a68e837`), so no release commit was needed.
+
+**Verified:**
+- On `705221c`: `./scripts/test.sh` twice in a row (93 + 43 + 149 package tests, 415 app tests), `scripts/perf.sh` (37 of 37), and `check-cask`.
+- Re-signing the zip with the release key gives the same EdDSA signature as the published appcast.
+- Downloaded without signing in: the DMG matches its `.sha256`, and the zip and appcast are byte-identical to the local files. `releases/latest/download/appcast.xml` resolves.
+
+**Not verified:** `verify-dmg` wasn't re-run, because a copy of Lectern was open in `/Applications`; its PASS from 2026-10-30 covers the same bytes. The tap (checklist §4) and the hand checks (§5) are still open.

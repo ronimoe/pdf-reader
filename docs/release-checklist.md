@@ -1,6 +1,6 @@
 # Release checklist
 
-How to publish Lectern 1.0.0, and the checks still owed by hand. Everything below is a decision or an action for the maintainer: the automated build stops at local files, and nothing has been published, tagged or pushed to a tap.
+How Lectern 1.0.0 was published, and the checks still owed by hand. *(Amended 2026-10-31)* 1.0.0 is published: tag `v1.0.0` on `705221c`, the GitHub Release with its four assets, and the repository made public. §1 (the key backup), §4 (the tap) and §5 (the hand checks) are still the maintainer's. The steps below also serve as the process for later releases.
 
 The names here are fixed by what's already built: the cask downloads `https://github.com/ronimoe/pdf-reader/releases/download/v1.0.0/Lectern-1.0.0.dmg`, the appcast's enclosure is `…/releases/download/v1.0.0/Lectern-1.0.0.zip`, and the app reads its feed from `https://github.com/ronimoe/pdf-reader/releases/latest/download/appcast.xml`. So the tag must be **`v1.0.0`** and the assets must keep their names.
 
@@ -98,5 +98,5 @@ Record the outcome of each in `docs/progress.md` (or a release note), and move a
 
 ## 6. After publishing
 
-- Turn `README.md`'s "Not published yet" status into the release link, and drop the banner at the top of `docs/INSTALL.md`.
+- Turn `README.md`'s "Not published yet" status into the release link, and drop the banner at the top of `docs/INSTALL.md`. *(Done 2026-10-31.)*
 - Clean up from M0c if you haven't: the Sparkle test key (`lectern-m0c-probe`) in the login Keychain.
