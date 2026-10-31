@@ -20,8 +20,10 @@
 #  4. Mounts the DMG read-only and hidden (no Finder window), copies Lectern.app into a hidden
 #     folder beside the destination, and checks its bundle identifier and signature.
 #  5. Moves any previous copy aside, moves the new one into place, then deletes the previous one.
-#     If the move fails, the previous copy is put back.
-#  6. Detaches the DMG and deletes everything temporary, also on failure and on Ctrl-C.
+#     If the move fails, the previous copy is put back. If even that fails, it says where the
+#     previous copy is, and that folder is never deleted.
+#  6. Detaches the DMG and deletes everything temporary, also on failure and on Ctrl-C. Anything
+#     it can't delete is named, so you can move it to the Trash.
 #
 # It installs into /Applications, or ~/Applications when /Applications isn't writable. It never
 # uses sudo, never opens the app, and refuses to replace a copy that is running.
@@ -36,8 +38,30 @@
 # Plain sh syntax, so `| sh` or `| bash` gets a clear message instead of a parse error.
 if [ -z "${ZSH_VERSION:-}" ]; then echo "install: run this with zsh (curl … | zsh)" >&2; exit 1; fi
 
+# Aliases and functions from the user's ~/.zshenv would otherwise replace mv, rm and the rest:
+# aliases expand when the function below is read, so they go before it.
+\unalias -m '*' 2>/dev/null
+\unfunction -m '*' 2>/dev/null
+
+# Runs from the EXIT trap with the paths as arguments: mount point, download folder, work folder,
+# destination app. Never deletes the work folder while it holds the only copy of the previous app.
+lectern_install_cleanup() {
+  local mnt=$1 tmp=$2 work=$3 target=$4
+  hdiutil detach "$mnt" -quiet -force >/dev/null 2>&1 || true
+  rm -rf -- "$tmp" 2>/dev/null || print -r -- "install: couldn't delete $tmp; move it to the Trash" >&2
+  if [[ -e $work/previous.app && ! -e $target ]]; then
+    mv -- "$work/previous.app" "$target" 2>/dev/null || true
+  fi
+  if [[ -e $work/previous.app && ! -e $target ]]; then
+    print -r -- "install: your previous copy of Lectern is at $work/previous.app; move it back to $target" >&2
+    return 0
+  fi
+  rm -rf -- "$work" 2>/dev/null || print -r -- "install: couldn't delete $work; move it to the Trash" >&2
+  return 0
+}
+
 lectern_install() {
-  # Local options and traps, whatever the user's zsh startup files set.
+  # Local options and traps, whatever the user's zsh startup options set.
   emulate -L zsh
   setopt err_exit pipe_fail no_unset
 
@@ -61,9 +85,9 @@ lectern_install() {
     [[ -d $caskroom ]] && die "Homebrew manages Lectern on this Mac; update it with: brew upgrade --cask lectern"
   fi
 
-  # Where to install. A leading ~ is expanded even when the value was quoted.
+  # Where to install. A leading ~ or ~/ is expanded even when the value was quoted.
   local appdir=${LECTERN_APPDIR:-}
-  appdir=${appdir/#\~/$HOME}
+  [[ $appdir == "~" || $appdir == "~/"* ]] && appdir=$HOME${appdir#\~}
   if [[ -z $appdir ]]; then
     if [[ -w /Applications ]]; then appdir=/Applications; else appdir=$HOME/Applications; fi
   fi
@@ -71,11 +95,11 @@ lectern_install() {
   local target=$appdir/Lectern.app
 
   # A copy running from the destination can't be replaced. Matched as a fixed string, so a path
-  # with ( + . or [ in it is compared literally.
+  # with ( + . or [ in it is compared literally, and ignoring case, as the Mac's disk does.
   refuse_if_running() {
     local process
     for process in ${(f)"$(ps -axo command=)"}; do
-      [[ $process == "$target/Contents/MacOS/"* ]] && die "Lectern is running from $target; quit it, then run this again"
+      [[ ${(L)process} == "${(L)target}/contents/macos/"* ]] && die "Lectern is running from $target; quit it, then run this again"
     done
     return 0
   }
@@ -104,9 +128,7 @@ lectern_install() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/lectern-install.XXXXXX") || die "couldn't create a temporary folder"
   work=$(mktemp -d "$appdir/.lectern-install.XXXXXX") || { rm -rf -- "$tmp"; die "couldn't write to $appdir"; }
   local mnt=$tmp/mnt
-  trap "hdiutil detach ${(q)mnt} -quiet -force >/dev/null 2>&1 || true
-        if [[ -e ${(q)work}/previous.app && ! -e ${(q)target} ]]; then mv -- ${(q)work}/previous.app ${(q)target}; fi
-        rm -rf -- ${(q)tmp} ${(q)work}" EXIT
+  trap "lectern_install_cleanup ${(q)mnt} ${(q)tmp} ${(q)work} ${(q)target}" EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
 
@@ -145,7 +167,10 @@ lectern_install() {
       || die "couldn't move the previous copy aside. If macOS refused, drag $target to the Trash and run this again"
   fi
   if ! mv -- "$work/Lectern.app" "$target"; then
-    [[ -e $work/previous.app ]] && mv -- "$work/previous.app" "$target"
+    if [[ -e $work/previous.app ]]; then
+      mv -- "$work/previous.app" "$target" \
+        || die "couldn't move Lectern.app into $appdir, or put the previous copy back; it is at $work/previous.app"
+    fi
     die "couldn't move Lectern.app into $appdir; any previous copy was put back"
   fi
   say "installed $target"
