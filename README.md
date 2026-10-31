@@ -35,6 +35,22 @@ Lectern is a PDF reader first, plus a personal space for highlights and notes. I
 
 What Lectern doesn't do yet is listed in [docs/known-limitations.md](docs/known-limitations.md). In short: forms are read-only, pages are never recoloured in dark mode, scanned PDFs aren't run through text recognition, and the app isn't signed with an Apple Developer ID.
 
+## Lectern and Preview
+
+Preview comes with every Mac and does a bit of everything: it fills in forms, signs, merges and reorders pages, and edits images. Lectern does less, and spends all of it on reading. Keep Preview for working on a document; use Lectern when you'll spend hours inside one.
+
+| | Preview | Lectern |
+|---|---|---|
+| **Following a reference** | A click takes you there | Hover, Force Click or ⌥⇥ shows the destination first: Go, Open in Split, or Dismiss and keep reading |
+| **Two places in one document** | One view per document | A split with two panes, each with its own place, zoom and history |
+| **Saving highlights and notes** | Built on Apple's PDFKit, whose save rewrites the whole file and so breaks digital signatures | Appends to the end of the file and leaves what's already there untouched. Signed and certified files are saved as a copy so their signatures stay intact |
+| **When the file changes** | Edits are saved automatically, rotating a page included | Only when you choose Save. Rotation is view-only, and a crash journal keeps unsaved work |
+| **Forms, signing, editing pages** | Yes | No, by design: forms are shown read-only |
+| **Text in scanned pages** | Live Text can select it | Not yet: Lectern says the page has no searchable text |
+| **Source** | Closed, part of macOS | Open source (GPL-3.0) |
+
+In Lectern's tests, PDFKit's whole-file rewrite dropped page labels, the revision history, custom metadata and parts of the form structure, even when nothing had been changed ([docs/spikes/m0b-pdfkit.md](docs/spikes/m0b-pdfkit.md#6-the-whole-file-rewrite)). That's why Lectern writes its own changes instead.
+
 ## Status
 
 **1.0.0 is built but not yet published.** The release, the download and the Homebrew tap appear once the maintainer publishes them ([docs/release-checklist.md](docs/release-checklist.md)). Until then, build it from source. [CHANGELOG.md](CHANGELOG.md) lists what's in 1.0.0, and [docs/progress.md](docs/progress.md) logs how it was built.
