@@ -572,3 +572,32 @@ The DMG opened to a plain Finder window: five small icons in a row, a toolbar an
 **Not verified:** `verify-dmg` wasn't re-run, because a copy of Lectern was open in `/Applications`; its PASS from 2026-10-30 covers the same bytes. The hand checks (checklist §5) are still open.
 
 **The tap (2026-11-01):** the maintainer created `ronimoe/homebrew-lectern`, and the prepared cask and README were pushed to it. `brew tap ronimoe/lectern` and `brew install --cask --appdir=<scratch folder> ronimoe/lectern/lectern` on Homebrew 7.0.11 installed 1.0.0 with no quarantine mark (the postflight works) and a valid `codesign --strict` signature, and needed no `brew trust`. The test copy was then uninstalled and the tap removed. Not verified: opening a tap-installed copy, and a Mac without Lectern.
+
+## CI on GitHub Actions (branch `ci-tests`, PR #42, issue #34)
+
+- **What landed:**
+  - `.github/workflows/test.yml`, run on every pull request and every push to `main`. The token can only read, there are no secrets, and every action is pinned to a commit SHA.
+  - `scripts/test.sh --no-app`, which runs everything but the app-hosted tests.
+  - Architecture §8 is amended.
+- **Runners (checked 2026-11-01):** no hosted image has macOS 26 with Xcode 27.
+  - `macos-26` is macOS 26.6.2 with Xcode 26.0.1 to 26.6.
+  - `xcode-27`, a preview image, is macOS 27.0.1 with Xcode 27.0, 27.1 and a 27.2 release candidate.
+- **Jobs:**
+  - **Installer (`macos-26`):** `scripts/release/test-install`, in under a minute.
+  - **Package and release scripts (`macos-26`, Xcode 26.6):** `scripts/test.sh --no-app`, in about 6 minutes. It runs the 285 package tests with every corpus tool, the sparkle-key check and the installer harness.
+  - **Full suite (`xcode-27`, Xcode 27.1):** the whole `scripts/test.sh`, run by hand only.
+
+**Verified** (runs 41269297995, 41270239037 and 41271440354):
+- On `macos-26` with Xcode 26.6 (Swift 6.3.3), the package tests, the sparkle-key check and all 24 installer cases pass. The app-hosted tests don't compile there: a `#require` expansion in `AppShellTests` needs Swift 6.4.
+- On `xcode-27`, everything builds, and the app-hosted tests run in the runner's session and write their offscreen snapshots. On macOS 27 the same tests failed in all three runs: 1 package test and 22 app tests with 59 issues, 49 of them in the M0b PDFKit record. A timing check, `openingALongDocumentAddsLittleToPDFKitsOwnWork`, also failed once on the shared runner.
+
+**Not verified:** the manual trigger and its `full-suite` input. They only work once the workflow is on `main`, so the full job ran on the PR for one push instead.
+
+**Found:** macOS 27 changes PDFKit and CoreGraphics behaviour that the tests record for macOS 26. Affected areas:
+- JavaScript kept by `dataRepresentation`;
+- link activation, and a private link-menu method that no longer exists;
+- form field editing;
+- `/Rotate` and annotation serialisation;
+- RC4 40-bit files now opening with the owner password.
+
+Lectern 1.0.0 users who upgrade to macOS 27 will meet these changes; supporting it is a separate piece of work.

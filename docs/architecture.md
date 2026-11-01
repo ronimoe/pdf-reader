@@ -563,10 +563,13 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 - `scripts/test.sh` regenerates the project and runs `swift test` and `xcodebuild test` headlessly.
 - Builds are signed ad-hoc (`CODE_SIGN_IDENTITY=-`) with the hardened runtime on, because there's no Developer ID yet.
 
-**Continuous integration** *(Amended 2026-10-29)*
-- **Local is the gate.** `scripts/test.sh` is the merge gate, run on a developer Mac.
-- **No hosted runner fits.** No GitHub-hosted runner has macOS 26 with Xcode 27. The `xcode-27` preview image runs macOS 27, and `macos-26` has Xcode 26.6 at most.
-- **If CI is added later,** it targets `xcode-27` and runs only on manual trigger (`workflow_dispatch`): the repo is private and macOS runner minutes are expensive.
+**Continuous integration** *(Amended 2026-11-01, issue #34)*
+- **GitHub Actions, on every pull request and every push to `main`.** The repository is public, so standard hosted runners cost nothing. `.github/workflows/test.yml` reads the repository and nothing else: no secrets, and never the Sparkle key. The only key it makes is the throwaway one `scripts/test.sh` uses to test `sparkle-key.swift`.
+- **No hosted runner fits the whole suite.** No GitHub-hosted runner has macOS 26 with Xcode 27. The `xcode-27` preview image runs macOS 27, and `macos-26` has Xcode 26.6 at most. So CI is split:
+  - **`macos-26`, Xcode 26.6:** `scripts/test.sh --no-app`. That covers the LecternKit package tests with every corpus tool, the sparkle-key check and the installer harness. Xcode 26.6 is Swift 6.3, not the 6.4 used in development; that is within `Package.swift`'s tools version 6.2. If LecternKit adopts 6.4-only syntax, this job breaks and has to move.
+  - **`macos-26`:** `scripts/release/test-install` on its own as well, because `install.sh` runs straight from `main`. It needs no downloads, so it reports within a minute.
+  - **`xcode-27`, Xcode 27.1, run by hand only** (`workflow_dispatch` with `full-suite`): the whole `scripts/test.sh`. Everything builds and runs in the runner's session, but on macOS 27 one package test and 22 app tests fail on behaviour the tests record for macOS 26, most of it in the M0b PDFKit record.
+- **The app-hosted tests stay local.** Xcode 26.6 can't compile them, and macOS 27 isn't the platform they describe. `scripts/test.sh` on a developer Mac with macOS 26 and Xcode 27 is still needed before merging a change to the app.
 
 **Release (B5)** *(Amended 2026-10-29: no Developer ID)*
 1. Archive a Release build: `xcodebuild archive`, signed ad-hoc with the hardened runtime on and no `get-task-allow`.

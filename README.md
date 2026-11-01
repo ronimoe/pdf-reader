@@ -102,7 +102,8 @@ scripts/test.sh            # package tests and app-hosted tests, headless
 scripts/perf.sh            # performance on the representative documents (docs/performance.md)
 ```
 
-`scripts/test.sh` regenerates the project, then runs the package tests (`swift test`) and the app-hosted tests (`xcodebuild test`). Logs go to `build/logs/`.
+`scripts/test.sh` regenerates the project, then runs the package tests (`swift test`) and the app-hosted tests (`xcodebuild test`). Logs go to `build/logs/`. `scripts/test.sh --no-app` skips the app-hosted tests, which need Xcode 27.
+- GitHub Actions runs `scripts/test.sh --no-app` and the installer tests on every pull request (`.github/workflows/test.yml`). No hosted runner has macOS 26 with Xcode 27, so the app-hosted tests still have to be run locally ([architecture.md §8](docs/architecture.md#8-build-and-distribution)).
 - The tests never show UI: a tripwire fails any test that tries to show an alert, sheet or panel.
 - The save-engine tests check the test collection in `Tests/Corpus/` with external PDF tools, and `scripts/test.sh` fails if those tools are missing. The bootstrap script expects `qpdf`, `mupdf-tools` and `poppler` from Homebrew. See [Tests/Corpus/README.md](Tests/Corpus/README.md).
 
@@ -116,7 +117,7 @@ Contributions are welcome under the project's licence.
   - no AI, telemetry, accounts or network use without opt-in;
   - never write a PDF with PDFKit's own save; annotations go through the incremental writer (`PDFSave`);
   - give `ReaderPDFView` its document through `show(_:)`, never by assigning `document`.
-- **Tests:** `scripts/test.sh` must pass, twice in a row for anything touching windows or timing. Add a test that fails without your change.
+- **Tests:** `scripts/test.sh` must pass, twice in a row for anything touching windows or timing. Add a test that fails without your change. CI checks the package and installer tests on each pull request, but not the app-hosted tests.
 - **Reports:** for a bug in a specific PDF, say where the file comes from and whether it can be shared. Only redistributable files can join `Tests/Corpus/public/`.
 
 ## Documentation
