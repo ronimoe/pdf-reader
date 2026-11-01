@@ -97,14 +97,22 @@ extension M0bSpikes {
             let kept = names.filter { PDFBytes.containsName($0, in: data) }
                 + ["AFSimple_Calculate", "AFNumber_Format"].filter { PDFBytes.contains($0, in: data) }
             SpikeLog.note("Q1", "JavaScript-related entries kept by dataRepresentation(): \(kept)")
-            // Every action is gone: OpenAction, document scripts, page and
-            // field additional-actions, the link's /A, and the calculation order.
-            #expect(kept.isEmpty)
-            // The link annotation itself survives, without its action.
             let reloaded = try #require(PDFDocument(data: data))
             let link = reloaded.page(at: 0)?.annotations.first { $0.type == "Link" }
             #expect(link != nil)
-            #expect(link?.action == nil)
+            if #available(macOS 27, *) {
+                // macOS 27 keeps every script and trigger, and the link keeps its JavaScript
+                // action. Lectern relies on neither: it never saves through PDFKit (architecture
+                // §4.3), and no version runs the scripts (above).
+                #expect(kept == names + ["AFSimple_Calculate", "AFNumber_Format"])
+                #expect(link?.action?.type == "JavaScript")
+            } else {
+                // Every action is gone: OpenAction, document scripts, page and
+                // field additional-actions, the link's /A, and the calculation order.
+                #expect(kept.isEmpty)
+                // The link annotation itself survives, without its action.
+                #expect(link?.action == nil)
+            }
         }
     }
 }

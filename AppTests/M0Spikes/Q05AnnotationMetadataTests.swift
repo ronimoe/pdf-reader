@@ -58,15 +58,23 @@ extension M0bSpikes {
             }
             let escapedName = SpikeRawPDF.escape(NSFullUserName())
             #expect(PDFBytes.count("/T (\(escapedName))", in: data) >= 4)
+            var written: Set<String> = ["/T", "/M", "/AP", "/Contents", "/F", "/C"]
+            if #unavailable(macOS 27) { written.formUnion(["/Border", "/DA"]) }
             for subtype in ["Highlight", "Underline", "StrikeOut", "Text"] {
                 let set = try #require(keys[subtype]?.first, "\(subtype) written")
-                #expect(set.isSuperset(of: ["/T", "/M", "/AP", "/Contents", "/F", "/Border", "/DA", "/C"]), "\(subtype): \(set.sorted())")
+                #expect(set.isSuperset(of: written), "\(subtype): \(set.sorted())")
                 #expect(!set.contains("/NM") && !set.contains("/CreationDate") && !set.contains("/P"), "\(subtype): \(set.sorted())")
             }
-            // The Text note and its Popup are each written twice.
-            #expect(keys["Text"]?.count == 2)
-            #expect(keys["Popup"]?.count == 2)
-            #expect(keys["Popup"]?.first?.contains("/M") == true)
+            if #available(macOS 27, *) {
+                // macOS 27 writes the Text note once, without /Border or /DA, and leaves its Popup out.
+                #expect(keys["Text"]?.count == 1)
+                #expect((keys["Popup"] ?? []).isEmpty)
+            } else {
+                // The Text note and its Popup are each written twice.
+                #expect(keys["Text"]?.count == 2)
+                #expect(keys["Popup"]?.count == 2)
+                #expect(keys["Popup"]?.first?.contains("/M") == true)
+            }
         }
 
         @Test func clearingUserNameAndDateKeepsThemOutOfTheFile() throws {
@@ -89,8 +97,13 @@ extension M0bSpikes {
                 #expect(!set.contains("/T"), "\(subtype)")
                 #expect(!set.contains("/M"), "\(subtype)")
             }
-            // The automatically created Popup keeps its own date…
-            #expect(keys["Popup"]?.allSatisfy { $0.contains("/M") } == true)
+            if #available(macOS 27, *) {
+                // macOS 27 doesn't write the Popup at all.
+                #expect((keys["Popup"] ?? []).isEmpty)
+            } else {
+                // The automatically created Popup keeps its own date…
+                #expect(keys["Popup"]?.allSatisfy { $0.contains("/M") } == true)
+            }
         }
 
         @Test func popupDateMustBeClearedSeparately() throws {
@@ -102,8 +115,12 @@ extension M0bSpikes {
             }
             let data = try #require(document.dataRepresentation())
             let keys = serialisedKeys(data)
-            #expect(keys["Popup"]?.isEmpty == false)
-            #expect(keys["Popup"]?.allSatisfy { !$0.contains("/M") && !$0.contains("/T") } == true)
+            if #available(macOS 27, *) {
+                #expect((keys["Popup"] ?? []).isEmpty, "macOS 27 doesn't write the Popup")
+            } else {
+                #expect(keys["Popup"]?.isEmpty == false)
+                #expect(keys["Popup"]?.allSatisfy { !$0.contains("/M") && !$0.contains("/T") } == true)
+            }
         }
 
         @Test func explicitUserNameIsWrittenAsT() throws {

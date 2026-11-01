@@ -32,20 +32,31 @@ extension M0bSpikes {
             let page = try #require(document.page(at: 0))
             page.rotation = 90
 
+            // macOS 27 writes /Rotate only on pages where it isn't 0.
+            let bothPages: [String]
+            let restoredPages: [String]
+            if #available(macOS 27, *) {
+                bothPages = ["/Rotate 90"]
+                restoredPages = []
+            } else {
+                bothPages = ["/Rotate 0", "/Rotate 90"]
+                restoredPages = ["/Rotate 0", "/Rotate 0"]
+            }
+
             let data = try #require(document.dataRepresentation())
-            #expect(rotateDict(data).sorted() == ["/Rotate 0", "/Rotate 90"])
+            #expect(rotateDict(data).sorted() == bothPages)
             #expect(PDFDocument(data: data)?.page(at: 0)?.rotation == 90)
 
             let url = SpikeArtifacts.directory.appendingPathComponent("q4-rotated.pdf")
             #expect(document.write(to: url))
             let written = try Data(contentsOf: url)
-            #expect(rotateDict(written).sorted() == ["/Rotate 0", "/Rotate 90"])
+            #expect(rotateDict(written).sorted() == bothPages)
             #expect(PDFDocument(url: url)?.page(at: 0)?.rotation == 90)
 
             // Restoring the recorded original value takes it back out.
             page.rotation = 0
             let restored = try #require(document.dataRepresentation())
-            #expect(rotateDict(restored) == ["/Rotate 0", "/Rotate 0"])
+            #expect(rotateDict(restored) == restoredPages)
         }
 
         @Test func pdfViewHasNoRotationAPI() {
@@ -89,8 +100,13 @@ extension M0bSpikes {
             // The view lays the page out rotated (landscape)…
             #expect(rotatedSize.width > rotatedSize.height)
             #expect(uprightSize.height > uprightSize.width)
-            // …and the writer also asks the page, so the override leaks into the file.
-            #expect(rotateDict(data) == ["/Rotate 90"])
+            if #available(macOS 27, *) {
+                // …but macOS 27's writer doesn't ask the page, so the override stays out of the file.
+                #expect(rotateDict(data).isEmpty)
+            } else {
+                // …and the writer also asks the page, so the override leaks into the file.
+                #expect(rotateDict(data) == ["/Rotate 90"])
+            }
         }
     }
 }
