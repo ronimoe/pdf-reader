@@ -623,3 +623,19 @@ Lectern 1.0.0 users who upgrade to macOS 27 will meet these changes; supporting 
 - A double-click on a link follows it twice, on macOS 26 as well: a web link opens twice. *(Fixed in f0e882b, PR #44, in 1.0.1.)*
 - `theSelectionControlAppearsAfterSelectingAndEscapeHidesIt` reads the physical mouse button (`NSEvent.pressedMouseButtons`): it failed once locally while the Mac was in use, then fell through to an unrecognised `cancelOperation:` and hung until the time limit.
 - With Xcode 26.6 (Swift 6.3) the app-hosted tests don't compile (`AppShellTests` shadows `item` inside `#require`). With that renamed, `shortcutsAreUnique` fails there (68 unique of 70).
+
+## 1.0.1 (PR #46, then the cask)
+
+- **What's in it:** the double-click link fix (#44), search colouring only the results that can be highlighted, and the macOS 27 form-press guard (#43). Version 1.0.1, build 2.
+- **Built from** `42ba4e9`, whose tree is #46's squash commit `27258b2`, with Xcode 27.2 on macOS 26.6.2: the same toolchain and SDK (macOS 27.2) as 1.0.0. The DMG's sha256 is `4725bc06…`. The app's CDHash, `5b8ea3ea…`, is the same in the DMG, the update zip and the archive.
+- **The update key.** `SUPublicEDKey` in the published 1.0.0 app (read from the release's zip) equals main's and the key file's public half. The maintainer's `/Applications` copy is the published 1.0.0 (the same CDHash, `e97e671b…`). `appcast.xml` was seeded from the published one, so it keeps the 1.0.0 item below 1.0.1's.
+
+**Verified:**
+- `scripts/test.sh` twice on `42ba4e9`: 93 + 43 + 149 package tests and 419 app tests, each time.
+- `build-dmg`, `verify-dmg` (PASS; the self-check passed 13 of 13), `update-cask`, `check-cask` and `sign-update`.
+- The `xcode-27` full suite on `adbf7e6`, the same code: one timing guard failed. `openingALongDocumentAddsLittleToPDFKitsOwnWork`'s limit on the whole open was 150 ms, and it took 164 ms on a runner where PDFKit alone took 294 ms (159 ms in the last passing run). The check on what the page count adds passed, 40 ms against 50 ms. Its re-run (run 41320127211, attempt 2) passed all 419 app tests, with the whole open at 95 ms.
+- `scripts/perf.sh`: the first run failed one memory guard, the manual's growth while scrolling (1,044 MB against 1,000 MB). The second passed with 629 MB, inside the 467–635 MB recorded for 1.0.0. 1.0.0's own code, run the same day on the same Mac, failed a different memory guard: the scan's growth after drawing every page (284 MB against 200 MB). The memory readings vary from run to run here, and neither is a regression.
+
+**Not verified:** the update itself (an installed 1.0.0 finding, downloading and installing 1.0.1 from GitHub), and the rest of the hand checks (#25).
+
+**Found, left for later:** the perf memory guards are noisy on this Mac. Two of the four runs on 2026-11-01 failed one, for 1.0.0's code and 1.0.1's alike. Take the best of several runs, or widen the guards once the baseline M1 has set real limits.
