@@ -58,3 +58,4 @@ These work in automated tests but haven't been checked with real hardware or rea
 - Reopening the last session across a real quit and relaunch.
 - The first-launch update question, Sparkle's own update windows, and an update downloaded over HTTPS from GitHub.
 - Homebrew's `zap` (uninstall with data removal), and **Open Anyway** itself.
+- On macOS 27: a real mouse and keyboard, VoiceOver, and the checks above. The automated tests pass there.

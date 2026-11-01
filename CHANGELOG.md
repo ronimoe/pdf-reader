@@ -4,14 +4,19 @@ All notable changes to Lectern. Versions follow [Semantic Versioning](https://se
 
 ## 1.0.1 (build 2), 2026-11-01
 
-Two fixes, and Lectern is now tested on macOS 27 as well as macOS 26. The minimum is still macOS 26 on Apple Silicon.
+Two fixes, and support for macOS 27: the automated tests pass there, but it hasn't been checked by hand yet. The minimum is still macOS 26 on Apple Silicon.
 
 ### Fixed
 - A double-clicked link is followed once, not twice: a web link no longer opens twice, and a blocked link is explained once.
-- Searching a long document for a common word is faster. Only the first 5,000 results, as many as the window ever highlights, get the find colour as they arrive, and Next and Previous Result colour the one they show. Colouring every match had made a search with 45,000 matches in 1,500 pages take more than twice as long.
+- Searching a long document for a common word is faster. Lectern now marks only the matches it can highlight, the first 5,000 (as many as the results list shows), instead of every match. In a 1,500-page document with 45,000 matches, marking them all had made the search take more than twice as long.
 
 ### macOS 27
-- A press on a form field now stays with Lectern from mouse-down to mouse-up, not only its mouse-down. On macOS 27, PDFKit handles links later in a click than on macOS 26, so this is a guard: forms stay read-only on both, as in 1.0.0.
+- Lectern now ignores the whole click on a form field, not just the moment the button goes down. Nothing changes in use: forms were already read-only on macOS 27 in 1.0.0. This guards against macOS 27's PDF engine, which acts later in a click than macOS 26 does.
+
+### Installing and updating
+- A one-line Terminal installer that skips the Open Anyway step, and the Homebrew tap `ronimoe/lectern`; see [docs/INSTALL.md](docs/INSTALL.md).
+- This is the first update. If you ticked "Remember in Keychain" for a document, macOS may ask once whether the new version may read that password; if you decline, Lectern asks for the document's password instead.
+- Update checks are off unless you turned them on, so choose Lectern ▸ Check for Updates…. With Homebrew, run `brew upgrade --cask lectern`.
 
 ## 1.0.0 (build 1), 2026-10-31
 

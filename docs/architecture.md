@@ -577,7 +577,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 **macOS 27** *(Amended 2026-11-01)*
 - **Decision: Lectern supports macOS 27** on Apple Silicon. macOS 26 stays the minimum (A6).
   - Lectern 1.0.0 already keeps A4 and A5 on macOS 27: forms stay read-only, every link goes through the routing table, and nothing reaches a file through PDFKit.
-  - So 1.0.0 users who upgrade need no urgent release. The changes below ship with the next one.
+  - So 1.0.0 users who upgrade need no urgent release. The changes below ship in 1.0.1.
 - **How it was checked.** No Mac here runs macOS 27.
   - The `xcode-27` runner (macOS 27.0.1, Xcode 27.1) ran the whole suite. The same suite on `macos-26` (Xcode 26.6) separated the runners' own effects from macOS 27's.
   - Probes on scratch branches, never merged, measured the rest.
@@ -629,7 +629,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
    The Control-click → Open bypass no longer exists on macOS 15 and later.
 
 *(Amended 2026-10-30, M6)* **As released.**
-- **Version.** `MARKETING_VERSION` 1.0.0 and `CURRENT_PROJECT_VERSION` 1 in `project.yml`. The build number is what Sparkle compares, so it goes up by one with every release. `CHANGELOG.md` records each release.
+- **Version.** `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml` (1.0.0 was build 1, 1.0.1 is build 2). The build number is what Sparkle compares, so it goes up by one with every release. `CHANGELOG.md` records each release.
 - **Licences in the app and on the DMG.** The app bundles `LICENSE` (GPL-3.0), `Acknowledgements.txt` (Sparkle 2.10.1's MIT licence verbatim, with the notices for the code it bundles) and `known-limitations.md`, shown under Help ▸ Licence, Acknowledgements and Known Limitations. The About panel shows the version and build, the copyright, the source repository and the no-telemetry line. `build-dmg` adds `License.txt` and `Acknowledgements.txt` to the image, below Lectern and the Applications link in a "drag to Applications" window (`packaging/dmg/`, added after M7). Sparkle is the only bundled third-party component: `Contents/Frameworks` holds only `Sparkle.framework`, and LecternKit is linked statically.
 - **No UI when checking a build.** `verify-dmg` no longer opens the app with a window. It runs the copied app's executable directly with `-LecternSelfCheck` (`SelfCheck`, App). `main.swift` handles that argument before `NSApplication` exists, so no window, Dock icon, alert or menu bar can appear. It runs inside the user's real sandbox container (*(Amended after the M6 review)*: earlier wording here said no state is read or written). It opens no document, and never touches `Session.json`, the crash journal, recent documents, the Keychain or Sparkle, which it never creates. The check covers:
   - the bundle and Info.plist promises,
