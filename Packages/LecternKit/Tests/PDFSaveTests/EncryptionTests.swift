@@ -515,20 +515,23 @@ struct EncryptedFixture: Sendable, CustomTestStringConvertible {
         print("Apple \(writer) user=\(user ?? "-"): V\(security.version) R\(security.revision) key \(security.fileKey.count) bytes, strings \(security.strings), streams \(security.streams)")
         let userKey = try #require(doc.fileEncryptionKey).map { String(format: "%02x", $0) }.joined()
         #expect(try ExternalQpdf.fileKey(url, password: user ?? "") == userKey)
-        // The owner password gives the same key, except on CoreGraphics' 40-bit files: their /O
-        // doesn't decrypt with the owner password in any reader (PDFKit and CoreGraphics
-        // themselves, qpdf, MuPDF, pikepdf all refuse it), so only the user password opens them.
-        if writer == .coreGraphics40 {
-            if user != nil {
-                #expect(throws: PDFSaveError.encrypted(.passwordNotAuthenticated)) { try PDFSaveDocument(data: data, password: "owner-pass") }
-                let pk = try #require(PDFDocument(data: data))
-                #expect(!pk.unlock(withPassword: "owner-pass"))
-            }
-        } else {
+        // The owner password gives the same key, wherever qpdf accepts it. CoreGraphics before
+        // macOS 27 wrote 40-bit files with a user password whose /O doesn't decrypt with the owner
+        // password in any reader (PDFKit and CoreGraphics themselves, qpdf, MuPDF, pikepdf all
+        // refuse it), so only the user password opens them; macOS 27's CoreGraphics writes an /O
+        // that does. PDFSave and PDFKit follow qpdf either way.
+        let ownerKey = try ExternalQpdf.fileKey(url, password: "owner-pass")
+        let kit = try #require(PDFDocument(data: data))
+        if ownerKey == userKey {
             let owner = try PDFSaveDocument(data: data, password: "owner-pass")
             #expect(owner.security?.authenticatedAs == .owner)
             #expect(owner.fileEncryptionKey == doc.fileEncryptionKey)
-            #expect(try ExternalQpdf.fileKey(url, password: "owner-pass") == userKey)
+            if user != nil { #expect(kit.unlock(withPassword: "owner-pass")) }
+        } else {
+            #expect(writer == .coreGraphics40 && user != nil, "only CoreGraphics' 40-bit files with a user password")
+            #expect(ownerKey.isEmpty, "qpdf refuses the owner password rather than finding another key")
+            #expect(throws: PDFSaveError.encrypted(.passwordNotAuthenticated)) { try PDFSaveDocument(data: data, password: "owner-pass") }
+            #expect(!kit.unlock(withPassword: "owner-pass"))
         }
         let result = try IncrementalWriter().saveInPlace(original: data, changes: [
             .addNote(NewNote(pageIndex: 0, origin: PDFPoint(x: 300, y: 300), contents: "Note in Apple's encryption")),

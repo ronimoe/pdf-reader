@@ -67,6 +67,14 @@ extension M0bSpikes {
             #expect(annotationLayers(p.second) == 1)
         }
 
+        /// Before macOS 27, a live annotation change reached only the view that last laid the
+        /// page out; macOS 27 refreshes every view, so the re-bind (architecture §4.4) is
+        /// redundant there but harmless.
+        static var staleViewMissesLiveChanges: Bool {
+            if #available(macOS 27, *) { return false }
+            return true
+        }
+
         /// PDFPage has a single private `view` slot: the view that last laid
         /// the page out. A live change reaches only that view.
         @Test(arguments: [
@@ -81,11 +89,13 @@ extension M0bSpikes {
             _ = addHighlight(to: p.page)
             Spin.runLoop(0.5)
             #expect(annotationLayers(p.second) == 1)
-            #expect(annotationLayers(p.first) == 0, "the other view does not show the new annotation")
+            // macOS 27 shows a live change in every view on the document.
+            let stale = Self.staleViewMissesLiveChanges ? 0 : 1
+            #expect(annotationLayers(p.first) == stale, "the other view does not show the new annotation")
             // annotationsChanged(on:) on the stale view does not help.
             p.first.annotationsChanged(on: p.page)
             Spin.runLoop(0.4)
-            #expect(annotationLayers(p.first) == 0)
+            #expect(annotationLayers(p.first) == stale)
         }
 
         /// Cheaper refreshes tried on the stale (non-owner) view: none works.
@@ -95,7 +105,8 @@ extension M0bSpikes {
             defer { p.host.close() }
             _ = addHighlight(to: p.page)
             Spin.runLoop(0.4)
-            #expect(annotationLayers(p.first) == 0)
+            let stale = Self.staleViewMissesLiveChanges ? 0 : 1
+            #expect(annotationLayers(p.first) == stale)
             let view = p.first
             switch refresh {
             case "annotationsChanged": view.annotationsChanged(on: p.page)
@@ -109,7 +120,7 @@ extension M0bSpikes {
                 view.displayMode = .singlePage
             }
             Spin.runLoop(0.5)
-            #expect(annotationLayers(p.first) == 0, "\(refresh) did not refresh the stale view")
+            #expect(annotationLayers(p.first) == stale, "\(refresh) did not refresh the stale view")
             #expect(annotationLayers(p.second) == 1)
         }
 
@@ -129,7 +140,7 @@ extension M0bSpikes {
             Spin.runLoop(0.4)
             SpikeLog.note("Q7", "after second live add: first=\(annotationLayers(p.first)) second=\(annotationLayers(p.second))")
             #expect(annotationLayers(p.first) == 2)
-            #expect(annotationLayers(p.second) == 1)
+            #expect(annotationLayers(p.second) == (Self.staleViewMissesLiveChanges ? 1 : 2))
         }
 
         @Test func removalReachesOnlyThePageOwnerToo() throws {
@@ -140,7 +151,7 @@ extension M0bSpikes {
             Spin.runLoop(0.4)
             SpikeLog.note("Q7", "after removal: first=\(annotationLayers(p.first)) second=\(annotationLayers(p.second))")
             #expect(annotationLayers(p.second) == 0)
-            #expect(annotationLayers(p.first) == 1, "the stale view still shows the removed annotation")
+            #expect(annotationLayers(p.first) == (Self.staleViewMissesLiveChanges ? 1 : 0), "the stale view still shows the removed annotation")
         }
 
         struct Landing: CustomStringConvertible {

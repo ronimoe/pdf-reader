@@ -289,7 +289,13 @@ extension M4Tests {
             Synth.click(at: stock.windowPoint(centerOf: field), in: stockHost.window)
             Spin.runLoop(0.2)
             let stockResponder = stockHost.window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
-            #expect(stockResponder == "PDFTextWidgetTextView", "control: a stock view starts editing (\(stockResponder))")
+            // On macOS 27 only window-dispatched clicks edit (M0b Q3): that control is
+            // `realClicksEditAStockViewButNeverTheReader`.
+            if M0bSpikes.Q3Forms.directClicksReachWidgets {
+                #expect(stockResponder == "PDFTextWidgetTextView", "control: a stock view starts editing (\(stockResponder))")
+            } else {
+                #expect(stockResponder == "PDFView", "macOS 27: a direct click edits nothing (\(stockResponder))")
+            }
 
             let reader = ReaderPDFView(frame: NSRect(x: 0, y: 0, width: 700, height: 900))
             let readerHost = OffscreenHost(content: reader)
@@ -302,6 +308,80 @@ extension M4Tests {
             Spin.runLoop(0.2)
             #expect(readerHost.window.firstResponder === reader)
             #expect(!readerField.isReadOnly)
+        }
+
+        /// The control with clicks and keys dispatched through the window, as a person's are: the
+        /// only kind macOS 27's PDFView acts on (M0b Q3). AppKit drops those unless the app is
+        /// active, and the test host is never activated, so this runs only where it already is:
+        /// CI's runners, on macOS 26 and 27.
+        @Test(.enabled("only where the test host is already the active app (CI)") { await MainActor.run { NSApp.isActive } })
+        func realClicksEditAStockViewButNeverTheReader() throws {
+            for reading in [false, true] {
+                let frame = NSRect(x: 0, y: 0, width: 700, height: 900)
+                let view = reading ? ReaderPDFView(frame: frame) : PDFView(frame: frame)
+                let host = OffscreenHost(content: view)
+                defer { host.close() }
+                let document = try #require(PDFDocument(data: SpikeFixtures.form()))
+                view.spikeLoad(document, mode: .singlePage)
+                host.window.pretendsKey = false
+                host.window.makeKeyAndOrderFront(nil)
+                host.window.makeFirstResponder(view)
+                Spin.runLoop(0.2)
+                #expect(host.window.isKeyWindow)
+                let fields = try #require(document.page(at: 0)?.annotations)
+                let name = try #require(fields.first { $0.fieldName == "name" })
+                let agree = try #require(fields.first { $0.fieldName == "agree" })
+                Synth.windowClick(at: view.windowPoint(centerOf: name), in: host.window)
+                let responder = host.window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
+                Synth.windowKey("Z", keyCode: 6, in: host.window)
+                Synth.windowClick(at: view.windowPoint(centerOf: agree), in: host.window)
+                if reading {
+                    #expect(host.window.firstResponder === view)
+                    #expect(name.widgetStringValue == "Alice")
+                    #expect(agree.buttonWidgetState == .offState)
+                } else {
+                    #expect(responder == "PDFTextWidgetTextView", "control: a stock view starts editing (\(responder))")
+                    #expect(name.widgetStringValue == "AliceZ")
+                    #expect(agree.buttonWidgetState == .onState)
+                }
+            }
+        }
+
+        /// macOS 27's PDFView handles clicks with gesture recognizers, except in a subclass that
+        /// overrides the mouse handlers: that keeps PDFKit's mouse-down path (M0b Q3), which the
+        /// reader's link and form interception relies on. This fails if PDFKit ever gives the
+        /// reader, its document view or its pages those recognizers.
+        @Test func theReaderStaysOnPDFKitsMouseDownPath() throws {
+            func recognizers(in root: PDFView) -> [String] {
+                var found: [String] = []
+                func walk(_ view: NSView) {
+                    let name = String(describing: type(of: view))
+                    if view === root || name.hasPrefix("PDFDocument") || name.hasPrefix("PDFPage") {
+                        found += view.gestureRecognizers
+                            .filter { !ReaderPDFView.isImmediateAction($0) }
+                            .map { "\(name): \(type(of: $0))" }
+                    }
+                    view.subviews.forEach(walk)
+                }
+                walk(root)
+                return found
+            }
+            for reading in [true, false] {
+                let frame = NSRect(x: 0, y: 0, width: 700, height: 900)
+                let view = reading ? ReaderPDFView(frame: frame) : PDFView(frame: frame)
+                let host = OffscreenHost(content: view)
+                defer { host.close() }
+                view.spikeLoad(try #require(PDFDocument(data: SpikeFixtures.form())), mode: .singlePage)
+                let found = recognizers(in: view)
+                if reading {
+                    #expect(found.isEmpty, "\(found)")
+                } else if #available(macOS 27, *) {
+                    // The control: a stock view on macOS 27 has them.
+                    #expect(found.contains { $0.hasSuffix("NSClickGestureRecognizer") }, "\(found)")
+                } else {
+                    #expect(found.isEmpty, "macOS 26 has none: \(found)")
+                }
+            }
         }
 
         /// Sends Tab to the page through the window, with a text field as the next key view, and

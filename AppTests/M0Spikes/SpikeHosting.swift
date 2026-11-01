@@ -145,6 +145,34 @@ enum Synth {
         return target
     }
 
+    /// A click through `NSWindow.sendEvent`, as AppKit dispatches a person's, so gesture
+    /// recognizers see it too (macOS 27's PDFView acts only on these). AppKit drops it unless the
+    /// app is active, so it is only for where the test host already is (CI); nothing here ever
+    /// activates it. The mouse-up is queued first, as in `click`.
+    static func windowClick(at point: NSPoint, in window: NSWindow) {
+        NSApp.postEvent(cgMouse(.leftMouseUp, at: point, in: window), atStart: true)
+        window.sendEvent(mouse(.leftMouseDown, at: point, in: window))
+        if NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) != nil {
+            window.sendEvent(mouse(.leftMouseUp, at: point, in: window))
+        }
+        Spin.runLoop(0.3)
+    }
+
+    /// Key presses through `NSWindow.sendEvent`, for the same cases as `windowClick`.
+    static func windowKey(_ characters: String, keyCode: UInt16, in window: NSWindow) {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let event = NSEvent.keyEvent(
+                with: type, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: keyCode
+            )!
+            window.sendEvent(event)
+        }
+        Spin.runLoop(0.05)
+    }
+
     static func moved(to point: NSPoint, in window: NSWindow) {
         window.sendEvent(mouse(.mouseMoved, at: point, in: window, clickCount: 0))
     }

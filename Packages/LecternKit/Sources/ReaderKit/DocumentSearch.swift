@@ -66,6 +66,12 @@ public final class DocumentSearch {
     /// Called on the main thread when results, progress or state change.
     public var onChange: (() -> Void)?
     public var coalescingInterval: TimeInterval = 0.1
+    /// Only the first this many results get the find colour, as they arrive: no more are ever
+    /// highlighted at once (Next Result colours the one it shows), and while a view shows the document PDFKit's colour setter costs more than
+    /// finding the match (45,000 matches on CI's runners: 1.5 s became 3.9 s on macOS 26, 3.1 s
+    /// became 9.7 s on macOS 27). Colouring them later instead, in one go, stalled the main thread
+    /// for seconds on macOS 27.
+    public var colouredResultLimit = Int.max
 
     private var pageTexts: [Int: NSString] = [:]
     /// The pending coalesced update: a run-loop timer in the common modes. Until M6 this was
@@ -153,7 +159,7 @@ public final class DocumentSearch {
         if options.wholeWord {
             guard range.location != NSNotFound, SearchText.isWholeWord(range, in: text(ofPageAt: pageIndex)) else { return }
         }
-        selection.color = .findHighlightColor
+        if results.count < colouredResultLimit { selection.color = .findHighlightColor }
         results.append(SearchResult(selection: selection, pageIndex: pageIndex, range: range, search: self))
         scheduleChange()
     }

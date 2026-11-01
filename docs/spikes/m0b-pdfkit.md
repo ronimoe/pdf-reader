@@ -339,6 +339,22 @@ The outputs are saved to `~/Library/Containers/io.github.ronimoe.Lectern/Data/tm
 
 ---
 
+## macOS 27 *(Added 2026-11-01)*
+
+Observed on GitHub's `xcode-27` runner (macOS 27.0.1, 26A434, Xcode 27.1, a virtual machine) against the same suite on `macos-26`. Each test now pins both versions with `#available(macOS 27, *)`, and Q11 pins the machine. What this means for Lectern is in architecture.md §8, "macOS 27".
+
+| # | What macOS 27 does differently |
+|---|--------------------------------|
+| 1 | `dataRepresentation()` keeps every script and trigger, and the link keeps its JavaScript action. Scripts still never run. |
+| 2 | A link's action runs after `mouseDown` returns, not during it. `_addOpenItemsToMenu:onPage:atPagePoint:` is gone; `openRepresentedLink:` and `copyLink:` remain. |
+| 3 | A stock `PDFView` handles clicks with gesture recognizers. So clicks sent straight to the hit view edit nothing, while clicks through `NSWindow.sendEvent`, with the app active, edit as before. A subclass that overrides the mouse handlers keeps the mouse-down path. The rewrite no longer adds `/Ff 0`. |
+| 4 | `/Rotate` is written only where it isn't 0, and a `PDFPage` subclass's rotation no longer leaks into the file. |
+| 5 | Each annotation is written once, without `/Border` or `/DA`, and popups aren't written. In memory, `/T` and `/M` are still filled in. |
+| 6 | The rewrite keeps custom keys, page labels, `/OpenAction`, orphan objects, every link action and the form whole, with a `%PDF-1.7` header. It still drops `/ID` and `/Prev`, and the original still isn't a prefix. |
+| 7 | A live annotation change reaches every view on the document. |
+| 10 | Unchanged in behaviour; the find took about twice as long on the runner. |
+| 11 | Unchanged by macOS 27. On the runners' virtual machines, offscreen captures of a `PDFView` are blank on both versions. |
+
 ## How the tests drive PDFKit headlessly
 
 These points matter for every future AppKit test in this project (`SpikeHosting.swift`):
@@ -353,6 +369,7 @@ These points matter for every future AppKit test in this project (`SpikeHosting.
   - The fix has two parts: the queued mouse-up is built from a `CGEvent` with an explicit location (`Synth.cgMouse`), and the host window sits at the primary screen's origin, so screen and window coordinates coincide.
   - The window is fully transparent (`alphaValue = 0`) and click-through (`ignoresMouseEvents`), so it's invisible and can't catch real clicks.
   - No event is ever posted to a system event tap, so there's no Accessibility, Input Monitoring or Screen Recording prompt.
+- **On CI** *(Added 2026-11-01)* the test host is the active app, so clicks and keys sent through the window (`Synth.windowClick`, `Synth.windowKey`) arrive there. Tests that need them run only while `NSApp.isActive`; nothing ever activates the host.
 - **The `NSWorkspace` tripwire:** every open and launch method of `NSWorkspace` is replaced in the test process with a recorder. Fixture targets are inert anyway: unregistered schemes, `.invalid` hosts, and paths that don't exist.
 - **Serialized suites:** all spike suites are nested in one suite marked `.serialized`, with a time limit.
 - **Requirement:** because the host window sits on a real screen, these tests need a logged-in GUI session with a display, and a primary screen at least about 900 pt tall (the window is 700×900). This bears on the CI **[verify]** in architecture.md §8, which this spike doesn't settle.

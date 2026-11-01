@@ -14,6 +14,12 @@ func addRedSquare(to page: PDFPage) -> PDFAnnotation {
 extension M0bSpikes {
     /// Q11: which offscreen rendering paths produce real pixels.
     @Suite struct Q11Pixels {
+        static var onVirtualMachine: Bool {
+            var value: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            return sysctlbyname("kern.hv_vmm_present", &value, &size, nil, 0) == 0 && value == 1
+        }
+
         @Test func pageDrawIntoCGContextRendersTextAndAnnotations() throws {
             let document = try #require(TestPDF.make(pageCount: 1).flatMap(PDFDocument.init(data:)))
             let page = try #require(document.page(at: 0))
@@ -50,8 +56,14 @@ extension M0bSpikes {
             SpikeLog.note("Q11", "layer.render(in:): \(layer)")
             SpikeLog.note("Q11", "backingScale=\(host.window.backingScaleFactor)")
             for (name, stats) in [("cacheDisplay", cache), ("documentView.cacheDisplay", docCache), ("layer.render", layer)] {
-                // Not blank: page text is captured…
-                #expect(stats.dark > 800, "\(name): page text captured")
+                if Self.onVirtualMachine {
+                    // CI's macOS runners are virtual machines, with a 1× display: there these
+                    // captures are entirely blank, on macOS 26 and 27 alike.
+                    #expect(stats.nonWhite == 0, "\(name): blank on a virtual machine")
+                } else {
+                    // Not blank: page text is captured…
+                    #expect(stats.dark > 800, "\(name): page text captured")
+                }
                 // …but neither annotation is: they're drawn outside what these paths capture.
                 #expect(stats.yellow == 0, "\(name): highlight not captured")
                 #expect(stats.red == 0, "\(name): square not captured")

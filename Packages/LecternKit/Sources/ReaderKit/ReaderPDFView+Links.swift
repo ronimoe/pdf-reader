@@ -123,8 +123,9 @@ extension ReaderPDFView {
 
     // MARK: Clicks
 
-    /// PDFKit acts on links during mouse-down (M0b Q2), so a click on a link
-    /// is swallowed here and followed on the matching mouse-up.
+    /// PDFKit acts on links during mouse-down on macOS 26, and after mouse-down returns on macOS
+    /// 27 (M0b Q2), so both halves of a click on a link are swallowed here, and it is followed on
+    /// the matching mouse-up.
     public override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let link = link(at: point) else {
@@ -141,7 +142,7 @@ extension ReaderPDFView {
     }
 
     public override func mouseDragged(with event: NSEvent) {
-        if pendingLink != nil { return }
+        if pendingLink != nil || swallowsWidgetPress { return }
         handleAnnotationMouseDragged(at: convert(event.locationInWindow, from: nil))
         if let pending = pendingAnnotationClick, !["Highlight", "Underline", "StrikeOut", "Squiggly"].contains(pending.annotation.type ?? "") {
             return
@@ -152,6 +153,11 @@ extension ReaderPDFView {
     public override func mouseUp(with event: NSEvent) {
         lastPressureStage = 0
         guard let pending = pendingLink else {
+            if swallowsWidgetPress {
+                swallowsWidgetPress = false
+                showSelectionBarIfNeeded()
+                return
+            }
             let swallowed = pendingAnnotationClick.map { !["Highlight", "Underline", "StrikeOut", "Squiggly"].contains($0.annotation.type ?? "") } ?? false
             if !swallowed { super.mouseUp(with: event) }
             handleAnnotationMouseUp()

@@ -12,6 +12,7 @@ import Testing
 /// - a segmented control segment with no name.
 /// It checks what doesn't depend on this Mac's settings: `canBecomeKeyView` for buttons depends
 /// on Full Keyboard Access, so `refusesFirstResponder`/`acceptsFirstResponder` are used instead.
+/// SwiftUI is the exception from macOS 27 (`focusableOnlyWithKeyboardNavigation`).
 @MainActor
 enum AccessibilityAudit {
     struct Issue: CustomStringConvertible, Equatable {
@@ -36,6 +37,20 @@ enum AccessibilityAudit {
         .button, .checkBox, .radioButton, .popUpButton, .menuButton, .textField, .comboBox,
         .slider, .incrementor, .link, .disclosureTriangle,
     ]
+
+    /// SwiftUI controls the keyboard reaches only with Keyboard Navigation on (System Settings ▸
+    /// Keyboard). From macOS 27, SwiftUI's accessibility tree follows that setting, as AppKit's
+    /// `canBecomeKeyView` does, so their focus is checked only with it on; text fields take focus
+    /// either way. macOS 26's SwiftUI reported them focusable regardless. Only the roles seen
+    /// doing so are listed.
+    static let focusableOnlyWithKeyboardNavigation: Set<NSAccessibility.Role> = [
+        .button, .checkBox, .popUpButton,
+    ]
+
+    static var swiftUIFocusFollowsKeyboardNavigation: Bool {
+        if #available(macOS 27, *) { return true }
+        return false
+    }
 
     /// The window's content and its toolbar. The title bar's own widgets are AppKit's.
     static func audit(window: NSWindow) -> [Issue] {
@@ -174,7 +189,9 @@ enum AccessibilityAudit {
                     issues.append(Issue(element: "\(path) › \(role.rawValue)", problem: "has no accessible name"))
                 }
                 let enabled = object.isAccessibilityEnabled?() ?? true
-                if enabled, let node = element as? NSObject, !node.accessibilityIsAttributeSettable(.focused) {
+                let checksFocus = NSApp.isFullKeyboardAccessEnabled || !swiftUIFocusFollowsKeyboardNavigation
+                    || !focusableOnlyWithKeyboardNavigation.contains(role)
+                if enabled, checksFocus, let node = element as? NSObject, !node.accessibilityIsAttributeSettable(.focused) {
                     issues.append(Issue(element: "\(path) › \(role.rawValue) “\(names.compactMap { $0 ?? nil }.first ?? "")”", problem: "can't take keyboard focus"))
                 }
             }

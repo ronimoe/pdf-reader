@@ -575,6 +575,7 @@ final class ReaderWindowController: NSWindowController {
             searchPane = pane
             pane.beginSearchSession()
             let search = DocumentSearch(document: document)
+            search.colouredResultLimit = SearchResultsSectionViewController.rowLimit
             search.onChange = { [weak self] in self?.searchDidChange() }
             self.search = search
             sectionBeforeSearch = sidebar.visibleSection
@@ -660,6 +661,8 @@ final class ReaderWindowController: NSWindowController {
     func showResult(at index: Int) {
         guard let results = search?.results, results.indices.contains(index) else { return }
         currentResultIndex = index
+        // Past the coloured ones (DocumentSearch.colouredResultLimit), coloured when shown.
+        results[index].selection.color = .findHighlightColor
         (searchPane ?? pane).show(results[index].selection)
         searchSection.selectResult(index)
     }
@@ -774,6 +777,7 @@ final class ReaderWindowController: NSWindowController {
         if let query, !query.isEmpty {
             // Same session: no new history entry.
             let search = DocumentSearch(document: pdf)
+            search.colouredResultLimit = SearchResultsSectionViewController.rowLimit
             search.onChange = { [weak self] in self?.searchDidChange() }
             self.search = search
             searchSection.setSearch(search, numbering: readerDocument.pageNumbering)

@@ -149,11 +149,21 @@ extension M0bSpikes {
             let upStillQueued = NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) != nil
             SpikeLog.note("Q2", "hit view=\(type(of: target)) performed during mouseDown=\(performedDuringDown) mouseUp still queued=\(upStillQueued)")
             #expect(String(describing: type(of: target)) == "PDFPageView")
-            // PDFView.mouseDown → PDFViewController trackMouse:forAnnotation:
-            // performs the action before mouseDown returns, without consuming
-            // the queued mouse-up (it doesn't pull events from the queue).
-            #expect(performedDuringDown == ["GoTo"])
             #expect(upStillQueued == true)
+            if #available(macOS 27, *) {
+                // macOS 27 performs the action after mouseDown returns instead (by the mouse-up
+                // and a run-loop turn). ReaderPDFView swallows both halves of a click on a link,
+                // so it doesn't matter which.
+                #expect(performedDuringDown.isEmpty)
+                target.mouseUp(with: Synth.mouse(.leftMouseUp, at: point, in: host.window))
+                Spin.runLoop(0.1)
+                #expect(view.performed == ["GoTo"])
+            } else {
+                // PDFView.mouseDown → PDFViewController trackMouse:forAnnotation:
+                // performs the action before mouseDown returns, without consuming
+                // the queued mouse-up (it doesn't pull events from the queue).
+                #expect(performedDuringDown == ["GoTo"])
+            }
         }
 
         func rightClickMenu(_ view: PDFView, at point: NSPoint, in window: NSWindow) -> NSMenu? {
@@ -252,8 +262,16 @@ extension M0bSpikes {
         }
 
         @Test func privateLinkMenuMethodsExist() {
-            for name in ["openRepresentedLink:", "copyLink:", "_addOpenItemsToMenu:onPage:atPagePoint:"] {
+            for name in ["openRepresentedLink:", "copyLink:"] {
                 #expect(PDFView.instancesRespond(to: NSSelectorFromString(name)), "\(name)")
+            }
+            // The method that added Open Link and Copy Link to PDFKit's own menu is gone in
+            // macOS 27, and so are the items. Lectern builds its own menu either way.
+            let addsOpenItems = PDFView.instancesRespond(to: NSSelectorFromString("_addOpenItemsToMenu:onPage:atPagePoint:"))
+            if #available(macOS 27, *) {
+                #expect(!addsOpenItems)
+            } else {
+                #expect(addsOpenItems)
             }
         }
 

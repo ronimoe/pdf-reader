@@ -73,9 +73,25 @@ extension M0bSpikes {
             Synth.click(at: h.view.windowPoint(centerOf: h.field("agree")), in: h.host.window)
             Spin.runLoop(0.2)
             SpikeLog.note("Q3", "stock: responder after click=\(responderAfterClick) name=\(h.field("name").widgetStringValue ?? "nil") agree=\(h.field("agree").buttonWidgetState.rawValue)")
-            #expect(responderAfterClick == "PDFTextWidgetTextView")
-            #expect(h.field("name").widgetStringValue == "AliceZ")
-            #expect(h.field("agree").buttonWidgetState == .onState)
+            if Self.directClicksReachWidgets {
+                #expect(responderAfterClick == "PDFTextWidgetTextView")
+                #expect(h.field("name").widgetStringValue == "AliceZ")
+                #expect(h.field("agree").buttonWidgetState == .onState)
+            } else {
+                #expect(responderAfterClick == "PDFView")
+                #expect(h.field("name").widgetStringValue == "Alice")
+                #expect(h.field("agree").buttonWidgetState == .offState)
+            }
+        }
+
+        /// macOS 27's stock PDFView handles clicks with gesture recognizers, which only see
+        /// clicks dispatched through the window, and those only while the app is active. Clicks
+        /// sent straight to the hit view, all a test host that isn't the active app can send,
+        /// edit no field there. Window-dispatched clicks are checked where the test host is active
+        /// (CI): `M4Tests.ReviewFixes.realClicksEditAStockViewButNeverTheReader`.
+        static var directClicksReachWidgets: Bool {
+            if #available(macOS 27, *) { return false }
+            return true
         }
 
         @Test func tabFromPDFViewDoesNotEnterFields() throws {
@@ -109,8 +125,14 @@ extension M0bSpikes {
             // stays in the same field and no tab is inserted. (PDFView has
             // private Tab handlers for widgets; a real keyboard may differ.
             // Moot for A5: the blocking view never lets a field take focus.)
-            #expect(afterTab == "PDFTextWidgetTextView")
-            #expect(values == ["name": "AliceQ", "city": "Paris"])
+            if Self.directClicksReachWidgets {
+                #expect(afterTab == "PDFTextWidgetTextView")
+                #expect(values == ["name": "AliceQ", "city": "Paris"])
+            } else {
+                // macOS 27: the click never put the field into editing.
+                #expect(afterTab == "PDFView")
+                #expect(values == ["name": "Alice", "city": "Paris"])
+            }
         }
 
         @Test func blockingViewPreventsClickAndTabEditing() throws {
@@ -155,7 +177,12 @@ extension M0bSpikes {
             for annotation in locked.page(at: 0)!.annotations where annotation.type == "Widget" { annotation.isReadOnly = true }
             let lockedFlags = flags(try #require(locked.dataRepresentation()))
             SpikeLog.note("Q3", "/Ff after rewrite: untouched=\(plainFlags) isReadOnly=\(lockedFlags)")
-            #expect(plainFlags.values.allSatisfy { $0 == "/Ff 0" }, "the rewrite adds /Ff 0 even when nothing changed")
+            #expect(plainFlags.count == 3)
+            if #available(macOS 27, *) {
+                #expect(plainFlags.values.allSatisfy { $0 == "none" }, "macOS 27's rewrite leaves untouched flags out")
+            } else {
+                #expect(plainFlags.values.allSatisfy { $0 == "/Ff 0" }, "the rewrite adds /Ff 0 even when nothing changed")
+            }
             #expect(lockedFlags.values.allSatisfy { $0 == "/Ff 1" }, "isReadOnly is written as the ReadOnly bit")
         }
 

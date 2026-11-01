@@ -206,7 +206,10 @@ extension M4Tests {
             let highlight = try harness.highlight("quick brown fox")
             Spin.runLoop(0.1)
             #expect(harness.undo.canUndo)
-            #expect(NSApp.sendAction(Selector(("undo:")), to: nil, from: nil) || harness.window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
+            // Edit ▸ Undo goes down the key window's chain, from its first responder. The harness
+            // window is never key: on a developer's Mac the test host isn't the active app, and on
+            // CI it is but another window is key. So the action goes down this window's chain.
+            #expect(harness.window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
             #expect(highlight.page == nil)
             #expect(harness.editor.pending.isEmpty)
             Spin.runLoop(0.1)
