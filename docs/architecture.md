@@ -168,7 +168,7 @@ App (AppKit shell)
 - Each tab has one or two panes.
 - Each pane is a `ReaderPDFView` with its own `HistoryStack` (B2) and `ReadingAnchor`.
 - Both panes share the same `PDFDocument`.
-- **Annotation changes don't reach the other pane on their own** *(Amended 2026-10-29, M0b Q7)*. A live annotation change shows only in the pane that last laid out the page. After every annotation change, the other pane must re-assign its `document`, keeping its anchor, to refresh. Five cheaper refresh calls were tried and none worked.
+- **Annotation changes don't reach the other pane on their own** *(Amended 2026-10-29, M0b Q7; on macOS 27 they do, §8)*. A live annotation change shows only in the pane that last laid out the page. After every annotation change, the other pane must re-assign its `document`, keeping its anchor, to refresh. Five cheaper refresh calls were tried and none worked.
 
 **Focus (B3)**
 - The tab tracks which pane is focused.
@@ -219,7 +219,7 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
   - The view rotation is applied as `original + ViewSettings.rotation` on every page.
   - Printing uses the on-screen model, so a rotated view prints rotated, as in Preview.
 - **Form fields (A5)** stay non-editable because `ReaderPDFView` catches mouse and keyboard events aimed at them. Their `isReadOnly` flag is never set. Prototype check [verify]: whether keyboard focus can still reach a field.
-  - *(Amended 2026-10-29, M4b)* A mouse-down on a Widget is swallowed after the link check. While the document has form fields (a non-empty AcroForm `/Fields`, or any Widget annotation on a page, read from CoreGraphics' dictionaries), Tab and Shift-Tab move through the window's key view loop instead of reaching PDFKit.
+  - *(Amended 2026-10-29, M4b)* A mouse-down on a Widget is swallowed after the link check. *(Amended 2026-11-01, macOS 27: so are that press's drags and mouse-up; see §8, macOS 27.)* While the document has form fields (a non-empty AcroForm `/Fields`, or any Widget annotation on a page, read from CoreGraphics' dictionaries), Tab and Shift-Tab move through the window's key view loop instead of reaching PDFKit.
   - *(Amended 2026-10-29, M4b review)* The click blocking is tested against a positive control: the same click on the same field starts editing in a stock `PDFView`. **The Tab handling can't be tested headlessly.** In a stock `PDFView`, Tab never moves focus into a field (M0b Q3), and with synthesized events PDFKit passes Tab on to the window's key view loop exactly as `ReaderPDFView` does, so a build without the Tab handling passes every test. It stays as a guard for real keyboards, and whether one can Tab into a field stays [verify]. A dismissible line says "This document has form fields. Filling in forms isn't supported yet." VoiceOver activation of widgets is still unchecked (M5).
 - **The author (B4)** is set only on new annotations, from Settings, where the default is empty.
   - PDFKit fills in `/T` (the Mac account's full name) and `/M` (a date) on every new annotation, including its popup, on its own *(Amended 2026-10-29, M0b Q5)*.
@@ -248,7 +248,7 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
 
 *Amended 2026-10-29, from M0b Q2, Q7 and Q8. See [spikes/m0b-pdfkit.md](spikes/m0b-pdfkit.md).*
 
-**Interception points.** Intercept link clicks in `mouseDown`, because PDFKit acts on mouse-down, and override `perform(_:)` as a catch-all.
+**Interception points.** Intercept link clicks in `mouseDown`, because PDFKit acts on mouse-down, and override `perform(_:)` as a catch-all. *(Amended 2026-11-01: on macOS 27 PDFKit acts after the mouse-down returns, and a stock view uses gesture recognizers, which the reader doesn't get; §8, macOS 27.)*
 
 **Classifying actions**
 - Classify by `action.type`, not by Swift subclass.
@@ -376,6 +376,7 @@ The same type is stored as the reading position (A2) and used for history entrie
 - **`DocumentSearch`** (ReaderKit) wraps `beginFindString`. It listens to the find notifications rather than taking over the document's delegate, and coalesces updates to every 100 ms.
   - Whole Word reads only the text of pages that have matches, and caches it.
   - Excerpts are built when a row is shown.
+  - *(Amended 2026-11-01, macOS 27)* Only the first 5,000 matches, as many as can be highlighted, get the find colour (`colouredResultLimit`): while a view shows the document, PDFKit's colour setter costs more than the find (§8, macOS 27). They are still coloured as they arrive. Colouring them in one go when highlighted stalled the main thread for seconds on macOS 27.
   - The results list shows the first 5,000 matches; the count covers them all.
   - Page highlights are replaced at most twice a second while results stream in, and once more at the end *(Amended 2026-10-29, M2 review)*.
   - *(Amended 2026-10-30, M6)* **The 100 ms coalescing is a run-loop timer** in the common modes, not `DispatchQueue.main.asyncAfter`.
@@ -570,6 +571,46 @@ The policy is to use system frameworks first. Every dependency shipped inside th
   - **`macos-26`:** `scripts/release/test-install` on its own as well, because `install.sh` runs straight from `main`. It needs no downloads, so it reports within a minute.
   - **`xcode-27`, Xcode 27.1, run by hand only** (`workflow_dispatch` with `full-suite`): the whole `scripts/test.sh`. Everything builds and runs in the runner's session, but on macOS 27 one package test and 22 app tests fail on behaviour the tests record for macOS 26, most of it in the M0b PDFKit record.
 - **The app-hosted tests stay local.** Xcode 26.6 can't compile them, and macOS 27 isn't the platform they describe. `scripts/test.sh` on a developer Mac with macOS 26 and Xcode 27 is still needed before merging a change to the app.
+- *(Amended 2026-11-01, macOS 27.)* The tests now pin both versions, and the full suite passes on `xcode-27`. It still runs there by hand only, and the local run on macOS 26 is still the gate. See **macOS 27** below.
+
+**macOS 27** *(Amended 2026-11-01)*
+- **Decision: Lectern supports macOS 27** on Apple Silicon. macOS 26 stays the minimum (A6).
+  - Lectern 1.0.0 already keeps A4 and A5 on macOS 27: forms stay read-only, every link goes through the routing table, and nothing reaches a file through PDFKit.
+  - So 1.0.0 users who upgrade need no urgent release. The changes below ship with the next one.
+- **How it was checked.** No Mac here runs macOS 27.
+  - The `xcode-27` runner (macOS 27.0.1, Xcode 27.1) ran the whole suite. The same suite on `macos-26` (Xcode 26.6) separated the runners' own effects from macOS 27's.
+  - Probes on scratch branches, never merged, measured the rest.
+- **Clicks.** On macOS 27 a stock `PDFView` handles clicks with gesture recognizers (click, press and pan, on the view and on its document view).
+  - A subclass that overrides the mouse handlers, as `ReaderPDFView` does, keeps the mouse-down path (`_wantsGestureRecognizers` is false for it). That is the path §4.3 and §4.4 intercept. `theReaderStaysOnPDFKitsMouseDownPath` fails if PDFKit ever gives the reader those recognizers.
+  - **Links.** A link's action now runs after the mouse-down returns, not during it. The reader already swallows both halves of a click on a link.
+  - **Form fields.** The reader now swallows the whole press on a form widget: the drags and the mouse-up as well, which 1.0.0 passed on. PDFView implements only `mouseDown:` on both versions, so nothing acted on them; this is a guard against a later change, not a fix for something seen.
+  - **Clicks and keys dispatched through the window,** as a person's are:
+    - A stock view edits a text field and toggles a checkbox, on both versions.
+    - The reader changes neither, with a click, a double-click, a long press or a drag (`realClicksEditAStockViewButNeverTheReader`).
+    - AppKit delivers such clicks only to the active app, so that test runs only on CI, where the test host already is active.
+  - **Clicks sent straight to the hit view,** all a developer's Mac can send, no longer reach widgets on macOS 27. So the local control in `tabNeverReachesPDFKitInAFormAndAStockViewWouldEditOnClick` holds on macOS 26 only.
+  - **Tab.** Tab dispatched through the window enters no field, in a stock view or the reader, on either version. The Tab handling (§4.3) stays a guard, and real keyboards stay [verify].
+- **Writing.** On macOS 27, `dataRepresentation()` and `write(to:)` keep much more:
+  - JavaScript and its triggers;
+  - `Launch`, `SubmitForm` and `JavaScript` link actions;
+  - custom keys and page labels;
+  - the form's structure.
+
+  They write `/Rotate` only where it isn't 0, and no popups. They still drop `/ID` and the revision history, and they don't append. So §4.3's rule stands: Lectern never saves through them, and no file a user saves changes. JavaScript still never runs (M0b Q1).
+- **Annotations across views.** A live annotation change now reaches every view on the document (M0b Q7). The re-bind (§4.4) is redundant on macOS 27 but harmless, and stays for macOS 26.
+- **The context menu.** PDFKit's own menu no longer has link items, and `_addOpenItemsToMenu:onPage:atPagePoint:` is gone. Lectern builds its own menu either way. `openRepresentedLink:` still exists, and the reader still replaces it.
+- **Encryption.**
+  - CoreGraphics on macOS 27 writes 40-bit RC4 files that open with the owner password. macOS 26's didn't, in any reader. PDFSave authenticates them like any other file, and `EncryptionTests` now follows qpdf rather than the macOS version.
+  - PDFKit's own encrypted write uses 128-bit RC4 on macOS 27, where macOS 26 used AES-128. That is Preview's route, never Lectern's.
+- **Search.**
+  - PDFKit's find is about twice as slow on the macOS 27 runner: 2.9 s against 1.6 s for 45,000 matches in 1,500 pages, with no view. Lectern can't change that.
+  - Setting each match's colour while a view shows the document cost more than the find itself: 9.7 s on macOS 27 and 3.9 s on macOS 26 in all. Now only the results that can be highlighted, the first 5,000, are coloured (§4.6).
+  - In the full suite on `xcode-27`, the 1,500-page search went from 111–123 s to 8 s.
+- **SwiftUI and the keyboard.** On macOS 27, SwiftUI buttons, checkboxes and pop-up menus take keyboard focus only with Keyboard Navigation on, as AppKit's do. The accessibility audit checks them only then (§9).
+- **Runner effects, not macOS 27.** These fail on `macos-26` too:
+  - The test host is the active app on CI. Two tests assumed it wasn't (undo sent to the key window, and a password prompt on `showWindow`); they now hold either way.
+  - Offscreen captures of a `PDFView` are blank on the runners' virtual machines (M0b Q11).
+- **[verify] on macOS 27:** a person's mouse and keyboard on a real Mac (CI sends synthesized events through the window), VoiceOver, and the hand checks in the release checklist.
 
 **Release (B5)** *(Amended 2026-10-29: no Developer ID)*
 1. Archive a Release build: `xcodebuild archive`, signed ad-hoc with the hardened runtime on and no `get-task-allow`.
@@ -633,6 +674,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 **Accessibility** *(Added 2026-10-29, M5)*
 - `AccessibilityAudit` (AppTests) walks a reader window's views, its toolbar, the popovers and every SwiftUI screen (through the accessibility tree). It fails on an interactive element with no name, a control that refuses first responder, a segment with no name, or a toolbar action with no menu equivalent. A test injects an unnamed button and an unreachable one to prove it fails. The selection bar is exempt from focus by design (it must not take focus from the page), and every action on it is in the Annotate menu with a shortcut.
 - It checks `refusesFirstResponder` rather than `canBecomeKeyView`, which depends on the Mac's Full Keyboard Access setting.
+  - *(Amended 2026-11-01, macOS 27)* SwiftUI's buttons, checkboxes and pop-up menus follow that setting from macOS 27, so on macOS 27 their focus is checked only when Keyboard Navigation is on (`AccessibilityAudit.focusableOnlyWithKeyboardNavigation`). With it on, the audit passes there.
 - **Reduce Motion** turns off the popovers' animation (`Motion` in ReaderKit). Nothing else in the app animates; sidebar and distraction-free changes are immediate.
 - **Scanned pages.** The text check (`TextInventory`) runs in the background when a document opens. A document with no text, or some pages without it, says so in the reading view's accessibility help and the pane's value ("No readable text"), so VoiceOver doesn't present scanned pages as readable text.
 - **Not verified:** VoiceOver itself, and keyboard focus inside SwiftUI controls (the audit checks their names only).

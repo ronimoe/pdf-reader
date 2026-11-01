@@ -601,3 +601,24 @@ The DMG opened to a plain Finder window: five small icons in a row, a toolbar an
 - RC4 40-bit files now opening with the owner password.
 
 Lectern 1.0.0 users who upgrade to macOS 27 will meet these changes; supporting it is a separate piece of work.
+
+## macOS 27 (branch `macos-27`)
+
+- **Decision:** Lectern supports macOS 27 (architecture §8, "macOS 27"). Lectern 1.0.0 already keeps forms read-only and routes every link there, and never saves through PDFKit, so its users on macOS 27 need no urgent release.
+- **What changed in the app:**
+  - `ReaderPDFView` swallows the whole press on a form widget (drags and mouse-up too), not only its mouse-down. macOS 27's PDFKit acts on links after mouse-down; nothing acted on a widget's mouse-up on either version, so this is a guard.
+  - Search colours only the first 5,000 results, as many as can be highlighted. While a view shows the document, PDFKit's colour setter costs more than the find.
+- **What changed in the tests:** the M0b PDFKit record, `EncryptionTests` and the SwiftUI accessibility audit expect what each macOS version does. Three tests no longer depend on whether the test host is the active app, or on the machine. Two new tests:
+  - `theReaderStaysOnPDFKitsMouseDownPath`: macOS 27's stock `PDFView` uses gesture recognizers, and the reader must not.
+  - `realClicksEditAStockViewButNeverTheReader`: clicks and keys sent through the window, on CI only, where the test host is already active.
+- **How it was found:** probes on scratch branches (never merged) ran the whole suite on `macos-26` with Xcode 26.6 and on `xcode-27`. That separated the runners' own effects (failing on both) from macOS 27's.
+
+**Verified:**
+- The whole suite on `xcode-27` (macOS 27.0.1, Xcode 27.1) with these changes (scratch run 41279050306 had every app and package test passing).
+- `scripts/test.sh` on a developer Mac with macOS 26.6.2 and Xcode 27.2.
+
+**Not verified:** a person's mouse and keyboard on a real Mac with macOS 27 (CI sends synthesized events through the window), VoiceOver on macOS 27, and the release checklist's hand checks there.
+
+**Found, left for later:**
+- A double-click on a link follows it twice, on macOS 26 as well: a web link opens twice.
+- With Xcode 26.6 (Swift 6.3) the app-hosted tests don't compile (`AppShellTests` shadows `item` inside `#require`). With that renamed, `shortcutsAreUnique` fails there (68 unique of 70).
