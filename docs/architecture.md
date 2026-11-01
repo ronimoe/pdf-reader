@@ -296,6 +296,7 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
   - The view's `delegate` is an internal object that routes `pdfViewWillClick(onLink:)` and the remote-GoTo callback through the same policy.
   - `openRepresentedLink:` is replaced. `willOpenMenu` strips it unconditionally.
   - The immediate-action recogniser is removed in `init` and on `viewDidMoveToWindow`, and `addGestureRecognizer` refuses it if PDFKit adds it again.
+  - *(Amended 2026-11-01)* A double-click follows a link once, as in a browser. Each click of the pair reaches `mouseUp`; one with `clickCount > 1` is swallowed but not followed, so a web link no longer opens twice and a blocked link no longer explains twice.
 - **Routing.** The pane follows internal destinations and the page-moving named actions (`NextPage`, `PrevPage`, `FirstPage`, `LastPage`, `GoBack`, `GoForward`). Other named actions only beep.
   - Everything else goes to the window. `http` and `https` go to the `URLOpening` seam.
   - A URL with no scheme, a `file:` URL, or a scheme that opens something on this Mac (`afp`, `smb`, `nfs`, `cifs`, `ftp`, `vnc`, `ssh`, `telnet`, `x-man-page`, `applescript`, `x-apple-systempreferences`) is a Launch in disguise. It is blocked with the Launch explanation.

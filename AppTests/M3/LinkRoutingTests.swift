@@ -73,6 +73,29 @@ extension M3Tests {
             expectUnmoved(before, in: harness.view)
         }
 
+        /// A double-click follows the link once, as a browser does: each
+        /// click of the pair reaches `mouseUp`, the second with a click count of 2.
+        @Test(arguments: ["Website", "Launch app"])
+        func aDoubleClickFollowsALinkOnce(text: String) throws {
+            let harness = try M3Harness()
+            defer { harness.close() }
+            harness.showFirstPage()
+            var activations = 0
+            let route = harness.view.onActivateLink
+            harness.view.onActivateLink = { target in
+                activations += 1
+                route?(target)
+            }
+            let point = harness.windowPoint(of: harness.link(text))
+            for clickCount in 1...2 {
+                harness.view.mouseDown(with: Synth.mouse(.leftMouseDown, at: point, in: harness.window, clickCount: clickCount))
+                harness.view.mouseUp(with: Synth.mouse(.leftMouseUp, at: point, in: harness.window, clickCount: clickCount))
+            }
+            Spin.runLoop(0.1)
+            #expect(activations == 1)
+            #expect(harness.opener.opened.count + harness.presenter.blockedLinks.count == 1)
+        }
+
         @Test func anyOtherSchemeAsksFirstAndShowsTheURL() throws {
             let harness = try M3Harness()
             defer { harness.close() }
