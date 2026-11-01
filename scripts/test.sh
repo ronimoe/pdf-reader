@@ -1,11 +1,20 @@
 #!/bin/zsh
 # Runs every test suite headlessly, once each. Exit code is non-zero on any failure.
+#
+# Usage: scripts/test.sh            everything
+#        scripts/test.sh --no-app   everything but the app-hosted tests, which need Xcode 27 (CI
+#                                   runs this on macOS 26 with Xcode 26, .github/workflows/test.yml)
 set -uo pipefail
 cd "$(dirname "$0")/.."
+case ${1:-} in
+  "") app=1 ;;
+  --no-app) app=0 ;;
+  *) echo "usage: scripts/test.sh [--no-app]" >&2; exit 2 ;;
+esac
 mkdir -p build/logs
 result=0
 
-xcodegen generate --quiet || exit 1
+if (( app )); then xcodegen generate --quiet || exit 1; fi
 
 # The representative PDFs too large to commit (Tests/Corpus/public/fetched/): present ones are
 # checked against their SHA-256, missing ones are downloaded and checked. Without them the corpus
@@ -39,19 +48,25 @@ if (( key_ok )); then echo "✔ sparkle-key: mode 600 under umask 000, no overwr
 # fixture releases on each run.
 scripts/release/test-install || result=1
 
-echo "== xcodebuild test (Lectern app)"
-xcodebuild -project Lectern.xcodeproj -scheme Lectern -destination 'platform=macOS' \
-  -derivedDataPath build/DerivedData test > build/logs/xcodebuild-test.log 2>&1 || result=1
-grep -v "\[Connection\]" build/logs/xcodebuild-test.log | grep -E "error:|✘|Test run with|TEST SUCCEEDED|TEST FAILED"
+if (( app )); then
+  echo "== xcodebuild test (Lectern app)"
+  xcodebuild -project Lectern.xcodeproj -scheme Lectern -destination 'platform=macOS' \
+    -derivedDataPath build/DerivedData test > build/logs/xcodebuild-test.log 2>&1 || result=1
+  grep -v "\[Connection\]" build/logs/xcodebuild-test.log | grep -E "error:|✘|Test run with|TEST SUCCEEDED|TEST FAILED"
 
-# Offscreen snapshots (AppTests/M5/SnapshotTests.swift): the sandboxed test host writes them
-# into its container's temporary folder; copy them where they can be looked at.
-snapshots="$HOME/Library/Containers/io.github.ronimoe.Lectern/Data/tmp/LecternSnapshots"
-if [[ -d $snapshots ]]; then
-  rm -rf build/snapshots && mkdir -p build/snapshots
-  cp "$snapshots"/*.png build/snapshots/ 2>/dev/null
-  echo "== snapshots: $(ls build/snapshots | wc -l | tr -d ' ') PNGs in build/snapshots"
+  # Offscreen snapshots (AppTests/M5/SnapshotTests.swift): the sandboxed test host writes them
+  # into its container's temporary folder; copy them where they can be looked at.
+  snapshots="$HOME/Library/Containers/io.github.ronimoe.Lectern/Data/tmp/LecternSnapshots"
+  if [[ -d $snapshots ]]; then
+    rm -rf build/snapshots && mkdir -p build/snapshots
+    cp "$snapshots"/*.png build/snapshots/ 2>/dev/null
+    echo "== snapshots: $(ls build/snapshots | wc -l | tr -d ' ') PNGs in build/snapshots"
+  fi
+else
+  echo "== xcodebuild test (Lectern app): skipped (--no-app)"
 fi
 
-if [[ $result -eq 0 ]]; then echo "ALL TESTS PASSED"; else echo "TESTS FAILED (logs in build/logs)"; fi
+if [[ $result -ne 0 ]]; then echo "TESTS FAILED (logs in build/logs)"
+elif (( app )); then echo "ALL TESTS PASSED"
+else echo "TESTS PASSED, BUT THE APP-HOSTED TESTS WERE SKIPPED (--no-app)"; fi
 exit $result
