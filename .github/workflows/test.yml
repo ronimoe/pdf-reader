@@ -1,0 +1,148 @@
+# Runs the tests on every pull request and every push to main (issue #34).
+# No secrets: the token can only read the repository, and nothing here signs or publishes. The
+# Sparkle key is never used; the only key is the throwaway one scripts/test.sh makes in a
+# temporary folder to test sparkle-key.swift.
+#
+# No hosted runner has what the whole suite needs, macOS 26 with Xcode 27, so it is split:
+# - macos-26 (macOS 26, Xcode 26.6 at most) runs everything but the app-hosted tests, which need
+#   Xcode 27 to compile;
+# - xcode-27 (Xcode 27, but on macOS 27) runs the whole suite only when asked for, because PDFKit
+#   on macOS 27 breaks expectations the tests record for macOS 26.
+# The app-hosted tests stay with scripts/test.sh on a developer Mac (architecture.md §8).
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full-suite:
+        description: Also run the full suite, app-hosted tests included, on xcode-27 (macOS 27)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# A newer push to a pull request cancels its older run; on main a run in progress is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+  HOMEBREW_NO_ANALYTICS: 1
+
+jobs:
+  # install.sh is run straight from main by `curl … | zsh`, so its offline harness runs on its own,
+  # on the macOS people install on, without waiting for any download. It needs only zsh, hdiutil
+  # and codesign.
+  installer:
+    name: Installer (macos-26)
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Runner
+        run: sw_vers && uname -m
+      - name: scripts/release/test-install
+        run: scripts/release/test-install
+
+  # The LecternKit package tests with every corpus tool (LECTERN_REQUIRE_TOOLS=1), the sparkle-key
+  # check and the installer harness, on macOS 26. Xcode 26.6 is Swift 6.3, older than the 6.4 the
+  # project is developed with but within Package.swift's tools version (6.2).
+  package:
+    name: Package and release scripts (macos-26, Xcode 26.6)
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Runner
+        run: sw_vers && uname -m && xcodebuild -version && swift --version
+      - name: Homebrew tools
+        run: brew install qpdf mupdf-tools poppler
+      # scripts/corpus/bootstrap makes .venv with the python3 on PATH; requirements.txt pins
+      # exact versions, built and tested with Python 3.12.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/corpus/requirements.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/corpus/package-lock.json
+      # The representative PDFs too large to commit. bootstrap lists them with their SHA-256 and
+      # checks a cached copy before using it, so a stale cache is downloaded again, never trusted.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Tests/Corpus/public/fetched
+          key: corpus-fetched-${{ hashFiles('scripts/corpus/bootstrap') }}
+      - name: Corpus tools and fetched PDFs
+        run: scripts/corpus/bootstrap
+      - name: scripts/test.sh --no-app
+        run: scripts/test.sh --no-app
+      # scripts/test.sh prints only a summary; the full logs are here.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: logs-package
+          path: build/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The whole of scripts/test.sh, as on a developer Mac, with the Xcode 27 docs/INSTALL.md names
+  # (the image's default moves, so it is set here). Run it from the Actions tab or with
+  # `gh workflow run test.yml --ref <branch> -f full-suite=true`.
+  full:
+    name: Full suite (xcode-27, Xcode 27.1)
+    if: inputs.full-suite
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Runner
+        run: sw_vers && uname -m && xcodebuild -version && swift --version
+      - name: Homebrew tools
+        run: brew install qpdf mupdf-tools poppler xcodegen
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/corpus/requirements.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/corpus/package-lock.json
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Tests/Corpus/public/fetched
+          key: corpus-fetched-${{ hashFiles('scripts/corpus/bootstrap') }}
+      - name: Corpus tools and fetched PDFs
+        run: scripts/corpus/bootstrap
+      - name: scripts/test.sh
+        run: scripts/test.sh
+      # The full logs and the offscreen snapshots (AppTests/M5/SnapshotTests.swift).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: logs-full-suite
+          path: |
+            build/logs/
+            build/snapshots/
+          if-no-files-found: ignore
+          retention-days: 14
