@@ -2,6 +2,17 @@
 
 All notable changes to Lectern. Versions follow [Semantic Versioning](https://semver.org); the build number (`CFBundleVersion`) goes up by one with every release.
 
+## 1.0.1 (build 2), 2026-11-01
+
+Two fixes, and Lectern is now tested on macOS 27 as well as macOS 26. The minimum is still macOS 26 on Apple Silicon.
+
+### Fixed
+- A double-clicked link is followed once, not twice: a web link no longer opens twice, and a blocked link is explained once.
+- Searching a long document for a common word is faster. Only the first 5,000 results, as many as the window ever highlights, get the find colour as they arrive, and Next and Previous Result colour the one they show. Colouring every match had made a search with 45,000 matches in 1,500 pages take more than twice as long.
+
+### macOS 27
+- A press on a form field now stays with Lectern from mouse-down to mouse-up, not only its mouse-down. On macOS 27, PDFKit handles links later in a click than on macOS 26, so this is a guard: forms stay read-only on both, as in 1.0.0.
+
 ## 1.0.0 (build 1), 2026-10-31
 
 The first release: a calm, native PDF reader for macOS 26 on Apple Silicon. No accounts, no telemetry, no ads, no AI, and it works offline.
