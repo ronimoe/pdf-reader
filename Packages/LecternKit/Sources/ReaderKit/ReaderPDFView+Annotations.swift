@@ -85,9 +85,12 @@ extension ReaderPDFView {
     /// A mouse-down not on a link. Returns true if it was handled and PDFKit must not see it.
     func handleAnnotationMouseDown(_ event: NSEvent, at point: CGPoint) -> Bool {
         pendingAnnotationClick = nil
+        swallowsWidgetPress = false
         if widget(at: point) != nil {
             // Forms are read-only (A5): no field ever gets focus or toggles. isReadOnly is never
-            // set, since PDFKit writes it into the file (M0b Q3).
+            // set, since PDFKit writes it into the file (M0b Q3). The drag and the mouse-up go
+            // too: macOS 27's PDFKit acts on mouse-up, where macOS 26's acted on mouse-down.
+            swallowsWidgetPress = true
             window?.makeFirstResponder(self)
             hideSelectionBar()
             return true

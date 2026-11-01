@@ -123,6 +123,8 @@ public final class ReaderPDFView: PDFView {
     /// Where the last context menu was opened, for Add Note Here.
     public internal(set) var contextClickLocation: (page: PDFPage, point: CGPoint)?
     var pendingAnnotationClick: PendingAnnotationClick?
+    /// The current press began on a form widget, so none of it reaches PDFKit (A5).
+    var swallowsWidgetPress = false
     var formFieldsKnown: Bool?
     let annotationOutline = AnnotationOutlineView()
     public let selectionBar = SelectionActionBar()
@@ -193,6 +195,7 @@ public final class ReaderPDFView: PDFView {
         self.document = document
         formFieldsKnown = nil
         pendingAnnotationClick = nil
+        swallowsWidgetPress = false
         hideSelectionBar()
         if selectedAnnotation != nil { selectAnnotation(nil) }
         keptAnchor = nil
