@@ -2,8 +2,6 @@
 
 Lectern needs **macOS 26 (Tahoe) or later on an Apple Silicon Mac**.
 
-> **Not published yet.** Lectern 1.0.0 is built and checked, but there is no public GitHub Release or Homebrew tap until the maintainer publishes them ([release-checklist.md](release-checklist.md)). Until then only [building from source](#build-from-source) works. The download links, including the one the Homebrew cask uses, work only once the repository is public and the release exists.
-
 Lectern isn't signed with an Apple Developer ID ([why](#why-isnt-it-signed)). A copy downloaded in a browser is therefore blocked the first time you open it, and you have to allow it once. The Terminal line and Homebrew avoid that step. Each route below says how.
 
 ## One line in Terminal

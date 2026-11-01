@@ -1,6 +1,6 @@
 # Release checklist
 
-How to publish Lectern 1.0.0, and the checks still owed by hand. Everything below is a decision or an action for the maintainer: the automated build stops at local files, and nothing has been published, tagged or pushed to a tap.
+How Lectern 1.0.0 was published, and the checks still owed by hand. *(Amended 2026-10-31)* 1.0.0 is published: tag `v1.0.0` on `705221c`, the GitHub Release with its four assets, and the repository made public. §1 (the key backup), §4 (the tap) and §5 (the hand checks) are still the maintainer's. The steps below also serve as the process for later releases.
 
 The names here are fixed by what's already built: the cask downloads `https://github.com/ronimoe/pdf-reader/releases/download/v1.0.0/Lectern-1.0.0.dmg`, the appcast's enclosure is `…/releases/download/v1.0.0/Lectern-1.0.0.zip`, and the app reads its feed from `https://github.com/ronimoe/pdf-reader/releases/latest/download/appcast.xml`. So the tag must be **`v1.0.0`** and the assets must keep their names.
 
@@ -65,6 +65,8 @@ gh release create v1.0.0 --title "Lectern 1.0.0" --notes-file <notes> \
 
 ## 4. Create the Homebrew tap
 
+*(Done 2026-11-01.)* [`ronimoe/homebrew-lectern`](https://github.com/ronimoe/homebrew-lectern) is public, with `Casks/lectern.rb` and a README. The install was tested on the maintainer's Mac into a scratch folder (`--appdir`), then uninstalled and untapped: no quarantine mark left, `codesign --strict` passed, version 1.0.0. Homebrew 7.0.11 trusted the newly added tap without `brew trust`. Still owed: a Mac without Lectern, and opening the installed app (§5).
+
 1. Create the public repository **`ronimoe/homebrew-lectern`** (Homebrew finds `brew tap ronimoe/lectern` there).
 2. Add `packaging/homebrew/Casks/lectern.rb` from this repository as `Casks/lectern.rb`, commit and push.
 3. Test on a Mac without Lectern: `brew tap ronimoe/lectern && brew install --cask ronimoe/lectern/lectern`. If Homebrew asks, `brew trust --cask ronimoe/lectern/lectern` (whether a GitHub-hosted tap needs it is unverified).
@@ -98,5 +100,5 @@ Record the outcome of each in `docs/progress.md` (or a release note), and move a
 
 ## 6. After publishing
 
-- Turn `README.md`'s "Not published yet" status into the release link, and drop the banner at the top of `docs/INSTALL.md`.
+- Turn `README.md`'s "Not published yet" status into the release link, and drop the banner at the top of `docs/INSTALL.md`. *(Done 2026-10-31.)*
 - Clean up from M0c if you haven't: the Sparkle test key (`lectern-m0c-probe`) in the login Keychain.
