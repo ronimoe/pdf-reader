@@ -614,11 +614,12 @@ Lectern 1.0.0 users who upgrade to macOS 27 will meet these changes; supporting 
 - **How it was found:** probes on scratch branches (never merged) ran the whole suite on `macos-26` with Xcode 26.6 and on `xcode-27`. That separated the runners' own effects (failing on both) from macOS 27's.
 
 **Verified:**
-- The whole suite on `xcode-27` (macOS 27.0.1, Xcode 27.1): see the PR for the run.
-- `scripts/test.sh` on a developer Mac with macOS 26.6.2 and Xcode 27.2.
+- The whole suite on `xcode-27` (macOS 27.0.1, Xcode 27.1), run by hand: run 41282277266, 93 + 43 + 149 package tests and 418 app tests.
+- `scripts/test.sh` on a developer Mac with macOS 26.6.2 and Xcode 27.2: the same counts, all passing.
 
 **Not verified:** a person's mouse and keyboard on a real Mac with macOS 27 (CI sends synthesized events through the window), VoiceOver on macOS 27, and the release checklist's hand checks there.
 
 **Found, left for later:**
 - A double-click on a link follows it twice, on macOS 26 as well: a web link opens twice.
+- `theSelectionControlAppearsAfterSelectingAndEscapeHidesIt` reads the physical mouse button (`NSEvent.pressedMouseButtons`): it failed once locally while the Mac was in use, then fell through to an unrecognised `cancelOperation:` and hung until the time limit.
 - With Xcode 26.6 (Swift 6.3) the app-hosted tests don't compile (`AppShellTests` shadows `item` inside `#require`). With that renamed, `shortcutsAreUnique` fails there (68 unique of 70).

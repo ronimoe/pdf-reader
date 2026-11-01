@@ -605,7 +605,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 - **Search.**
   - PDFKit's find is about twice as slow on the macOS 27 runner: 2.9 s against 1.6 s for 45,000 matches in 1,500 pages, with no view. Lectern can't change that.
   - Setting each match's colour while a view shows the document cost more than the find itself: 9.7 s on macOS 27 and 3.9 s on macOS 26 in all. Now only the results that can be highlighted, the first 5,000, are coloured (§4.6).
-  - In the full suite on `xcode-27`, the 1,500-page search had taken 111–123 s.
+  - In the full suite on `xcode-27`, the 1,500-page search test went from 111–123 s to 22 s (run 41282277266).
 - **SwiftUI and the keyboard.** On macOS 27, SwiftUI buttons, checkboxes and pop-up menus take keyboard focus only with Keyboard Navigation on, as AppKit's do. The accessibility audit checks them only then (§9).
 - **Runner effects, not macOS 27.** These fail on `macos-26` too:
   - The test host is the active app on CI. Two tests assumed it wasn't (undo sent to the key window, and a password prompt on `showWindow`); they now hold either way.
