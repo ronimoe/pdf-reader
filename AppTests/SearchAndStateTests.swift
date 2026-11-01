@@ -8,8 +8,10 @@ import Testing
 @testable import Lectern
 
 @MainActor
+/// Up to a minute: the default 5 s ran out on CI's slower macOS 27 runner, where PDFKit's find
+/// is about twice as slow. It returns as soon as the search ends.
 private func waitForSearch(_ harness: NavigationHarness) {
-    spin { harness.controller.search?.isSearching == false }
+    spin(timeout: 60) { harness.controller.search?.isSearching == false }
 }
 
 // MARK: Search (B8)
@@ -41,7 +43,7 @@ private func waitForSearch(_ harness: NavigationHarness) {
         defer { harness.close() }
         harness.controller.startSearch("reading")
         let search = try #require(harness.controller.search)
-        spin(timeout: 60) { harness.controller.search?.isSearching == false }
+        waitForSearch(harness)
         let limit = SearchResultsSectionViewController.rowLimit
         try #require(search.results.count == 200 * 30)
         let highlighted = try #require(harness.pdfView.highlightedSelections)
