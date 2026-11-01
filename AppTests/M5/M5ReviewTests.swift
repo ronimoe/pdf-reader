@@ -221,7 +221,9 @@ extension M5Tests {
             reader.defersPasswordCheckUntilKey = true
             reader.showWindow(nil)
             defer { window.orderOut(nil) }
-            #expect(presenter.prompts.isEmpty, "not on show")
+            // Showing the window makes it key only while the test host is the active app (CI),
+            // and then it should ask. On a developer's Mac it stays unasked until it becomes key.
+            #expect(presenter.prompts.count == (window.isKeyWindow ? 1 : 0), "not on show, unless that made it key")
             reader.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification, object: window))
             #expect(presenter.prompts.count == 1)
             reader.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification, object: window))
