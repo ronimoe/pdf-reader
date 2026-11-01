@@ -41,9 +41,10 @@ enum AccessibilityAudit {
     /// SwiftUI controls the keyboard reaches only with Keyboard Navigation on (System Settings ▸
     /// Keyboard). From macOS 27, SwiftUI's accessibility tree follows that setting, as AppKit's
     /// `canBecomeKeyView` does, so their focus is checked only with it on; text fields take focus
-    /// either way. macOS 26's SwiftUI reported them focusable regardless.
+    /// either way. macOS 26's SwiftUI reported them focusable regardless. Only the roles seen
+    /// doing so are listed.
     static let focusableOnlyWithKeyboardNavigation: Set<NSAccessibility.Role> = [
-        .button, .checkBox, .radioButton, .popUpButton, .menuButton, .slider, .incrementor, .disclosureTriangle,
+        .button, .checkBox, .popUpButton,
     ]
 
     static var swiftUIFocusFollowsKeyboardNavigation: Bool {

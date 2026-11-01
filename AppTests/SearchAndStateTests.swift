@@ -41,9 +41,9 @@ private func waitForSearch(_ harness: NavigationHarness) {
         defer { harness.close() }
         harness.controller.startSearch("reading")
         let search = try #require(harness.controller.search)
-        waitForSearch(harness)
+        spin(timeout: 60) { harness.controller.search?.isSearching == false }
         let limit = SearchResultsSectionViewController.rowLimit
-        #expect(search.results.count == 200 * 30)
+        try #require(search.results.count == 200 * 30)
         let highlighted = try #require(harness.pdfView.highlightedSelections)
         #expect(highlighted.count == limit)
         #expect(highlighted.allSatisfy { $0.color == .findHighlightColor })

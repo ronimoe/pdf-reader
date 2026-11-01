@@ -151,8 +151,9 @@ extension M0bSpikes {
             #expect(String(describing: type(of: target)) == "PDFPageView")
             #expect(upStillQueued == true)
             if #available(macOS 27, *) {
-                // macOS 27 performs the action on the mouse-up instead. ReaderPDFView swallows
-                // both halves of a click on a link, so it doesn't matter which.
+                // macOS 27 performs the action after mouseDown returns instead (by the mouse-up
+                // and a run-loop turn). ReaderPDFView swallows both halves of a click on a link,
+                // so it doesn't matter which.
                 #expect(performedDuringDown.isEmpty)
                 target.mouseUp(with: Synth.mouse(.leftMouseUp, at: point, in: host.window))
                 Spin.runLoop(0.1)

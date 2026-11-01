@@ -89,7 +89,8 @@ extension ReaderPDFView {
         if widget(at: point) != nil {
             // Forms are read-only (A5): no field ever gets focus or toggles. isReadOnly is never
             // set, since PDFKit writes it into the file (M0b Q3). The drag and the mouse-up go
-            // too: macOS 27's PDFKit acts on mouse-up, where macOS 26's acted on mouse-down.
+            // too, as a guard: PDFView implements neither on macOS 26 or 27, but macOS 27 moved
+            // link handling off mouse-down (M0b Q2).
             swallowsWidgetPress = true
             window?.makeFirstResponder(self)
             hideSelectionBar()

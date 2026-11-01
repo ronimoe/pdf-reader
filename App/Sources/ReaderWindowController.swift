@@ -661,6 +661,8 @@ final class ReaderWindowController: NSWindowController {
     func showResult(at index: Int) {
         guard let results = search?.results, results.indices.contains(index) else { return }
         currentResultIndex = index
+        // Past the coloured ones (DocumentSearch.colouredResultLimit), coloured when shown.
+        results[index].selection.color = .findHighlightColor
         (searchPane ?? pane).show(results[index].selection)
         searchSection.selectResult(index)
     }

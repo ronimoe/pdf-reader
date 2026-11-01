@@ -168,7 +168,7 @@ App (AppKit shell)
 - Each tab has one or two panes.
 - Each pane is a `ReaderPDFView` with its own `HistoryStack` (B2) and `ReadingAnchor`.
 - Both panes share the same `PDFDocument`.
-- **Annotation changes don't reach the other pane on their own** *(Amended 2026-10-29, M0b Q7; on macOS 27 they do, §8)*. A live annotation change shows only in the pane that last laid out the page. After every annotation change, the other pane must re-assign its `document`, keeping its anchor, to refresh. Five cheaper refresh calls were tried and none worked.
+- **Annotation changes don't reach the other pane on their own** *(Amended 2026-10-29, M0b Q7)* *(Amended 2026-11-01: on macOS 27 they do; §8, macOS 27)*. A live annotation change shows only in the pane that last laid out the page. After every annotation change, the other pane must re-assign its `document`, keeping its anchor, to refresh. Five cheaper refresh calls were tried and none worked.
 
 **Focus (B3)**
 - The tab tracks which pane is focused.
@@ -586,10 +586,10 @@ The policy is to use system frameworks first. Every dependency shipped inside th
   - **Form fields.** The reader now swallows the whole press on a form widget: the drags and the mouse-up as well, which 1.0.0 passed on. PDFView implements only `mouseDown:` on both versions, so nothing acted on them; this is a guard against a later change, not a fix for something seen.
   - **Clicks and keys dispatched through the window,** as a person's are:
     - A stock view edits a text field and toggles a checkbox, on both versions.
-    - The reader changes neither, with a click, a double-click, a long press or a drag (`realClicksEditAStockViewButNeverTheReader`).
+    - The reader changes neither (`realClicksEditAStockViewButNeverTheReader`). Probes also tried a double-click, a long press and a drag on each field: nothing changed either.
     - AppKit delivers such clicks only to the active app, so that test runs only on CI, where the test host already is active.
   - **Clicks sent straight to the hit view,** all a developer's Mac can send, no longer reach widgets on macOS 27. So the local control in `tabNeverReachesPDFKitInAFormAndAStockViewWouldEditOnClick` holds on macOS 26 only.
-  - **Tab.** Tab dispatched through the window enters no field, in a stock view or the reader, on either version. The Tab handling (§4.3) stays a guard, and real keyboards stay [verify].
+  - **Tab.** In a probe, Tab dispatched through the window entered no field, in a stock view or the reader, on either version. The Tab handling (§4.3) stays a guard, and real keyboards stay [verify].
 - **Writing.** On macOS 27, `dataRepresentation()` and `write(to:)` keep much more:
   - JavaScript and its triggers;
   - `Launch`, `SubmitForm` and `JavaScript` link actions;
@@ -605,7 +605,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 - **Search.**
   - PDFKit's find is about twice as slow on the macOS 27 runner: 2.9 s against 1.6 s for 45,000 matches in 1,500 pages, with no view. Lectern can't change that.
   - Setting each match's colour while a view shows the document cost more than the find itself: 9.7 s on macOS 27 and 3.9 s on macOS 26 in all. Now only the results that can be highlighted, the first 5,000, are coloured (§4.6).
-  - In the full suite on `xcode-27`, the 1,500-page search went from 111–123 s to 8 s.
+  - In the full suite on `xcode-27`, the 1,500-page search had taken 111–123 s.
 - **SwiftUI and the keyboard.** On macOS 27, SwiftUI buttons, checkboxes and pop-up menus take keyboard focus only with Keyboard Navigation on, as AppKit's do. The accessibility audit checks them only then (§9).
 - **Runner effects, not macOS 27.** These fail on `macos-26` too:
   - The test host is the active app on CI. Two tests assumed it wasn't (undo sent to the key window, and a password prompt on `showWindow`); they now hold either way.
@@ -674,7 +674,7 @@ The policy is to use system frameworks first. Every dependency shipped inside th
 **Accessibility** *(Added 2026-10-29, M5)*
 - `AccessibilityAudit` (AppTests) walks a reader window's views, its toolbar, the popovers and every SwiftUI screen (through the accessibility tree). It fails on an interactive element with no name, a control that refuses first responder, a segment with no name, or a toolbar action with no menu equivalent. A test injects an unnamed button and an unreachable one to prove it fails. The selection bar is exempt from focus by design (it must not take focus from the page), and every action on it is in the Annotate menu with a shortcut.
 - It checks `refusesFirstResponder` rather than `canBecomeKeyView`, which depends on the Mac's Full Keyboard Access setting.
-  - *(Amended 2026-11-01, macOS 27)* SwiftUI's buttons, checkboxes and pop-up menus follow that setting from macOS 27, so on macOS 27 their focus is checked only when Keyboard Navigation is on (`AccessibilityAudit.focusableOnlyWithKeyboardNavigation`). With it on, the audit passes there.
+  - *(Amended 2026-11-01, macOS 27)* SwiftUI's buttons, checkboxes and pop-up menus follow that setting from macOS 27, so on macOS 27 their focus is checked only when Keyboard Navigation is on (`AccessibilityAudit.focusableOnlyWithKeyboardNavigation`). With it on (a probe set `AppleKeyboardUIMode` to 2 on the runner), the audit passes there.
 - **Reduce Motion** turns off the popovers' animation (`Motion` in ReaderKit). Nothing else in the app animates; sidebar and distraction-free changes are immediate.
 - **Scanned pages.** The text check (`TextInventory`) runs in the background when a document opens. A document with no text, or some pages without it, says so in the reading view's accessibility help and the pane's value ("No readable text"), so VoiceOver doesn't present scanned pages as readable text.
 - **Not verified:** VoiceOver itself, and keyboard focus inside SwiftUI controls (the audit checks their names only).

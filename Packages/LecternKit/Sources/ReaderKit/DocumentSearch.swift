@@ -67,7 +67,7 @@ public final class DocumentSearch {
     public var onChange: (() -> Void)?
     public var coalescingInterval: TimeInterval = 0.1
     /// Only the first this many results get the find colour, as they arrive: no more are ever
-    /// highlighted, and while a view shows the document PDFKit's colour setter costs more than
+    /// highlighted at once (Next Result colours the one it shows), and while a view shows the document PDFKit's colour setter costs more than
     /// finding the match (45,000 matches on CI's runners: 1.5 s became 3.9 s on macOS 26, 3.1 s
     /// became 9.7 s on macOS 27). Colouring them later instead, in one go, stalled the main thread
     /// for seconds on macOS 27.

@@ -614,7 +614,7 @@ Lectern 1.0.0 users who upgrade to macOS 27 will meet these changes; supporting 
 - **How it was found:** probes on scratch branches (never merged) ran the whole suite on `macos-26` with Xcode 26.6 and on `xcode-27`. That separated the runners' own effects (failing on both) from macOS 27's.
 
 **Verified:**
-- The whole suite on `xcode-27` (macOS 27.0.1, Xcode 27.1) with these changes (scratch run 41279050306 had every app and package test passing).
+- The whole suite on `xcode-27` (macOS 27.0.1, Xcode 27.1): see the PR for the run.
 - `scripts/test.sh` on a developer Mac with macOS 26.6.2 and Xcode 27.2.
 
 **Not verified:** a person's mouse and keyboard on a real Mac with macOS 27 (CI sends synthesized events through the window), VoiceOver on macOS 27, and the release checklist's hand checks there.

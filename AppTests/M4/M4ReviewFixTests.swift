@@ -293,6 +293,8 @@ extension M4Tests {
             // `realClicksEditAStockViewButNeverTheReader`.
             if M0bSpikes.Q3Forms.directClicksReachWidgets {
                 #expect(stockResponder == "PDFTextWidgetTextView", "control: a stock view starts editing (\(stockResponder))")
+            } else {
+                #expect(stockResponder == "PDFView", "macOS 27: a direct click edits nothing (\(stockResponder))")
             }
 
             let reader = ReaderPDFView(frame: NSRect(x: 0, y: 0, width: 700, height: 900))
@@ -312,11 +314,8 @@ extension M4Tests {
         /// only kind macOS 27's PDFView acts on (M0b Q3). AppKit drops those unless the app is
         /// active, and the test host is never activated, so this runs only where it already is:
         /// CI's runners, on macOS 26 and 27.
-        @Test func realClicksEditAStockViewButNeverTheReader() throws {
-            guard NSApp.isActive else {
-                print("realClicksEditAStockViewButNeverTheReader: not run, the test host isn't the active app")
-                return
-            }
+        @Test(.enabled("only where the test host is already the active app (CI)") { await MainActor.run { NSApp.isActive } })
+        func realClicksEditAStockViewButNeverTheReader() throws {
             for reading in [false, true] {
                 let frame = NSRect(x: 0, y: 0, width: 700, height: 900)
                 let view = reading ? ReaderPDFView(frame: frame) : PDFView(frame: frame)
@@ -379,6 +378,8 @@ extension M4Tests {
                 } else if #available(macOS 27, *) {
                     // The control: a stock view on macOS 27 has them.
                     #expect(found.contains { $0.hasSuffix("NSClickGestureRecognizer") }, "\(found)")
+                } else {
+                    #expect(found.isEmpty, "macOS 26 has none: \(found)")
                 }
             }
         }
