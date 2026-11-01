@@ -9,8 +9,8 @@ settings:
     # Product name Lectern and bundle ID io.github.ronimoe.Lectern, decided 2026-10-30 (docs/decisions.md).
     # Release version (docs/release-checklist.md). CURRENT_PROJECT_VERSION is the build number
     # Sparkle compares (CFBundleVersion): a whole number that goes up by one with every release.
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0.1"
+    CURRENT_PROJECT_VERSION: "2"
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     ARCHS: arm64

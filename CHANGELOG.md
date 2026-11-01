@@ -2,6 +2,22 @@
 
 All notable changes to Lectern. Versions follow [Semantic Versioning](https://semver.org); the build number (`CFBundleVersion`) goes up by one with every release.
 
+## 1.0.1 (build 2), 2026-11-01
+
+Two fixes, and support for macOS 27: the automated tests pass there, but it hasn't been checked by hand yet. The minimum is still macOS 26 on Apple Silicon.
+
+### Fixed
+- A double-clicked link is followed once, not twice: a web link no longer opens twice, and a blocked link is explained once.
+- Searching a long document for a common word is faster. Lectern now marks only the matches it can highlight, the first 5,000 (as many as the results list shows), instead of every match. In a 1,500-page document with 45,000 matches, marking them all had made the search take more than twice as long.
+
+### macOS 27
+- Lectern now ignores the whole click on a form field, not just the moment the button goes down. Nothing changes in use: forms were already read-only on macOS 27 in 1.0.0. This guards against macOS 27's PDF engine, which acts later in a click than macOS 26 does.
+
+### Installing and updating
+- A one-line Terminal installer that skips the Open Anyway step, and the Homebrew tap `ronimoe/lectern`; see [docs/INSTALL.md](docs/INSTALL.md).
+- This is the first update. If you ticked "Remember in Keychain" for a document, macOS may ask once whether the new version may read that password; if you decline, Lectern asks for the document's password instead.
+- Update checks are off unless you turned them on, so choose Lectern ▸ Check for Updates…. With Homebrew, run `brew upgrade --cask lectern`.
+
 ## 1.0.0 (build 1), 2026-10-31
 
 The first release: a calm, native PDF reader for macOS 26 on Apple Silicon. No accounts, no telemetry, no ads, no AI, and it works offline.

@@ -145,7 +145,7 @@ struct ReleaseTests {
         #expect(options[.applicationName] as? String == "Lectern")
         let version = try #require(options[.applicationVersion] as? String)
         #expect(version == Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-        #expect(version == "1.0.0")
+        #expect(version == "1.0.1")
         let credits = try #require(options[.credits] as? NSAttributedString)
         #expect(credits.string.contains("No telemetry"))
         #expect(credits.string.contains("github.com/ronimoe/pdf-reader"))
