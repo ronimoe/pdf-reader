@@ -34,6 +34,22 @@ private func waitForSearch(_ harness: NavigationHarness) {
         #expect(harness.controller.isSidebarVisible)
     }
 
+    /// Only as many results as can be highlighted get the find colour: while a view shows the
+    /// document, PDFKit's colour setter costs more than finding the match (DocumentSearch).
+    @Test func onlyTheHighlightedResultsAreColoured() throws {
+        let harness = try NavigationHarness(FixturePDF.prose(pages: 200))
+        defer { harness.close() }
+        harness.controller.startSearch("reading")
+        let search = try #require(harness.controller.search)
+        waitForSearch(harness)
+        let limit = SearchResultsSectionViewController.rowLimit
+        #expect(search.results.count == 200 * 30)
+        let highlighted = try #require(harness.pdfView.highlightedSelections)
+        #expect(highlighted.count == limit)
+        #expect(highlighted.allSatisfy { $0.color == .findHighlightColor })
+        #expect(search.results[limit...].allSatisfy { $0.selection.color != .findHighlightColor })
+    }
+
     @Test func ignoresCaseAndAccentsByDefault() throws {
         let harness = try NavigationHarness(FixturePDF.make(pageTexts: ["Café cafe CAFE", "cafés and a cat"]))
         defer { harness.close() }

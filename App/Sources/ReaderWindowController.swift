@@ -575,6 +575,7 @@ final class ReaderWindowController: NSWindowController {
             searchPane = pane
             pane.beginSearchSession()
             let search = DocumentSearch(document: document)
+            search.colouredResultLimit = SearchResultsSectionViewController.rowLimit
             search.onChange = { [weak self] in self?.searchDidChange() }
             self.search = search
             sectionBeforeSearch = sidebar.visibleSection
@@ -774,6 +775,7 @@ final class ReaderWindowController: NSWindowController {
         if let query, !query.isEmpty {
             // Same session: no new history entry.
             let search = DocumentSearch(document: pdf)
+            search.colouredResultLimit = SearchResultsSectionViewController.rowLimit
             search.onChange = { [weak self] in self?.searchDidChange() }
             self.search = search
             searchSection.setSearch(search, numbering: readerDocument.pageNumbering)
