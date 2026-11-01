@@ -158,6 +158,9 @@ extension ReaderPDFView {
             return
         }
         pendingLink = nil
+        // The second click of a double-click is swallowed but not followed
+        // again, as in a browser; the first click already followed it.
+        guard event.clickCount <= 1 else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard !pending.previewed, let link = link(at: point), link.annotation === pending.annotation else { return }
         activate(link.target)
