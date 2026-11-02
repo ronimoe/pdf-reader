@@ -65,14 +65,14 @@ In Lectern's tests, PDFKit's whole-file rewrite dropped page labels, the revisio
 | **Also has** | Presentation mode, SyncTeX for LaTeX, AppleScript, BibDesk | SyncTeX, a reading ruler, marks, external scripts | Crash journal for unsaved notes, annotations saved into encrypted PDFs |
 | **App sandbox** | No | No | Yes |
 | **Built with** | AppKit and PDFKit; macOS 10.13 or later | Qt and MuPDF; macOS, Windows and Linux | AppKit and PDFKit; macOS 26 or later, Apple Silicon only |
-| **Latest release** | 1.7.17 (September 2026) | 2.0.0 (December 2022); newer work is in development builds | 1.0.1 (November 2026) |
+| **Latest release** | 1.7.17 (September 2026) | 2.0.0 (December 2022); newer work is in development builds | 1.0.2 (November 2026) |
 | **Licence** | BSD | GPL-3.0 | GPL-3.0 |
 
 *Checked on 2 November 2026 against Skim 1.7.17 and Sioyek 2.0.0, from their documentation and source code. Corrections are welcome in an issue.*
 
 ## Status
 
-**Lectern 1.0.1 is out** (2 November 2026). Download it from the [latest release](https://github.com/ronimoe/pdf-reader/releases/latest), or install it with one line in Terminal or with Homebrew ([docs/INSTALL.md](docs/INSTALL.md)). [CHANGELOG.md](CHANGELOG.md) lists what's in each release, and [docs/progress.md](docs/progress.md) logs how it was built.
+**Lectern 1.0.2 is out** (2 November 2026). Download it from the [latest release](https://github.com/ronimoe/pdf-reader/releases/latest), or install it with one line in Terminal or with Homebrew ([docs/INSTALL.md](docs/INSTALL.md)). [CHANGELOG.md](CHANGELOG.md) lists what's in each release, and [docs/progress.md](docs/progress.md) logs how it was built.
 
 It needs **macOS 26 (Tahoe) or later on Apple Silicon.**
 
