@@ -4,6 +4,10 @@ A free, open-source PDF reader for the Mac: fast, calm and built for reading. It
 
 **Never lose your place.** When you follow a reference, footnote, figure or cross-reference, Lectern lets you preview the destination, or open it beside the page you're on, without leaving where you were reading.
 
+![Hovering "Figure 1" in a paper shows a preview of page 3 with Open in Split and Go; Open in Split puts page 3 beside the page being read](docs/images/lectern-preview.gif)
+
+*Screenshots of Lectern 1.0.2 on macOS 26: hover a reference, see where it goes, and open it beside the page you're reading.*
+
 Lectern is a PDF reader first, plus a personal space for highlights and notes. It isn't a tool for creating, converting or managing documents.
 
 ![A paper open in Lectern, light appearance, with its table of contents in the sidebar](docs/images/lectern-sidebar-light.png)
