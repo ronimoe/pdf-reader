@@ -53,7 +53,7 @@ In Lectern's tests, PDFKit's whole-file rewrite dropped page labels, the revisio
 
 ## Status
 
-**Lectern 1.0.0 is out** (31 October 2026). Download it from the [latest release](https://github.com/ronimoe/pdf-reader/releases/latest), or install it with Homebrew ([docs/INSTALL.md](docs/INSTALL.md)). [CHANGELOG.md](CHANGELOG.md) lists what's in 1.0.0, and [docs/progress.md](docs/progress.md) logs how it was built.
+**Lectern 1.0.1 is out** (2 November 2026). Download it from the [latest release](https://github.com/ronimoe/pdf-reader/releases/latest), or install it with one line in Terminal or with Homebrew ([docs/INSTALL.md](docs/INSTALL.md)). [CHANGELOG.md](CHANGELOG.md) lists what's in each release, and [docs/progress.md](docs/progress.md) logs how it was built.
 
 It needs **macOS 26 (Tahoe) or later on Apple Silicon.**
 
