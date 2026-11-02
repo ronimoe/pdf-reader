@@ -51,6 +51,25 @@ Preview comes with every Mac and does a bit of everything: it fills in forms, si
 
 In Lectern's tests, PDFKit's whole-file rewrite dropped page labels, the revision history, custom metadata and parts of the form structure, even when nothing had been changed ([docs/spikes/m0b-pdfkit.md](docs/spikes/m0b-pdfkit.md#6-the-whole-file-rewrite)). That's why Lectern writes its own changes instead.
 
+## Lectern, Skim and Sioyek
+
+[Skim](https://skim-app.sourceforge.io) and [Sioyek](https://sioyek.info) are the open-source readers people reach for when Preview isn't enough, and both already preview links before you jump. Choose Sioyek if you live on the keyboard or read papers whose references aren't linked, and Skim for LaTeX, presentations or an older Mac. Lectern's difference is where your notes go: into the PDF itself, as standard annotations that other apps show, without rewriting the file. It's also sandboxed, and built only for current macOS.
+
+| | Skim | Sioyek | Lectern |
+|---|---|---|---|
+| **Previewing a link** | Hover or ⌥⇥ shows the destination; Shift opens it in the split | Right-click shows a scrollable preview, even of references, figures and equations the PDF doesn't link | Hover, Force Click or ⌥⇥ shows the destination: Go, Open in Split or Dismiss. Only links the PDF has |
+| **Two places in one document** | Split PDF, a second view below the first | Portals with a helper window, or a second window | A split with two panes, each with its own place, zoom and history |
+| **Where highlights and notes go** | Outside the PDF by default, in the file's extended attributes or a `.skim` file, so other apps don't see them and email can lose them. Export with embedded notes writes a new copy through PDFKit | In Sioyek's own database. Embedding them writes a new, rewritten PDF | Inside the PDF as standard annotations, appended without rewriting it. Other PDF apps show them (tested with PDFKit, MuPDF, Poppler and pdf.js) |
+| **Search** | Every match in the sidebar; Match Case, Whole Word | Regular expressions, and search within a chapter or page range | Results as they're found; Match Case, Whole Word |
+| **Keyboard** | Standard Mac shortcuts | Keyboard-first: every key can be remapped, plus a command palette | Standard Mac shortcuts, and every control can be reached from the keyboard |
+| **Also has** | Presentation mode, SyncTeX for LaTeX, AppleScript, BibDesk | SyncTeX, a reading ruler, marks, external scripts | Crash journal for unsaved notes, annotations saved into encrypted PDFs |
+| **App sandbox** | No | No | Yes |
+| **Built with** | AppKit and PDFKit; macOS 10.13 or later | Qt and MuPDF; macOS, Windows and Linux | AppKit and PDFKit; macOS 26 or later, Apple Silicon only |
+| **Latest release** | 1.7.17 (September 2026) | 2.0.0 (December 2022); newer work is in development builds | 1.0.1 (November 2026) |
+| **Licence** | BSD | GPL-3.0 | GPL-3.0 |
+
+*Checked on 2 November 2026 against Skim 1.7.17 and Sioyek 2.0.0, from their documentation and source code. Corrections are welcome in an issue.*
+
 ## Status
 
 **Lectern 1.0.1 is out** (2 November 2026). Download it from the [latest release](https://github.com/ronimoe/pdf-reader/releases/latest), or install it with one line in Terminal or with Homebrew ([docs/INSTALL.md](docs/INSTALL.md)). [CHANGELOG.md](CHANGELOG.md) lists what's in each release, and [docs/progress.md](docs/progress.md) logs how it was built.
