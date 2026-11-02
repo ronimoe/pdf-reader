@@ -639,3 +639,10 @@ Lectern 1.0.0 users who upgrade to macOS 27 will meet these changes; supporting 
 **Not verified at the time:** the update itself. It passed on 2026-11-02: the maintainer's installed 1.0.0 found 1.0.1 and installed it (CDHash `5b8ea3ea…`). The download failed through a VPN that resets connections to `release-assets.githubusercontent.com`, and worked with the VPN paused. The rest of the hand checks (#25) are still owed.
 
 **Found, left for later:** the perf memory guards are noisy on this Mac. Two of the four runs on 2026-11-01 failed one, for 1.0.0's code and 1.0.1's alike. Take the best of several runs, or widen the guards once the baseline M1 has set real limits.
+
+## 1.0.2 (PR #51, then the cask)
+
+- **What's in it:** the split fix (#50). A new split opens at half the window; on macOS 26 a split view on screen also lists its divider (`NSSplitDividerView`) as a subview, so the old two-subview check skipped equalizing. Version 1.0.2, build 3.
+- **Built from** `f8ec605`, whose tree is #51's squash commit `f1a16af` (tag `v1.0.2`). The DMG's sha256 is `2c3e0e6a…`. The app's CDHash, `66c270a1…`, is the same in the DMG and the update zip, and its `SUPublicEDKey` matches main's.
+- **Verified:** `scripts/test.sh` (93 + 43 + 149 package tests, 420 app tests), `scripts/perf.sh`, `build-dmg`, `verify-dmg` (PASS; self-check 13 of 13), `sign-update` (the local appcast matched the published one before signing), `update-cask` and `check-cask`. The `xcode-27` full suite on #50's branch passed on its re-run; the first run hit the known timing flake in `openingALongDocumentAddsLittleToPDFKitsOwnWork` (52.8 ms against 50 ms). After publishing, the four files downloaded anonymously match the built ones, and the latest feed offers build 3. The tap's cask is at 1.0.2.
+- **Not verified:** the update from 1.0.1 to 1.0.2 by hand.
