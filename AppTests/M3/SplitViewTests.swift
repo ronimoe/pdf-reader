@@ -30,6 +30,24 @@ extension M3Tests {
             #expect(item.title == "Close Split View")
         }
 
+        /// On screen, macOS 26 lists the divider among the split view's
+        /// subviews. The panes are still made equal, so a new split never
+        /// opens as a narrow strip.
+        @Test func equalizingCountsPanesNotSubviews() throws {
+            let harness = try M3Harness(size: NSSize(width: 1360, height: 900))
+            defer { harness.close() }
+            harness.controller.openSplit()
+            harness.controller.window?.display()
+            let splitView = harness.controller.readingSplit.splitView
+            #expect(splitView.subviews.contains { $0.className == "NSSplitDividerView" })
+            splitView.setPosition((splitView.bounds.width * 0.75).rounded(), ofDividerAt: 0)
+            splitView.layoutSubtreeIfNeeded()
+            harness.controller.equalizePanes()
+            let primaryWidth = try #require(harness.controller.paneContainers[.primary]).frame.width
+            let secondaryWidth = try #require(harness.controller.paneContainers[.secondary]).frame.width
+            #expect(abs(primaryWidth - secondaryWidth) <= 2, "\(primaryWidth) vs \(secondaryWidth)")
+        }
+
         @Test func theFocusedPaneHasACalmIndicatorAndBothCanClose() throws {
             let harness = try M3Harness()
             defer { harness.close() }
