@@ -80,11 +80,12 @@ extension ReaderWindowController {
         return pane
     }
 
-    /// Two equal panes (B3).
+    /// Two equal panes (B3). Counts split items, not subviews: on screen,
+    /// macOS 26 adds the divider (`NSSplitDividerView`) as a subview too.
     func equalizePanes() {
         splitViewController.view.layoutSubtreeIfNeeded()
         let splitView = readingSplit.splitView
-        guard splitView.subviews.count == 2 else { return }
+        guard readingSplit.splitViewItems.count == 2 else { return }
         let width = splitView.bounds.width - splitView.dividerThickness
         splitView.setPosition((width / 2).rounded(), ofDividerAt: 0)
         splitView.layoutSubtreeIfNeeded()
