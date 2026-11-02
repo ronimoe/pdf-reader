@@ -2,6 +2,11 @@
 
 All notable changes to Lectern. Versions follow [Semantic Versioning](https://semver.org); the build number (`CFBundleVersion`) goes up by one with every release.
 
+## 1.0.2 (build 3), 2026-11-02
+
+### Fixed
+- A new split opens at half the window. In a wide window it had opened as a narrow strip, too small to read, because macOS 26 counts the divider between the panes as one of them.
+
 ## 1.0.1 (build 2), 2026-11-02
 
 Two fixes, and support for macOS 27: the automated tests pass there, but it hasn't been checked by hand yet. The minimum is still macOS 26 on Apple Silicon.
