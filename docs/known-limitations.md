@@ -17,6 +17,7 @@ Lectern 1.0 is a reader first, with highlights and notes. This page lists what i
 - **Scanned PDFs without a text layer can't be searched, selected, highlighted or read aloud.** Lectern doesn't run text recognition (OCR) on them. It says so: search reports that the document has no searchable text, and VoiceOver hears that the page has no readable text. Notes can still be added.
 - **Very long documents are searched page by page.** Results appear as they're found; on a 3,000-page manual a search for a rare word takes several seconds to finish. The results list shows the first 5,000 matches; the count includes them all.
 - **Full screen isn't restored** when Lectern reopens your last session, and a tab dragged to another window is remembered only at the next open, close or quit.
+- **Presentations have no presenter display.** View ▸ Start Presentation shows the slides over a whole display, but not your notes, the next slide or a timer, and it doesn't play slide transitions. With more than one display, the slides go on one that the Lectern window isn't on; there's no setting to choose another.
 
 ## Links and active content
 

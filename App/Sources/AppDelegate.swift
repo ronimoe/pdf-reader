@@ -1,6 +1,7 @@
 import AppKit
 import Persistence
 import ReaderKit
+import ReaderUI
 
 /// App-wide services the windows use.
 enum AppEnvironment {
@@ -13,6 +14,12 @@ enum AppEnvironment {
     /// The one way a URL leaves the app (A4). While hosting tests it only
     /// records, so a test that forgets to inject its own can't open anything.
     static var urlOpener: any URLOpening = isHostingTests ? RecordingURLOpener() : WorkspaceURLOpener()
+
+    /// Presentations (View ▸ Start Presentation): one at a time, app-wide, so starting one from
+    /// another window ends the first. While hosting tests nothing is put on screen.
+    static let presentationPresenter: any PresentationPresenting = isHostingTests
+        ? HeadlessPresentationPresenter()
+        : ScreenPresentationPresenter()
 
     /// Reading preferences. While hosting tests they live in memory: the
     /// test host is the app, and its standard defaults are the user's.

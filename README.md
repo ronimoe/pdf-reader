@@ -27,7 +27,7 @@ Lectern is a PDF reader first, plus a personal space for highlights and notes. I
 
 ## Features
 
-- **Reading:** single or two-up pages, continuous or paged scrolling, cover-page and right-to-left spreads, fit page and fit width, view-only rotation, full screen and distraction-free mode, native tabs and windows.
+- **Reading:** single or two-up pages, continuous or paged scrolling, cover-page and right-to-left spreads, fit page and fit width, view-only rotation, full screen and distraction-free mode, a presentation mode for slides, native tabs and windows.
 - **Link previews:** hover over a link, Force Click it or reach it from the keyboard (⌥⇥) to preview the destination in a popover, then Go, Open in Split or Dismiss. The split view shows two places in the same document side by side, each with its own history.
 - **Navigation:** thumbnails, table of contents, Go to Page by the document's own page labels, and back/forward history that records jumps rather than scrolling.
 - **Keeping your place:** your position survives zooming, resizing, layout changes, rotation, a file changing on disk, and relaunching. Lectern can reopen your last session.
@@ -102,6 +102,7 @@ The app isn't signed with an Apple Developer ID. A DMG downloaded in a browser h
 - **Find your way** with the sidebar (⌃⌘S): thumbnails, contents, bookmarks, annotations and search results. ⌘F searches, ⌥⌘G goes to a page, and ⌘[ and ⌘] go back and forward.
 - **Preview a link** by resting the pointer on it, or by Force Clicking it. Use **Open in Split** to keep both places in view.
 - **Annotate** by selecting text and choosing from the **Annotate** menu or the selection bar, then save with ⌘S.
+- **Present slides** with **View ▸ Start Presentation** (⌥⌘P): the arrow keys move between slides, and Escape ends.
 - **Help ▸ Keyboard Shortcuts** (⌘/) lists every shortcut. **Lectern ▸ Settings…** (⌘,) has the reopen-on-launch, link-preview, annotation-author and update options.
 
 ## Building from source

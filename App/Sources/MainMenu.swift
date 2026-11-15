@@ -68,6 +68,10 @@ enum MainMenu {
         fullScreen.keyEquivalentModifierMask = [.command, .control]
         let distractionFree = viewMenu.addItem(withTitle: "Enter Distraction-Free Mode", action: #selector(ReaderWindowController.toggleDistractionFree(_:)), keyEquivalent: "f")
         distractionFree.keyEquivalentModifierMask = [.command, .shift]
+        // Keynote's shortcut for playing a slideshow. The presentation's own window answers the
+        // same action with Stop Presentation.
+        let presentation = viewMenu.addItem(withTitle: "Start Presentation", action: #selector(ReaderWindowController.togglePresentation(_:)), keyEquivalent: "p")
+        presentation.keyEquivalentModifierMask = [.command, .option]
         main.addItem(submenu: viewMenu, title: "View")
 
         let annotateMenu = AnnotateMenu(title: "Annotate")

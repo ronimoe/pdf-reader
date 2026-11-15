@@ -359,6 +359,16 @@ The same type is stored as the reading position (A2) and used for history entrie
 - **Nothing is stored.** Collapsing the sidebar here isn't the user's choice, so the document's `ViewSettings.sidebar` is untouched. The mode belongs to the window for the session, and the session restore brings it back.
 - Settings ▸ General can make it enter full screen as well; leaving it then leaves full screen.
 
+**Presentation mode** *(Added 2026-11-13)*
+- View ▸ Start Presentation (⌥⌘P) shows the document one page at a time over a whole display, on black, starting on the page in the middle of the focused pane. It never starts by itself.
+- **A view of its own, not a mode of the window.** `PresentationController` (ReaderUI) holds a `SlideView` (ReaderKit) that draws the reader's own `PDFDocument` with `PDFPage.draw(with:to:)`: no second `PDFView` and nothing to scroll. Because the pages are the shared ones, the view rotation (B9) and unsaved annotations show. The reader window, its panes, `ViewSettings`, history and stored position don't change while it shows. It isn't part of the session and is never restored.
+- **Keys** are `SlideNavigator` (ReaderCore, pure, package-tested). → ↓ Space Page Down Return N: next; ← ↑ ⇧Space Page Up Delete P: previous; Home and End. Digits then Return go to a slide by the document's page labels first, as Go to Page does (Beamer labels every overlay with its frame's number), then by page number. B or . blanks to black and W or , to white; the first move after only brings the slide back. Escape clears a typed number, then ends. Keys with ⌘, ⌥ or ⌃ are left to the menus; any other key is swallowed, never beeped. A click goes to the next slide.
+- **Links on slides.** `SlideLayout` (ReaderCore) maps between page and screen for every rotation; `PDFPage.draw(with:to:)` was measured on macOS 27 to turn the page clockwise and put the turned box at the origin, whatever the box's own origin. Links are classified by `LinkClassifier` (A4). Internal links and page actions move the presentation, with GoBack; web links open in the browser; other schemes and blocked actions are explained on the slide instead of in a sheet, which would open on the reader window, behind the slides.
+- **The window** (`ScreenPresentationPresenter`, App) is borderless and covers the display; it isn't a full-screen Space, so the slides appear at once and the reader window's own full screen and tabs are left alone. It sits at the status-bar level, over the menu bar and the Dock, while Lectern is active, and at the normal level while another app is, so a demo in another app shows. With more than one display it goes on one the reader window isn't on, as Keynote does. The display doesn't sleep while it shows (a `ProcessInfo` activity), and the pointer hides after two seconds still. One presentation at a time, app-wide. While hosting tests, `HeadlessPresentationPresenter` puts nothing on screen.
+- **Ending** (Escape, ⌘., ⌘W, View ▸ Stop Presentation) moves the pane it started from to the last slide shown, as a history jump (B2), so Back returns to where reading was; nothing moves if it ended on the page it started from. A sheet beginning on the reader window (a question, an error, the unsaved-changes review at quit) ends it too, since the sheet would open behind the slides. Closing the window ends it without moving anything. A reload (B7) keeps the slide where it still exists; a reload that needs a password ends it.
+- **The suggestion.** `SlideDeckHints` (ReaderCore) reads, without creating a `PDFPage`: `/PageMode /FullScreen`; a Beamer, PowerPoint, Keynote or Impress `/Creator` or `/Producer` with a landscape first page; or three or more pages of one landscape size between 5:4 and a little past 16:9. Such a document shows a notice naming the command, once ever (`PresentationSuggestionShown`); having presented counts as having seen it.
+- **Not done:** a presenter display (notes, next slide, timer), transitions (`/Trans`), and choosing the display.
+
 ### 4.6 Concurrency
 
 **Main thread:** all UI, and the `PDFDocument` shared by the panes.
@@ -442,6 +452,9 @@ The same type is stored as the reading position (A2) and used for history entrie
 | `SessionCoordinator`, `ReviewForwarder` | App | When the session is restored, saved or left alone, and when the empty state shows; how the quit's unsaved-changes review ended (§6) *(Added after the M5 review)* |
 | `UpdateController` | App | The opt-in update flow (A4, §7): the first-launch question, the setting, Check Now. Creates Sparkle only when needed *(Added 2026-10-29, M5)* |
 | `KeyboardShortcutCatalog` | App | Help ▸ Keyboard Shortcuts, read from the main menu *(Added 2026-10-29, M5)* |
+| `SlideNavigator`, `SlideLayout`, `SlideDeckHints` | ReaderCore | Presentation mode's pure parts: what each key does, where a turned page goes on a screen and back (for links), and whether a document looks like slides (§4.5) *(Added 2026-11-13)* |
+| `SlideView`, `PresentationController` | ReaderKit, ReaderUI | One slide drawn from the shared document, and the presentation around it: keys, notices, links (§4.5) *(Added 2026-11-13)* |
+| `ScreenPresentationPresenter`, `PresentationWindow` | App | The borderless window over a display that shows a presentation (§4.5) *(Added 2026-11-13)* |
 
 ## 6. Storage
 
@@ -509,6 +522,7 @@ The same type is stored as the reading position (A2) and used for history entrie
   - **Not done:** full screen isn't restored, and a tab dragged into another window is saved only at the next open, close or quit.
 - **Settings:** `UserDefaults`.
   - *(Amended 2026-10-29, M5)* Keys: `ReopenDocumentsOnLaunch`, `PreviewLinksOnHover`, `DistractionFreeEntersFullScreen`, `annotationAuthor` (empty unless typed, B4), `AnnotationColor`, `CheckForUpdatesAutomatically` (absent until the first-launch question is answered). Sparkle keeps its own `SU*` keys, but only once the user has opted in or chosen Check Now.
+  - *(Amended 2026-11-13)* `PresentationSuggestionShown`: whether opening a slide deck has suggested View ▸ Start Presentation, or the user has presented (§4.5).
 - **Passwords:** Keychain, only when "Remember in Keychain" is ticked (B6).
   - *(Amended 2026-10-29, M1)* These are generic-password items in the file-based login keychain: service `io.github.ronimoe.Lectern.document-password`, with the `DocumentKey` as the account.
   - The data-protection keychain would need a `keychain-access-groups` entitlement, which needs a team-signed build.

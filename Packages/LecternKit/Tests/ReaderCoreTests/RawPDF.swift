@@ -9,11 +9,13 @@ enum RawPDF {
     ///   - pageRotations: one page per entry, with that `/Rotate`.
     ///   - extraObjects: bodies of further objects, numbered from
     ///     `3 + pageRotations.count`.
+    ///   - mediaBox: every page's `/MediaBox`, US Letter portrait by default.
     static func make(
         catalogExtras: String = "",
         trailerExtras: String = "",
         pageRotations: [Int] = [0],
-        extraObjects: [String] = []
+        extraObjects: [String] = [],
+        mediaBox: String = "0 0 612 792"
     ) -> Data {
         var objects: [String] = []
         let firstPage = 3
@@ -21,7 +23,7 @@ enum RawPDF {
         objects.append("<< /Type /Catalog /Pages 2 0 R \(catalogExtras) >>")
         objects.append("<< /Type /Pages /Kids [\(kids)] /Count \(pageRotations.count) >>")
         for rotation in pageRotations {
-            objects.append("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Rotate \(rotation) >>")
+            objects.append("<< /Type /Page /Parent 2 0 R /MediaBox [\(mediaBox)] /Rotate \(rotation) >>")
         }
         objects += extraObjects
 

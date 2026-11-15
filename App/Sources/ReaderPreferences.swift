@@ -70,6 +70,15 @@ final class ReaderPreferences {
         set { setValue(newValue, Self.distractionFreeFullScreenKey) }
     }
 
+    static let presentationSuggestionKey = "PresentationSuggestionShown"
+
+    /// Opening a slide deck suggests View ▸ Start Presentation once, ever; starting a
+    /// presentation counts as having seen it.
+    var hasSeenPresentationSuggestion: Bool {
+        get { value(Self.presentationSuggestionKey) as? Bool ?? false }
+        set { setValue(newValue, Self.presentationSuggestionKey) }
+    }
+
     /// Preferences that live only in memory, for tests: the test host is the
     /// app, so the standard defaults are the user's own.
     static func ephemeral() -> ReaderPreferences {

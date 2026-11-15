@@ -126,6 +126,11 @@ final class ReaderWindowController: NSWindowController {
     var setFullScreen: (NSWindow, Bool) -> Void = { window, on in
         if window.styleMask.contains(.fullScreen) != on { window.toggleFullScreen(nil) }
     }
+    /// The presentation of this document showing now (View ▸ Start Presentation). It belongs to
+    /// the session only: it ends when the window closes and is never restored.
+    var presentation: PresentationController?
+    /// Puts presentations on screen: the app-wide presenter, or a test's.
+    let presentationPresenter: any PresentationPresenting
 
     private(set) weak var readerDocument: ReaderDocument?
     private let passwordStore: any DocumentPasswordStore
@@ -140,9 +145,11 @@ final class ReaderWindowController: NSWindowController {
         previewPresenter: (any LinkPreviewPresenting)? = nil,
         urlOpener: (any URLOpening)? = nil,
         preferences: ReaderPreferences? = nil,
-        journal: AnnotationJournal? = AppEnvironment.journal
+        journal: AnnotationJournal? = AppEnvironment.journal,
+        presentationPresenter: (any PresentationPresenting)? = nil
     ) {
         self.journal = journal
+        self.presentationPresenter = presentationPresenter ?? AppEnvironment.presentationPresenter
         readerDocument = document
         self.passwordStore = passwordStore
         self.presenter = presenter
@@ -366,6 +373,7 @@ final class ReaderWindowController: NSWindowController {
         readerDocument.inspectForAnnotations()
         // In the background: which pages have no text, for search (B8) and VoiceOver (spec §9.3).
         loadTextInventoryIfNeeded()
+        suggestPresentationIfSlides()
     }
 
     // MARK: Stored state (A2)
@@ -433,6 +441,7 @@ final class ReaderWindowController: NSWindowController {
         saveStateNow()
         search?.cancel()
         dismissPreview()
+        endPresentation(movingReader: false)
     }
 
     // MARK: Sidebar (spec §4.1)
@@ -746,6 +755,7 @@ final class ReaderWindowController: NSWindowController {
         }
         guard let pdf = readerDocument.pdfDocument, !readerDocument.isPasswordLocked else {
             // The new file needs a password the old one didn't.
+            endPresentation(movingReader: false)
             if isSplit { closePane(.secondary) }
             primaryPane.view.show(nil)
             didCheckPasswords = false
@@ -762,6 +772,8 @@ final class ReaderWindowController: NSWindowController {
             pane.view.apply(paneSettings, hints: readerDocument.layoutHints)
             if let anchor { pane.view.restore(anchor.clamped(toPageCount: pdf.pageCount)) }
         }
+        // A deck re-exported during a talk: the slides follow the new file.
+        presentation?.documentDidReload(pdf, numbering: readerDocument.pageNumbering)
         searchPane = queryPane
         annotationEditorDidChange()
         configureSidebar(for: readerDocument, pdf: pdf)
@@ -966,6 +978,7 @@ final class ReaderWindowController: NSWindowController {
         }
         if settings.rotation != rotation {
             thumbnailsSection.setRotation(settings.rotation)
+            presentation?.refresh()
         }
     }
 
@@ -1037,6 +1050,9 @@ extension ReaderWindowController: NSMenuItemValidation, NSToolbarItemValidation 
         }
         if menuItem.action == #selector(toggleDistractionFree(_:)) {
             menuItem.title = isDistractionFree ? "Exit Distraction-Free Mode" : "Enter Distraction-Free Mode"
+        }
+        if menuItem.action == #selector(togglePresentation(_:)) {
+            menuItem.title = isPresenting ? "Stop Presentation" : "Start Presentation"
         }
         if menuItem.action == #selector(toggleSplitView(_:)) {
             menuItem.title = isSplit ? "Close Split View" : "Split View"

@@ -33,6 +33,7 @@ extension ReaderWindowController {
     func annotationsDidChange() {
         notifyAnnotationsChanged(from: focusedPane)
         for pane in panes { pane.view.updateSelectionAfterChange() }
+        presentation?.refresh()
         invalidateAnnotationList()
         recordJournal()
     }

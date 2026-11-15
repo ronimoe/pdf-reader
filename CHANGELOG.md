@@ -2,6 +2,11 @@
 
 All notable changes to Lectern. Versions follow [Semantic Versioning](https://semver.org); the build number (`CFBundleVersion`) goes up by one with every release.
 
+## Unreleased
+
+### Added
+- Presentation mode for slides: View ▸ Start Presentation (⌥⌘P) shows the document one page at a time over a whole display, on black, from the page you're reading. The arrow keys, Space, Page Up and Page Down and presentation remotes move between slides; type a slide number and press Return to go to it; B or W blanks the screen; Escape ends. When it ends, Lectern shows the last slide you presented, and Back returns to where you were reading. With a second display, the slides go there and the Lectern window stays on yours. The first time you open a slide deck, a notice mentions the command.
+
 ## 1.0.2 (build 3), 2026-11-02
 
 ### Fixed

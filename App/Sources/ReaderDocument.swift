@@ -19,6 +19,9 @@ final class ReaderDocument: NSDocument {
     private(set) var originalPageRotations: [Int] = []
     /// The catalog's layout hints (B1). Read once the document is unlocked.
     private(set) var layoutHints = DocumentLayoutHints.none
+    /// Whether the document looks like a slide deck, for suggesting a presentation once. Read
+    /// once the document is unlocked.
+    private(set) var looksLikeSlides = false
     /// The pages' labels, for go to page and the sidebar. Read once the
     /// document is unlocked.
     /// Built the first time it's needed (go to page, search results): reading
@@ -156,6 +159,7 @@ final class ReaderDocument: NSDocument {
             originalPageRotations = (0..<reference.numberOfPages).map { Int(reference.page(at: $0 + 1)?.rotationAngle ?? 0) }
             layoutHints = DocumentLayoutHints(document: reference)
             definesPageLabels = PageNumbering.definesPageLabels(reference)
+            looksLikeSlides = SlideDeckHints.looksLikeSlides(reference)
         } else {
             originalPageRotations = (0..<pdfDocument.pageCount).map { pdfDocument.page(at: $0)?.rotation ?? 0 }
             definesPageLabels = false
@@ -276,6 +280,7 @@ final class ReaderDocument: NSDocument {
         hasRecordedOriginals = false
         originalPageRotations = []
         layoutHints = .none
+        looksLikeSlides = false
         cachedNumbering = nil
         definesPageLabels = false
         if let sessionPassword, pdf.isEncrypted {
