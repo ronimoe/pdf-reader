@@ -23,6 +23,7 @@ Lectern 1.0 is a reader first, with highlights and notes. This page lists what i
 - **No JavaScript.** Lectern never runs a document's scripts.
 - **Some link types are blocked, with an explanation:** links that launch an application or open a file (`Launch`, `file:` and similar), links to other PDF files (`GoToR`), and form submission. Web links open in your browser only when you click them, and other kinds of link (such as `mailto:`) ask first.
 - **A link to a position on a page with a `/FitH` or `/FitR` destination** is previewed as the whole page, without a marker on the exact spot.
+- **Citation previews only read the paper's own reference list.** They show the title, authors, URL, series and year that the entry prints. Keywords and abstract always say "Not in the reference": reference lists don't include them, and Lectern doesn't look papers up online. Reading an entry is a best guess from its layout and punctuation, so an unusual bibliography style can put a part in the wrong field. When an entry can't be read, the preview shows the page instead. That happens with a scanned reference list, a list without a "References" or "Bibliography" heading, or an entry that runs on past the next page.
 
 ## Forms
 

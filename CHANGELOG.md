@@ -2,6 +2,11 @@
 
 All notable changes to Lectern. Versions follow [Semantic Versioning](https://semver.org); the build number (`CFBundleVersion`) goes up by one with every release.
 
+## Unreleased
+
+### Added
+- Previewing a citation in a paper shows the cited work instead of the reference list's page: its title, authors, URL, series and year, read from the paper's own reference list. This works whether you hover, Force Click or use the keyboard. Keywords and abstract are listed too, but say "Not in the reference": reference lists don't print them, and Lectern doesn't look papers up online. Go and Open in Split still take you to the entry. Figure, section and other links still preview their page.
+
 ## 1.0.2 (build 3), 2026-11-02
 
 ### Fixed

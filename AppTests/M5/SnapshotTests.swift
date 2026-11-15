@@ -291,6 +291,28 @@ extension M5Tests {
             }
         }
 
+        /// A citation's preview: the card describing the cited work, over the page that cites it.
+        @Test func citationPreview() throws {
+            let (document, controller) = try reader(try paper())
+            defer { document.close() }
+            let window = try #require(controller.window)
+            let view = controller.pdfView
+            let pdf = try #require(view.document)
+            let annotation = try #require(pdf.page(at: 0)?.annotations.first { $0.type == "Link" && ReaderPDFView.text(of: $0) == "Kipf & Welling" })
+            let destination = try #require(ReaderKit.LinkClassifier.target(of: annotation)?.destination)
+            let work = try #require(view.citationReader.work(citedBy: "Kipf & Welling", at: destination))
+            for (suffix, appearance) in Snapshot.appearances {
+                window.appearance = NSAppearance(named: appearance)
+                spin(timeout: 0.3) { false }
+                let base = try Snapshot.image(of: window)
+                #expect(Snapshot.tones(base).dark > 0.005, "citation-preview-\(suffix): no page text")
+                let preview = LinkPreviewController(document: pdf, destination: destination, linkText: "Kipf & Welling", citation: work)
+                _ = preview.view
+                let overlay = try Snapshot.image(of: preview.view, size: preview.preferredContentSize, appearance: appearance)
+                try Snapshot.write(try Snapshot.composite(base, overlay, at: NSPoint(x: 300, y: window.frame.height - 560)), "citation-preview-\(suffix)")
+            }
+        }
+
         @Test func settings() throws {
             let preferences = ReaderPreferences.ephemeral()
             let updates = UpdateController(preferences: preferences, question: RecordingUpdateQuestion()) { RecordingUpdater() }

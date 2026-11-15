@@ -28,7 +28,7 @@ Lectern is a PDF reader first, plus a personal space for highlights and notes. I
 ## Features
 
 - **Reading:** single or two-up pages, continuous or paged scrolling, cover-page and right-to-left spreads, fit page and fit width, view-only rotation, full screen and distraction-free mode, native tabs and windows.
-- **Link previews:** hover over a link, Force Click it or reach it from the keyboard (⌥⇥) to preview the destination in a popover, then Go, Open in Split or Dismiss. The split view shows two places in the same document side by side, each with its own history.
+- **Link previews:** hover over a link, Force Click it or reach it from the keyboard (⌥⇥) to preview the destination in a popover, then Go, Open in Split or Dismiss. A citation shows the cited work's title, authors, URL, series and year, read from the paper's own reference list. The split view shows two places in the same document side by side, each with its own history.
 - **Navigation:** thumbnails, table of contents, Go to Page by the document's own page labels, and back/forward history that records jumps rather than scrolling.
 - **Keeping your place:** your position survives zooming, resizing, layout changes, rotation, a file changing on disk, and relaunching. Lectern can reopen your last session.
 - **Search:** results as they're found, with Match Case and Whole Word. Scanned pages are reported as having no searchable text instead of silently finding nothing.

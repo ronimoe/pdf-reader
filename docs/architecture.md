@@ -314,6 +314,20 @@ PDFKit's obvious ways to rotate a page, lock a form field or set an annotation's
   - `/Fit`, `/FitH`, `/FitR` and unpositioned destinations are shown at Fit Page. PDFKit reports all of them as unspecified, so a `/FitH` top or a `/FitR` rectangle isn't marked.
   - Neither the marker nor the focus ring is ever an annotation.
   - Links inside the preview move it and push onto its own Back stack. Go is the Return key equivalent.
+- **Citation previews** *(Added 2026-11-13)*. Previewing a citation shows a card describing the cited work instead of the page (`CitationCardView` in `LinkPreviewController`). Hover, Force Click and the keyboard all do this. Go and Open in Split still lead to the entry.
+  - **The card shows** Title, Author, Url, Series, Year, Keywords and Abstract. A field the entry doesn't give says "Not in the reference". Keywords and Abstract always do: a reference list never prints them, and nothing is looked up online (Rule 6, A4). The URL is the entry's printed URL, else its DOI's or arXiv identifier's address. It opens only when clicked, through the window's `URLOpening` seam.
+  - **When a link counts as a citation** (`CitationReader`, ReaderKit, one per `ReaderPDFView`). PDFKit resolves named destinations, so hyperref's `cite.` names aren't visible, and the decision is made from the page. All three checks must pass; otherwise the preview is the page, as before.
+    - The link's words aren't a cross-reference: not "Figure 3", "Sec. 2", "B.1" or "(4)".
+    - The entry at the destination parses as a reference: a title, and a year or an address (`CitedWork.looksLikeReference`).
+    - A reference-list heading comes before it: "References", "Bibliography", small-capital "R EFERENCES", and a few other languages. The heading is looked for on the destination's page, above the entry in its column or in a column to its left, and then up to 40 pages back. No outline item may start between the heading and the destination, so an appendix after the list is excluded. The entry is checked first because it is cheap, so most cross-references never search for a heading. Headings and page lines are cached per document.
+  - **Finding the entry** (`ReferenceList.entry`, ReaderCore, pure). It works from line geometry, not text order: PDFKit can put a numbered list's labels after their entries.
+    - A destination sits just above its entry and a little to its left. The pieces PDFKit splits a printed line into (a label, a word after a wide justified space) are joined into rows within the column's edges.
+    - The entry ends where a row starts back at the column's edge (a hanging indent, or the text beside a label), or, in a list without indents, after extra space or at a label.
+    - It goes on at the top of the next column or page only if indented like an entry's later lines, so a page number, a running head or a centred heading is not taken. Broken words and broken URLs are joined back together.
+  - **Reading it** (`CitedWork(parsing:)`, ReaderCore, pure). It handles numbered and author-year lists; names first ("A. Smith", "Ann Smith"), surname first ("Smith, A.", Vancouver's "Smith A") and Chicago's mix of the two; quoted titles (IEEE, Chicago) and titles as the sentence after the names (ACM, APA, natbib, Springer, Nature, Vancouver).
+    - It handles DOIs and arXiv identifiers, editions, a publisher in brackets, "volume N of Series", and TeX's separate accent glyphs ("L´opez").
+    - Checked against the five arXiv papers in the corpus, and against eight bibliography styles generated with LaTeX (IEEEtran, plainnat and unsrt in two columns, apalike, splncs04, naturemag, vancouver, chicago). Each style was a 20-entry list with names, accents, DOIs, arXiv identifiers, a thesis, a report and a corporate author. Every citation got the right title and year, and no section, figure or appendix link got a card. The tests use the cases that failed along the way.
+  - **Cost.** In an optimised build, a lookup took at most 105 ms the first time in a 52-page paper, when the heading search reads earlier pages, and a few milliseconds after that.
 - **Annotation refresh across panes.** `ReaderWindowController.notifyAnnotationsChanged(from:)` re-binds every other pane (`ReaderPDFView.rebindDocument()`: `show(nil)`, `show(document)`, restore the anchor). It then re-binds the source pane too.
   - Re-binding moves page ownership (M0b Q7), so without that a second change made in the source would show only in the other pane. The test covers three changes alternating between the panes.
   - Re-binding clears each pane's text selection, and the source pane's too, which M4 must allow for. The fit reference page and zoom are kept.
@@ -442,6 +456,10 @@ The same type is stored as the reading position (A2) and used for history entrie
 | `SessionCoordinator`, `ReviewForwarder` | App | When the session is restored, saved or left alone, and when the empty state shows; how the quit's unsaved-changes review ended (§6) *(Added after the M5 review)* |
 | `UpdateController` | App | The opt-in update flow (A4, §7): the first-launch question, the setting, Check Now. Creates Sparkle only when needed *(Added 2026-10-29, M5)* |
 | `KeyboardShortcutCatalog` | App | Help ▸ Keyboard Shortcuts, read from the main menu *(Added 2026-10-29, M5)* |
+| `CitedWork` | ReaderCore | A cited work as its reference-list entry prints it: authors, title, series, year, URL, and the entry's text. Parsed from the entry's text (§4.4) *(Added 2026-11-13)* |
+| `ReferenceList`, `TextLine` | ReaderCore | Reference-list headings, which link words are cross-references, and finding an entry's lines on a page from where a citation's destination is (§4.4) *(Added 2026-11-13)* |
+| `CitationReader` | ReaderKit | Decides whether a link is a citation and reads its entry, from PDFKit's page lines and the outline. Caches headings and lines per document (§4.4) *(Added 2026-11-13)* |
+| `CitationCardView` | ReaderKit | A citation preview's card: one row per field, the URL as a link (§4.4) *(Added 2026-11-13)* |
 
 ## 6. Storage
 

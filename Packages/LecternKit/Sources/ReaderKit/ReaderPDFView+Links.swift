@@ -15,12 +15,16 @@ public struct LinkPreviewRequest {
     /// pointing the popover at it.
     public let sourceRect: NSRect
     public let trigger: Trigger
+    /// The cited work, when the link is a citation into a reference list:
+    /// the preview then describes it instead of showing the page.
+    public let citation: CitedWork?
 
-    public init(destination: PDFDestination, linkText: String, sourceRect: NSRect, trigger: Trigger) {
+    public init(destination: PDFDestination, linkText: String, sourceRect: NSRect, trigger: Trigger, citation: CitedWork? = nil) {
         self.destination = destination
         self.linkText = linkText
         self.sourceRect = sourceRect
         self.trigger = trigger
+        self.citation = citation
     }
 }
 
@@ -201,7 +205,10 @@ extension ReaderPDFView {
         guard let destination = target.destination, let page = annotation.page else { return false }
         cancelHover()
         let rect = convert(annotation.bounds, from: page)
-        onPreviewLink?(LinkPreviewRequest(destination: destination, linkText: Self.text(of: annotation), sourceRect: rect, trigger: trigger))
+        guard let onPreviewLink else { return true }
+        let text = Self.text(of: annotation)
+        let citation = citationReader.work(citedBy: text, at: destination)
+        onPreviewLink(LinkPreviewRequest(destination: destination, linkText: text, sourceRect: rect, trigger: trigger, citation: citation))
         return true
     }
 

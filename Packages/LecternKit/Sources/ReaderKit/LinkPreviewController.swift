@@ -64,8 +64,14 @@ public final class PopoverPreviewPresenter: NSObject, LinkPreviewPresenting, NSP
 /// the same `PDFDocument`, scrolled to the destination with the target
 /// marked. Links inside move the preview, with its own Back; the reader's
 /// pane never moves unless the user chooses Go.
+///
+/// A citation's preview is a card describing the cited work instead
+/// (`CitationCardView`), read from its entry in the reference list. Go and
+/// Open in Split still lead to the entry.
 public final class LinkPreviewController: NSViewController {
     public static let defaultSize = NSSize(width: 520, height: 380)
+    /// A citation card's width; its height follows from what it shows.
+    public static let citationWidth: CGFloat = 460
 
     public let previewView = ReaderPDFView(frame: NSRect(origin: .zero, size: LinkPreviewController.defaultSize))
     public private(set) var destination: PDFDestination
@@ -73,6 +79,10 @@ public final class LinkPreviewController: NSViewController {
     public private(set) var backStack: [PDFDestination] = []
     public let trigger: LinkPreviewRequest.Trigger
     private var linkText: String
+    /// The cited work, for a citation: the preview is then a card, and
+    /// `previewView` shows nothing.
+    public let citation: CitedWork?
+    public private(set) var citationCard: CitationCardView?
 
     /// Go: navigates the reader's pane and makes a history entry there.
     public var onGo: ((PDFDestination) -> Void)?
@@ -94,18 +104,26 @@ public final class LinkPreviewController: NSViewController {
     public let splitButton = NSButton(title: "Open in Split", target: nil, action: nil)
     private var didShowDestination = false
 
-    public init(document: PDFDocument, destination: PDFDestination, linkText: String = "", trigger: LinkPreviewRequest.Trigger = .keyboard) {
+    public init(
+        document: PDFDocument, destination: PDFDestination, linkText: String = "", trigger: LinkPreviewRequest.Trigger = .keyboard,
+        citation: CitedWork? = nil
+    ) {
         self.destination = destination
         self.linkText = linkText
         self.trigger = trigger
+        self.citation = citation
         super.init(nibName: nil, bundle: nil)
-        previewView.show(document)
+        if citation == nil { previewView.show(document) }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     public override func loadView() {
+        if let citation {
+            loadCitationView(citation)
+            return
+        }
         let root = PreviewRootView(frame: NSRect(origin: .zero, size: Self.defaultSize))
         root.onPointerEntered = { [weak self] in self?.pointerHasEntered = true }
 
@@ -131,23 +149,10 @@ public final class LinkPreviewController: NSViewController {
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        splitButton.target = self
-        splitButton.action = #selector(openInSplit(_:))
-        splitButton.toolTip = "Show this place in a second pane, next to where you’re reading"
-        goButton.target = self
-        goButton.action = #selector(go(_:))
-        goButton.keyEquivalent = "\r"
-        goButton.toolTip = "Go to this place (Return)"
-        goButton.setAccessibilityLabel("Go to this place")
-
         let header = NSStackView(views: [backButton, titleLabel])
         header.orientation = .horizontal
         header.spacing = 4
-        let spacer = NSView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let footer = NSStackView(views: [spacer, splitButton, goButton])
-        footer.orientation = .horizontal
-        footer.spacing = 8
+        let footer = makeFooter(place: "this place")
 
         for view in [header, previewView, footer] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -174,8 +179,64 @@ public final class LinkPreviewController: NSViewController {
         updateTitle()
     }
 
+    /// Go and Open in Split, on the right.
+    private func makeFooter(place: String) -> NSStackView {
+        splitButton.target = self
+        splitButton.action = #selector(openInSplit(_:))
+        splitButton.toolTip = "Show \(place) in a second pane, next to where you’re reading"
+        goButton.target = self
+        goButton.action = #selector(go(_:))
+        goButton.keyEquivalent = "\r"
+        goButton.toolTip = "Go to \(place) (Return)"
+        goButton.setAccessibilityLabel("Go to \(place)")
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let footer = NSStackView(views: [spacer, splitButton, goButton])
+        footer.orientation = .horizontal
+        footer.spacing = 8
+        return footer
+    }
+
+    /// The card for a citation, as tall as its fields need.
+    private func loadCitationView(_ work: CitedWork) {
+        let width = Self.citationWidth
+        let root = PreviewRootView(frame: NSRect(x: 0, y: 0, width: width, height: 200))
+        root.onPointerEntered = { [weak self] in self?.pointerHasEntered = true }
+        // Holds the focus, so Return is Go and Escape closes, with no field selected.
+        root.takesFocus = true
+        root.onEscape = { [weak self] in self?.dismiss() }
+        let card = CitationCardView(work: work, width: width - 32)
+        card.onOpenURL = { [weak self] url in self?.onExternalLink?(LinkClassifier.target(of: url)) }
+        citationCard = card
+        let footer = makeFooter(place: "this reference")
+        for view in [card, footer] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            card.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
+            card.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
+            footer.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 10),
+            footer.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
+            footer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
+            footer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
+            root.widthAnchor.constraint(equalToConstant: width),
+        ])
+        root.setAccessibilityLabel("Citation preview")
+        view = root
+        root.layoutSubtreeIfNeeded()
+        root.setFrameSize(root.fittingSize)
+        preferredContentSize = root.fittingSize
+    }
+
     public override func viewDidLayout() {
         super.viewDidLayout()
+        // A card is as tall as its fields once laid out in place; the popover follows.
+        if citation != nil {
+            let fitting = view.fittingSize
+            if abs(fitting.height - preferredContentSize.height) > 0.5 { preferredContentSize = fitting }
+            return
+        }
         // The destination is shown once the preview has its real size.
         if !didShowDestination, previewView.bounds.width > 10, previewView.bounds.height > 10 {
             didShowDestination = true
@@ -185,15 +246,16 @@ public final class LinkPreviewController: NSViewController {
 
     public override func viewDidAppear() {
         super.viewDidAppear()
-        view.window?.initialFirstResponder = previewView
-        view.window?.makeFirstResponder(previewView)
+        let focus: NSView = citation == nil ? previewView : view
+        view.window?.initialFirstResponder = focus
+        view.window?.makeFirstResponder(focus)
     }
 
     /// Lays the preview out now and shows the destination; tests call this
     /// after hosting the view.
     public func layoutAndShow() {
         view.layoutSubtreeIfNeeded()
-        if !didShowDestination {
+        if citation == nil, !didShowDestination {
             didShowDestination = true
             show(destination)
         }
@@ -302,6 +364,19 @@ public final class LinkPreviewController: NSViewController {
 /// The preview's root view: notices the pointer coming in.
 private final class PreviewRootView: NSView {
     var onPointerEntered: (() -> Void)?
+    /// A citation card's root takes the focus itself, and Escape from it.
+    var takesFocus = false
+    var onEscape: (() -> Void)?
+
+    override var acceptsFirstResponder: Bool { takesFocus }
+
+    override func keyDown(with event: NSEvent) {
+        if takesFocus, event.keyCode == 53, let onEscape {
+            onEscape()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

@@ -47,6 +47,9 @@ public final class ReaderPDFView: PDFView {
     public var onHighlightedLinkChange: ((LinkTarget?) -> Void)?
     /// Hover previews (A3). The window sets this from the user's preference.
     public var previewsOnHover = true
+    /// Reads cited works out of the reference list, for previews of
+    /// citation links. Keeps what it learns about this view's document.
+    public let citationReader = CitationReader()
     /// How long the pointer rests on a link before it previews.
     public static var hoverDelay: TimeInterval = 0.5
 

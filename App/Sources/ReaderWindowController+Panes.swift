@@ -204,12 +204,16 @@ extension ReaderWindowController {
         }
     }
 
-    /// Shows the preview for an internal link. The source pane's place
-    /// never changes unless the user chooses Go.
+    /// Shows the preview for an internal link: the page, or for a citation
+    /// a card describing the cited work. The source pane's place never
+    /// changes unless the user chooses Go.
     func showPreview(_ request: LinkPreviewRequest, from source: ReaderPane) {
         guard let document = source.view.document, source.view.window != nil else { return }
         dismissPreview()
-        let preview = LinkPreviewController(document: document, destination: request.destination, linkText: request.linkText, trigger: request.trigger)
+        let preview = LinkPreviewController(
+            document: document, destination: request.destination, linkText: request.linkText, trigger: request.trigger,
+            citation: request.citation
+        )
         preview.onGo = { [weak source] destination in source?.jump(to: destination) }
         preview.onOpenInSplit = { [weak self, weak source] destination in
             guard let self, let source else { return }
